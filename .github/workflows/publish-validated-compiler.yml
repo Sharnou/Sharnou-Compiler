@@ -4,9 +4,7 @@ on:
   push:
     branches: [ "Sharnou-Compiler" ]
     paths:
-      - "incoming/**"
-      - "Scripts/Validate-CompilerCandidate.ps1"
-      - ".github/workflows/publish-validated-compiler.yml"
+      - "incoming/**/*.zip"
   workflow_dispatch:
     inputs:
       tag:
