@@ -1,0 +1,32 @@
+{
+  "schema": "sharnou-compiler-release-manifest/1",
+  "release_tag": "R26.0-R2-R8",
+  "release_name": "Sharnou Compiler R26.0-R2-R8",
+  "asset_name": "Sharnou-Milestone7D2-R26.0-R2-R8-PEHeaders-EntryPoint-Diagnostics.zip",
+  "asset_sha256": "BB9FC1AD8B240D257DB2FB85B896B26CCDF37CC0C36B4E2B3644C2B1DCDB5FC1",
+  "archive_entries": 658,
+  "bootstrap_compiler": {
+    "path": "Stage0/SharnouCompiler-6A7A-Merged.ps1",
+    "sha256": "7D574ED78347FDC5B91FAB84DFBF9EBB15486BA2B4A018555AE58C329F6BB7AF",
+    "source_language": ".sharnou",
+    "native_cpp_frontend": false
+  },
+  "frozen_baseline": {
+    "release": "R25-R4",
+    "sha256": "CA01AEACB2E35C6E8039E58F15202A01399DAEA3E0A24E7B4D357772C8EF1274",
+    "entries": 611,
+    "must_remain_byte_identical": true
+  },
+  "validation": {
+    "host": "64-bit Windows PowerShell 5.1",
+    "runner": "R26.0-R2/Test-R26R2.ps1",
+    "required_output_markers": [
+      "Frozen baseline: 83/83 PASS",
+      "70 passed, 0 failed, 70 total",
+      "ABI SUITE: PASS (7/7",
+      "Parser.ParseFile",
+      "ScriptBlock.Create"
+    ]
+  },
+  "publication_status": "PENDING_ARCHIVE_UPLOAD_AND_FRESH_WINDOWS_VALIDATION"
+}
