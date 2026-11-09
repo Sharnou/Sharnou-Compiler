@@ -1,0 +1,83 @@
+name: Publish Validated Sharnou Compiler
+
+on:
+  push:
+    branches: [ "Sharnou-Compiler" ]
+    paths:
+      - "incoming/**/*.zip"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Candidate folder/tag under incoming/
+        required: true
+        default: R26.0-R2-R8
+
+permissions:
+  contents: write
+
+jobs:
+  validate-and-publish:
+    runs-on: windows-2022
+    timeout-minutes: 45
+    steps:
+      - name: Checkout compiler database
+        uses: actions/checkout@v4
+        with:
+          ref: Sharnou-Compiler
+          fetch-depth: 0
+
+      - name: Select candidate
+        id: candidate
+        shell: powershell
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          if ($env:EVENT_NAME -eq 'workflow_dispatch') {
+            $tag = $env:INPUT_TAG
+          } else {
+            $payload = Get-Content -LiteralPath $env:GITHUB_EVENT_PATH -Raw | ConvertFrom-Json
+            $changed = New-Object 'System.Collections.Generic.List[string]'
+            foreach ($commit in @($payload.commits)) {
+              foreach ($file in @($commit.added) + @($commit.modified)) {
+                if (-not [string]::IsNullOrWhiteSpace([string]$file)) { $changed.Add([string]$file) }
+              }
+            }
+            $zip = @($changed | Sort-Object -Unique | Where-Object { $_ -match '^incoming/([^/]+)/[^/]+\.zip$' })
+            if ($zip.Count -ne 1) { throw "Push must contain exactly one incoming/<tag>/<package>.zip; found $($zip.Count)." }
+            $tag = [regex]::Match($zip[0], '^incoming/([^/]+)/').Groups[1].Value
+          }
+          if ($tag -notmatch '^[A-Za-z0-9][A-Za-z0-9._-]{2,80}$') { throw "Invalid release tag: $tag" }
+          "tag=$tag" >> $env:GITHUB_OUTPUT
+          "directory=incoming/$tag" >> $env:GITHUB_OUTPUT
+
+      - name: Run Windows PowerShell 5.1 release validation
+        shell: powershell
+        env:
+          CANDIDATE_DIRECTORY: ${{ steps.candidate.outputs.directory }}
+          CANDIDATE_TAG: ${{ steps.candidate.outputs.tag }}
+        run: |
+          .\Scripts\Validate-CompilerCandidate.ps1 -CandidateDirectory $env:CANDIDATE_DIRECTORY -Tag $env:CANDIDATE_TAG
+
+      - name: Publish immutable tag and release assets
+        shell: powershell
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CANDIDATE_DIRECTORY: ${{ steps.candidate.outputs.directory }}
+          CANDIDATE_TAG: ${{ steps.candidate.outputs.tag }}
+        run: |
+          $tag = $env:CANDIDATE_TAG
+          $folder = $env:CANDIDATE_DIRECTORY
+          gh release view $tag --repo $env:GITHUB_REPOSITORY *> $null
+          if ($LASTEXITCODE -eq 0) { throw "Release $tag already exists. Use a new revision tag; published releases are immutable." }
+          $existingTag = @(git ls-remote --tags origin ("refs/tags/" + $tag) ("refs/tags/" + $tag + '^{}'))
+          if ($LASTEXITCODE -eq 0 -and $existingTag.Count -gt 0) { throw "Git tag $tag already exists. The publisher will not move or replace an existing tag." }
+
+          $manifest = Get-Content (Join-Path $folder 'release-manifest.json') -Raw | ConvertFrom-Json
+          $zip = Join-Path $folder ([string]$manifest.asset_name)
+          $sha = Join-Path $folder ($manifest.asset_name + '.sha256')
+          $notes = Join-Path $folder 'CHANGELOG.md'
+          $releaseManifest = Join-Path $folder 'release-manifest.json'
+          gh release create $tag $zip $sha $releaseManifest $notes --repo $env:GITHUB_REPOSITORY --title $manifest.release_name --notes-file $notes --target $env:GITHUB_SHA
+          if ($LASTEXITCODE -ne 0) { throw "GitHub release publication failed for $tag." }
+          Write-Host "PASS: published $env:GITHUB_SERVER_URL/$env:GITHUB_REPOSITORY/releases/tag/$tag" -ForegroundColor Green

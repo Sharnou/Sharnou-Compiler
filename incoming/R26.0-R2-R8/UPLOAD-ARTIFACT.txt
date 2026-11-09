@@ -1,0 +1,5 @@
+Upload the exact archive to this directory before publication:
+Sharnou-Milestone7D2-R26.0-R2-R8-PEHeaders-EntryPoint-Diagnostics.zip
+Required SHA-256:
+BB9FC1AD8B240D257DB2FB85B896B26CCDF37CC0C36B4E2B3644C2B1DCDB5FC1
+The publish workflow refuses to create or overwrite a release until the ZIP is present, its hash and 658-entry count match, the frozen compiler hash matches, and the Windows validation runner passes.

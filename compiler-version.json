@@ -1,0 +1,22 @@
+{
+  "schema": "sharnou-compiler-pin/1",
+  "compiler_repository": "Sharnou/Sharnou-Compiler",
+  "release_tag": "R26.0-R2-R8",
+  "release_url": "https://github.com/Sharnou/Sharnou-Compiler/releases/tag/R26.0-R2-R8",
+  "asset_name": "Sharnou-Milestone7D2-R26.0-R2-R8-PEHeaders-EntryPoint-Diagnostics.zip",
+  "asset_sha256": "BB9FC1AD8B240D257DB2FB85B896B26CCDF37CC0C36B4E2B3644C2B1DCDB5FC1",
+  "archive_entries": 658,
+  "bootstrap_compiler": {
+    "path": "Stage0/SharnouCompiler-6A7A-Merged.ps1",
+    "sha256": "7D574ED78347FDC5B91FAB84DFBF9EBB15486BA2B4A018555AE58C329F6BB7AF",
+    "kind": "PowerShell bootstrap compiler",
+    "source_language": ".sharnou",
+    "native_executable": false,
+    "native_cpp_frontend": false
+  },
+  "release_status": "BASELINE_HASH_CONFIRMED_AWAITING_GITHUB_RELEASE_ASSET",
+  "frozen_inputs": {
+    "r25_r4_sha256": "CA01AEACB2E35C6E8039E58F15202A01399DAEA3E0A24E7B4D357772C8EF1274",
+    "r25_r4_entries": 611
+  }
+}
