@@ -140,43 +140,66 @@ try {
     Write-Host '=== Native instruction encoding checks ==='
     $comparisonExe = Join-Path $buildRoot 'Comparisons.exe'
     $whileExe = Join-Path $buildRoot 'WhileLoop.exe'
-    $comparisonBytes = [IO.File]::ReadAllBytes($comparisonExe)
-    $comparisonText = Get-TextSection -Bytes $comparisonBytes
-    $patterns = @(
-        [pscustomobject]@{ Name = 'SETL encoding for <'; Bytes = [byte[]]@(0x0F, 0x9C, 0xC0) },
-        [pscustomobject]@{ Name = 'SETG encoding for >'; Bytes = [byte[]]@(0x0F, 0x9F, 0xC0) },
-        [pscustomobject]@{ Name = 'SETLE encoding for <='; Bytes = [byte[]]@(0x0F, 0x9E, 0xC0) },
-        [pscustomobject]@{ Name = 'SETGE encoding for >='; Bytes = [byte[]]@(0x0F, 0x9D, 0xC0) },
-        [pscustomobject]@{ Name = 'SETE encoding for =='; Bytes = [byte[]]@(0x0F, 0x94, 0xC0) },
-        [pscustomobject]@{ Name = 'SETNE encoding for !='; Bytes = [byte[]]@(0x0F, 0x95, 0xC0) }
-    )
-    $comparisonPassed = $true; $comparisonDetail = ''
+    $ifExe = Join-Path $buildRoot 'IfElse.exe'
+
+    $comparisonPassed = $true
+    $comparisonDetail = ''
     try {
+        if (-not (Test-Path -LiteralPath $comparisonExe -PathType Leaf)) {
+            throw "Cannot inspect comparison opcodes because $comparisonExe was not produced."
+        }
+        $comparisonBytes = [IO.File]::ReadAllBytes($comparisonExe)
+        $comparisonText = Get-TextSection -Bytes $comparisonBytes
+        $patterns = @(
+            [pscustomobject]@{ Name = 'SETL encoding for <'; Bytes = [byte[]]@(0x0F, 0x9C, 0xC0) },
+            [pscustomobject]@{ Name = 'SETG encoding for >'; Bytes = [byte[]]@(0x0F, 0x9F, 0xC0) },
+            [pscustomobject]@{ Name = 'SETLE encoding for <='; Bytes = [byte[]]@(0x0F, 0x9E, 0xC0) },
+            [pscustomobject]@{ Name = 'SETGE encoding for >='; Bytes = [byte[]]@(0x0F, 0x9D, 0xC0) },
+            [pscustomobject]@{ Name = 'SETE encoding for =='; Bytes = [byte[]]@(0x0F, 0x94, 0xC0) },
+            [pscustomobject]@{ Name = 'SETNE encoding for !='; Bytes = [byte[]]@(0x0F, 0x95, 0xC0) }
+        )
         foreach ($pattern in $patterns) {
             if (-not (Find-BytePattern -Bytes $comparisonBytes -Start $comparisonText.Offset -Length $comparisonText.Size -Pattern $pattern.Bytes)) {
                 throw "Missing expected instruction: $($pattern.Name)."
             }
         }
-    } catch { $comparisonPassed = $false; $comparisonDetail = [string]$_.Exception.Message }
+    } catch {
+        $comparisonPassed = $false
+        $comparisonDetail = [string]$_.Exception.Message
+    }
     Record-Result -Name 'All six signed SETcc comparison instructions are emitted' -Passed $comparisonPassed -Detail $comparisonDetail
 
-    $branchPassed = $true; $branchDetail = ''
+    $branchPassed = $true
+    $branchDetail = ''
     try {
-        $image = [IO.File]::ReadAllBytes((Join-Path $buildRoot 'IfElse.exe'))
+        if (-not (Test-Path -LiteralPath $ifExe -PathType Leaf)) { throw "Cannot inspect branch opcodes because $ifExe was not produced." }
+        $image = [IO.File]::ReadAllBytes($ifExe)
         $text = Get-TextSection -Bytes $image
         if (-not (Find-BytePattern -Bytes $image -Start $text.Offset -Length $text.Size -Pattern ([byte[]]@(0x85, 0xC0, 0x0F, 0x84)))) {
             throw 'Expected TEST EAX,EAX followed by near JZ was not found.'
         }
-    } catch { $branchPassed = $false; $branchDetail = [string]$_.Exception.Message }
+    } catch {
+        $branchPassed = $false
+        $branchDetail = [string]$_.Exception.Message
+    }
     Record-Result -Name 'If/else emits TEST plus conditional near branch' -Passed $branchPassed -Detail $branchDetail
 
-    $loopPassed = $true; $loopDetail = ''
+    $loopPassed = $true
+    $loopDetail = ''
     try {
+        if (-not (Test-Path -LiteralPath $whileExe -PathType Leaf)) { throw "Cannot inspect loop opcodes because $whileExe was not produced." }
         $image = [IO.File]::ReadAllBytes($whileExe)
         $text = Get-TextSection -Bytes $image
-        if (-not (Find-BytePattern -Bytes $image -Start $text.Offset -Length $text.Size -Pattern ([byte[]]@(0xE9)))) { throw 'Expected near JMP loop-back instruction was not found.' }
-        if (-not (Find-BytePattern -Bytes $image -Start $text.Offset -Length $text.Size -Pattern ([byte[]]@(0x0F, 0x84)))) { throw 'Expected JZ loop-exit instruction was not found.' }
-    } catch { $loopPassed = $false; $loopDetail = [string]$_.Exception.Message }
+        if (-not (Find-BytePattern -Bytes $image -Start $text.Offset -Length $text.Size -Pattern ([byte[]]@(0xE9)))) {
+            throw 'Expected near JMP loop-back instruction was not found.'
+        }
+        if (-not (Find-BytePattern -Bytes $image -Start $text.Offset -Length $text.Size -Pattern ([byte[]]@(0x0F, 0x84)))) {
+            throw 'Expected JZ loop-exit instruction was not found.'
+        }
+    } catch {
+        $loopPassed = $false
+        $loopDetail = [string]$_.Exception.Message
+    }
     Record-Result -Name 'While emits a conditional exit and a backward JMP' -Passed $loopPassed -Detail $loopDetail
 
     $expectedTotal = [int]($positiveCases.Count + $negativeCases.Count + 3)
