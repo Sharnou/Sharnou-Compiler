@@ -22,7 +22,7 @@ try {
         if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) { throw "Executable is missing: $exe. Run .\Build.ps1 first." }
         $lines = @(& $exe 2>&1)
         $exitCode = $LASTEXITCODE
-        $actual = (($lines | ForEach-Object { [string]$_ }) -join [Environment]::NewLine).TrimEnd([char[]]@([char]13, [char]10))
+        $actual = (($lines | ForEach-Object { [string]$_ }) -join $nl).TrimEnd([char[]]@([char]13, [char]10))
         if ($exitCode -ne 0) { throw "$($case.Name) exited with code $exitCode. Output=[$actual]." }
         if (-not [string]::Equals($actual, $case.Expected, [StringComparison]::Ordinal)) {
             throw "$($case.Name) output mismatch. Expected=[$($case.Expected)] Actual=[$actual]."
