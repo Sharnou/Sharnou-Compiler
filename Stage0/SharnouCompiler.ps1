@@ -1469,6 +1469,11 @@ $dataRawSize = Align-Up -Value $dataBytes.Length -Alignment 0x200
 # stay stable within .idata. Lookup tables use the disjoint 0x500-0x610 range;
 # no lookup table may overlap any IAT slot or import-by-name string. Emit-CallIat rebases target RVAs after section placement.
 $idata = [byte[]]::new(0x800)
+# Keep the eight 20-byte IMAGE_IMPORT_DESCRIPTOR rows and null terminator above 0x700.
+# The fixed IAT slots occupy 0x70..0x178, so descriptor storage must not overlap them.
+$descriptorBase = 0x700
+$importDirectorySize = 0xB4
+if (($descriptorBase + $importDirectorySize) -gt $idata.Length) { throw 'Import descriptor table exceeds .idata storage.' }
 $importSets = @(
     [pscustomobject]@{ Descriptor = 0x00; Lookup = 0x500; Iat = 0x70; Dll = 'KERNEL32.dll'; Names = @('GetStdHandle', 'WriteFile', 'ExitProcess') },
     [pscustomobject]@{ Descriptor = 0x14; Lookup = 0x520; Iat = 0x90; Dll = 'USER32.dll'; Names = @('wsprintfA') },
@@ -1504,11 +1509,12 @@ foreach ($set in $importSets) {
         'DXGI.dll' { $nameOffset = 0x272 }
         default { throw "Internal linker error: unsupported import DLL '$($set.Dll)'" }
     }
-    Set-U32 -Buffer $idata -Offset $set.Descriptor -Value ([UInt32]([long]$idataRva + [long]$set.Lookup))
-    Set-U32 -Buffer $idata -Offset ($set.Descriptor + 4) -Value 0
-    Set-U32 -Buffer $idata -Offset ($set.Descriptor + 8) -Value 0
-    Set-U32 -Buffer $idata -Offset ($set.Descriptor + 12) -Value ([UInt32]([long]$idataRva + [long]$nameOffset))
-    Set-U32 -Buffer $idata -Offset ($set.Descriptor + 16) -Value ([UInt32]([long]$idataRva + [long]$set.Iat))
+        $descriptorOffset = [int]($descriptorBase + $set.Descriptor)
+    Set-U32 -Buffer $idata -Offset $descriptorOffset -Value ([UInt32]([long]$idataRva + [long]$set.Lookup))
+    Set-U32 -Buffer $idata -Offset ($descriptorOffset + 4) -Value 0
+    Set-U32 -Buffer $idata -Offset ($descriptorOffset + 8) -Value 0
+    Set-U32 -Buffer $idata -Offset ($descriptorOffset + 12) -Value ([UInt32]([long]$idataRva + [long]$nameOffset))
+    Set-U32 -Buffer $idata -Offset ($descriptorOffset + 16) -Value ([UInt32]([long]$idataRva + [long]$set.Iat))
     for ($apiIndex = 0; $apiIndex -lt $set.Names.Count; $apiIndex++) {
         $hintRva = [UInt64]$apiNameRvas[$set.Names[$apiIndex]]
         Set-U64 -Buffer $idata -Offset ($set.Lookup + ($apiIndex * 8)) -Value ([UInt64]$hintRva)
@@ -1548,7 +1554,7 @@ Set-U32 -Buffer $image -Offset ($opt + 52) -Value 0; Set-U32 -Buffer $image -Off
 Set-U16 -Buffer $image -Offset ($opt + 68) -Value 3; Set-U16 -Buffer $image -Offset ($opt + 70) -Value 0x0140
 Set-U64 -Buffer $image -Offset ($opt + 72) -Value ([UInt64]0x100000); Set-U64 -Buffer $image -Offset ($opt + 80) -Value ([UInt64]0x1000); Set-U64 -Buffer $image -Offset ($opt + 88) -Value ([UInt64]0x100000); Set-U64 -Buffer $image -Offset ($opt + 96) -Value ([UInt64]0x1000)
 Set-U32 -Buffer $image -Offset ($opt + 104) -Value 0; Set-U32 -Buffer $image -Offset ($opt + 108) -Value 16
-Set-U32 -Buffer $image -Offset ($opt + 120) -Value $idataRva; Set-U32 -Buffer $image -Offset ($opt + 124) -Value 0xB4
+Set-U32 -Buffer $image -Offset ($opt + 120) -Value ([UInt32]([long]$idataRva + [long]$descriptorBase)); Set-U32 -Buffer $image -Offset ($opt + 124) -Value $importDirectorySize
 Set-U32 -Buffer $image -Offset ($opt + 152) -Value $relocRva; Set-U32 -Buffer $image -Offset ($opt + 156) -Value 12
 Set-U32 -Buffer $image -Offset ($opt + 208) -Value ([UInt32]([long]$idataRva + 0x70)); Set-U32 -Buffer $image -Offset ($opt + 212) -Value 0x108
 $sectionText = 0x188
