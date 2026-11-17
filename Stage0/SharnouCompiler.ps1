@@ -117,7 +117,17 @@ function Initialize-Tokens {
             Add-Token -Kind 'Identifier' -Text $identifier -Value $identifier -Line $line -Column $startColumn
             continue
         }
-        if ('+-*/=();{},'.Contains([string]$ch)) { Add-Token -Kind 'Symbol' -Text ([string]$ch) -Value ([string]$ch) -Line $line -Column $column; $i++; $column++; continue }
+        if (($i + 1) -lt $Text.Length) {
+            $pair = $Text.Substring($i, 2)
+            if (@('<=', '>=', '==', '!=') -contains $pair) {
+                Add-Token -Kind 'Symbol' -Text $pair -Value $pair -Line $line -Column $column
+                $i += 2; $column += 2; continue
+            }
+        }
+        if ('+-*/=();{},<>'.Contains([string]$ch)) {
+            Add-Token -Kind 'Symbol' -Text ([string]$ch) -Value ([string]$ch) -Line $line -Column $column
+            $i++; $column++; continue
+        }
         Throw-SourceError -Line $line -Column $column -Message ("Unexpected character '{0}'." -f $ch)
     }
     Add-Token -Kind 'EOF' -Text '<end of file>' -Value $null -Line $line -Column $column
@@ -136,8 +146,8 @@ function New-AstNode {
     return [pscustomobject]@{ Kind = $Kind; Type = $Type; Value = $Value; Name = $Name; Slot = $Slot; Operator = $Operator; Left = $Left; Right = $Right; Operand = $Operand; Arguments = $Arguments; Statements = $Statements; Builtin = $Builtin; Line = $Line; Column = $Column }
 }
 function New-Statement {
-    param([string] $Kind, [string] $Name = '', [string] $Type = '', [int] $Slot = -1, [object] $Expression = $null, [object[]] $Statements = @(), [int] $Line = 1, [int] $Column = 1)
-    return [pscustomobject]@{ Kind = $Kind; Name = $Name; Type = $Type; Slot = $Slot; Expression = $Expression; Statements = $Statements; Line = $Line; Column = $Column }
+    param([string] $Kind, [string] $Name = '', [string] $Type = '', [int] $Slot = -1, [object] $Expression = $null, [object[]] $Statements = @(), [object[]] $ElseStatements = @(), [int] $Line = 1, [int] $Column = 1)
+    return [pscustomobject]@{ Kind = $Kind; Name = $Name; Type = $Type; Slot = $Slot; Expression = $Expression; Statements = $Statements; ElseStatements = $ElseStatements; Line = $Line; Column = $Column }
 }
 function New-IntegerNode { param([long] $Value, [int] $Line, [int] $Column) return (New-AstNode -Kind 'Integer' -Type 'Integer' -Value $Value -Line $Line -Column $Column) }
 function New-StringNode { param([string] $Value, [int] $Line, [int] $Column) return (New-AstNode -Kind 'String' -Type 'String' -Value $Value -Line $Line -Column $Column) }
@@ -226,7 +236,7 @@ function Parse-Term {
     }
     return $value
 }
-function Parse-Expression {
+function Parse-AdditiveExpression {
     $value = Parse-Term
     while ((Test-CurrentText '+') -or (Test-CurrentText '-')) {
         $operator = Move-NextToken; $right = Parse-Term
@@ -234,6 +244,24 @@ function Parse-Expression {
         $value = New-AstNode -Kind 'Binary' -Type 'Integer' -Operator ([string]$operator.Text) -Left $value -Right $right -Line $operator.Line -Column $operator.Column
     }
     return $value
+}
+function Parse-Expression {
+    $left = Parse-AdditiveExpression
+    $operatorToken = Get-CurrentToken
+    $comparisonOperators = @('<', '>', '<=', '>=', '==', '!=')
+    if ($comparisonOperators -contains $operatorToken.Text) {
+        $operator = Move-NextToken
+        $right = Parse-AdditiveExpression
+        if ($left.Type -ne 'Integer' -or $right.Type -ne 'Integer') {
+            Throw-SourceError -Line $operator.Line -Column $operator.Column -Message ("Comparison '{0}' requires integer operands." -f $operator.Text)
+        }
+        $next = Get-CurrentToken
+        if ($comparisonOperators -contains $next.Text) {
+            Throw-SourceError -Line $next.Line -Column $next.Column -Message 'Chained comparisons are not supported; use a nested if or while statement.'
+        }
+        return (New-AstNode -Kind 'Comparison' -Type 'Integer' -Operator ([string]$operator.Text) -Left $left -Right $right -Line $operator.Line -Column $operator.Column)
+    }
+    return $left
 }
 function Get-ConstantValue {
     param([object] $Node)
@@ -246,6 +274,25 @@ function Get-ConstantValue {
         $number = [long]$child.Value; if ($Node.Operator -eq '-') { $number = -$number }
         if ($number -lt [int]::MinValue -or $number -gt [int]::MaxValue) { Throw-SourceError -Line $Node.Line -Column $Node.Column -Message 'Integer result is outside the supported signed 32-bit range.' }
         return [pscustomobject]@{ Known = $true; Type = 'Integer'; Value = $number }
+    }
+    if ($Node.Kind -eq 'Comparison') {
+        $left = Get-ConstantValue -Node $Node.Left
+        $right = Get-ConstantValue -Node $Node.Right
+        if (-not $left.Known -or -not $right.Known) {
+            return [pscustomobject]@{ Known = $false; Type = 'Integer'; Value = $null }
+        }
+        $a = [long]$left.Value
+        $b = [long]$right.Value
+        switch ($Node.Operator) {
+            '<'  { $result = ($a -lt $b) }
+            '>'  { $result = ($a -gt $b) }
+            '<=' { $result = ($a -le $b) }
+            '>=' { $result = ($a -ge $b) }
+            '==' { $result = ($a -eq $b) }
+            '!=' { $result = ($a -ne $b) }
+            default { Throw-SourceError -Line $Node.Line -Column $Node.Column -Message ("Unsupported comparison operator '{0}'." -f $Node.Operator) }
+        }
+        return [pscustomobject]@{ Known = $true; Type = 'Integer'; Value = [long]([int]$result) }
     }
     if ($Node.Kind -eq 'Binary') {
         $left = Get-ConstantValue -Node $Node.Left; $right = Get-ConstantValue -Node $Node.Right
@@ -311,14 +358,14 @@ function Collect-FunctionHeaders {
             $functionStart = $i; $fnToken = $token; $i++
             if ($i -ge $tokens.Length -or $tokens[$i].Kind -ne 'Identifier') { $script:SourceDisplay = $Module.Path; Throw-SourceError -Line $fnToken.Line -Column $fnToken.Column -Message 'Expected a function name after fn.' }
             $nameToken = $tokens[$i]; $name = [string]$nameToken.Text; $i++
-            if (@('print', 'let', 'fn', 'return', 'import') -contains $name) { $script:SourceDisplay = $Module.Path; Throw-SourceError -Line $nameToken.Line -Column $nameToken.Column -Message 'Reserved keyword cannot be used as a function name.' }
+            if (@('print', 'let', 'fn', 'return', 'import', 'if', 'else', 'while') -contains $name) { $script:SourceDisplay = $Module.Path; Throw-SourceError -Line $nameToken.Line -Column $nameToken.Column -Message 'Reserved keyword cannot be used as a function name.' }
             if ($i -ge $tokens.Length -or $tokens[$i].Text -cne '(') { $script:SourceDisplay = $Module.Path; Throw-SourceError -Line $nameToken.Line -Column $nameToken.Column -Message "Expected '(' after function name." }; $i++
             $params = [System.Collections.Generic.List[object]]::new(); $seen = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
             if ($i -lt $tokens.Length -and $tokens[$i].Text -cne ')') {
                 while ($true) {
                     if ($i -ge $tokens.Length -or $tokens[$i].Kind -ne 'Identifier') { $script:SourceDisplay = $Module.Path; $cur = $tokens[[Math]::Min($i, $tokens.Length - 1)]; Throw-SourceError -Line $cur.Line -Column $cur.Column -Message 'Expected a parameter name.' }
                     $paramToken = $tokens[$i]
-                    if (@('print', 'let', 'fn', 'return', 'import') -contains $paramToken.Text) { $script:SourceDisplay = $Module.Path; Throw-SourceError -Line $paramToken.Line -Column $paramToken.Column -Message 'Reserved keyword cannot be used as a parameter name.' }
+                    if (@('print', 'let', 'fn', 'return', 'import', 'if', 'else', 'while') -contains $paramToken.Text) { $script:SourceDisplay = $Module.Path; Throw-SourceError -Line $paramToken.Line -Column $paramToken.Column -Message 'Reserved keyword cannot be used as a parameter name.' }
                     if (-not $seen.Add([string]$paramToken.Text)) { $script:SourceDisplay = $Module.Path; Throw-SourceError -Line $paramToken.Line -Column $paramToken.Column -Message ("Duplicate parameter '{0}'." -f $paramToken.Text) }
                     $params.Add($paramToken); $i++
                     if ($i -lt $tokens.Length -and $tokens[$i].Text -ceq ',') { $i++; continue }; break
@@ -365,13 +412,39 @@ function Parse-Statement {
     if ($token.Text -ceq '{') { return (Parse-BlockStatement) }
     if ($token.Kind -ne 'Identifier') { Throw-SourceError -Line $token.Line -Column $token.Column -Message ("Expected a statement; found '{0}'." -f $token.Text) }
     if ($token.Text -ceq 'import' -or $token.Text -ceq 'fn') { Throw-SourceError -Line $token.Line -Column $token.Column -Message 'Imports and function definitions are only valid at module scope.' }
+    if ($token.Text -ceq 'if') {
+        Move-NextToken | Out-Null
+        $null = Expect-Text -Text '(' -Description "'(' after if"
+        $condition = Parse-Expression
+        if ($condition.Type -ne 'Integer') { Throw-SourceError -Line $token.Line -Column $token.Column -Message 'if condition must be an integer expression or comparison.' }
+        Validate-ConstantArithmetic -Node $condition
+        $null = Expect-Text -Text ')' -Description "')' after if condition"
+        $thenBlock = Parse-BlockStatement
+        $elseStatements = @()
+        if (Test-CurrentText 'else') {
+            Move-NextToken | Out-Null
+            $elseBlock = Parse-BlockStatement
+            $elseStatements = @($elseBlock.Statements)
+        }
+        return (New-Statement -Kind 'If' -Expression $condition -Statements @($thenBlock.Statements) -ElseStatements $elseStatements -Line $token.Line -Column $token.Column)
+    }
+    if ($token.Text -ceq 'while') {
+        Move-NextToken | Out-Null
+        $null = Expect-Text -Text '(' -Description "'(' after while"
+        $condition = Parse-Expression
+        if ($condition.Type -ne 'Integer') { Throw-SourceError -Line $token.Line -Column $token.Column -Message 'while condition must be an integer expression or comparison.' }
+        Validate-ConstantArithmetic -Node $condition
+        $null = Expect-Text -Text ')' -Description "')' after while condition"
+        $body = Parse-BlockStatement
+        return (New-Statement -Kind 'While' -Expression $condition -Statements @($body.Statements) -Line $token.Line -Column $token.Column)
+    }
     if ($token.Text -ceq 'print') {
         Move-NextToken | Out-Null; $null = Expect-Text -Text '(' -Description "'(' after print"; $expression = Parse-Expression; Validate-ConstantArithmetic -Node $expression; $null = Expect-Text -Text ')' -Description "')' after print expression"; $null = Expect-Text -Text ';' -Description "';' after print statement"
         return (New-Statement -Kind 'Print' -Expression $expression -Line $token.Line -Column $token.Column)
     }
     if ($token.Text -ceq 'let') {
         Move-NextToken | Out-Null; $nameToken = Get-CurrentToken
-        if ($nameToken.Kind -ne 'Identifier' -or @('print', 'let', 'fn', 'return', 'import') -contains $nameToken.Text) { Throw-SourceError -Line $nameToken.Line -Column $nameToken.Column -Message "Expected a variable name after 'let'." }
+        if ($nameToken.Kind -ne 'Identifier' -or @('print', 'let', 'fn', 'return', 'import', 'if', 'else', 'while') -contains $nameToken.Text) { Throw-SourceError -Line $nameToken.Line -Column $nameToken.Column -Message "Expected a variable name after 'let'." }
         Move-NextToken | Out-Null; $name = [string]$nameToken.Text
         $null = Expect-Text -Text '=' -Description "'=' in variable declaration"
         $expression = Parse-Expression; Validate-ConstantArithmetic -Node $expression; $null = Expect-Text -Text ';' -Description "';' after variable declaration"
@@ -386,7 +459,7 @@ function Parse-Statement {
         $null = Expect-Text -Text ';' -Description "';' after return statement"
         return (New-Statement -Kind 'Return' -Expression $expression -Line $token.Line -Column $token.Column)
     }
-    if (@('print', 'let', 'fn', 'return', 'import') -contains $token.Text) { Throw-SourceError -Line $token.Line -Column $token.Column -Message 'Reserved keyword cannot be used as a variable name.' }
+    if (@('print', 'let', 'fn', 'return', 'import', 'if', 'else', 'while') -contains $token.Text) { Throw-SourceError -Line $token.Line -Column $token.Column -Message 'Reserved keyword cannot be used as a variable name.' }
     $nameToken = Move-NextToken; $name = [string]$nameToken.Text
     if (-not (Test-CurrentText '=')) { $next = Get-CurrentToken; Throw-SourceError -Line $next.Line -Column $next.Column -Message ("Expected '=' after variable name '{0}'; only assignment, declarations, and print statements are supported." -f $name) }
     $symbol = Find-Variable -Name $name
@@ -455,7 +528,7 @@ function Get-ExpressionNodeCount {
     param([object] $Node)
     if ($null -eq $Node) { return 0 }
     $count = 1
-    if ($Node.Kind -eq 'Binary') { $count += (Get-ExpressionNodeCount -Node $Node.Left); $count += (Get-ExpressionNodeCount -Node $Node.Right) }
+    if ($Node.Kind -eq 'Binary' -or $Node.Kind -eq 'Comparison') { $count += (Get-ExpressionNodeCount -Node $Node.Left); $count += (Get-ExpressionNodeCount -Node $Node.Right) }
     elseif ($Node.Kind -eq 'Unary') { $count += (Get-ExpressionNodeCount -Node $Node.Operand) }
     elseif ($Node.Kind -eq 'Call') { foreach ($arg in $Node.Arguments) { $count += (Get-ExpressionNodeCount -Node $arg) } }
     return [int]$count
@@ -465,7 +538,8 @@ function Get-StatementsNodeCount {
     $count = 0
     foreach ($statement in $Statements) {
         if ($null -ne $statement.Expression) { $count += (Get-ExpressionNodeCount -Node $statement.Expression) }
-        if ($statement.Kind -eq 'Block') { $count += (Get-StatementsNodeCount -Statements $statement.Statements) }
+        if ($null -ne $statement.Statements -and $statement.Statements.Count -gt 0) { $count += (Get-StatementsNodeCount -Statements $statement.Statements) }
+        if ($null -ne $statement.ElseStatements -and $statement.ElseStatements.Count -gt 0) { $count += (Get-StatementsNodeCount -Statements $statement.ElseStatements) }
     }
     if ($null -ne $ReturnExpression) { $count += (Get-ExpressionNodeCount -Node $ReturnExpression) }
     return [int]$count
@@ -1087,6 +1161,28 @@ function Emit-IntegerExpression {
             Emit-LoadEaxFrame -SlotPosition (0x80 + ([int]$Node.Slot * 16)); return
         }
         'Unary' { Emit-IntegerExpression -Node $Node.Operand; if ($Node.Operator -eq '-') { Emit-Bytes -Bytes ([byte[]]@(0xF7, 0xD8)); Emit-JumpConditional -ConditionCode 0x80 -Label '__runtime_fail' }; return }
+        'Comparison' {
+            Emit-IntegerExpression -Node $Node.Left
+            $tempSlot = Get-TempSlotPosition -Depth $script:TempDepth
+            Emit-StoreEaxFrame -SlotPosition $tempSlot
+            $script:TempDepth++
+            Emit-IntegerExpression -Node $Node.Right
+            $script:TempDepth--
+            Emit-Bytes -Bytes ([byte[]]@(0x89, 0xC1)) # mov ecx,eax
+            Emit-LoadEaxFrame -SlotPosition $tempSlot
+            Emit-Bytes -Bytes ([byte[]]@(0x39, 0xC8)) # cmp eax,ecx
+            switch ($Node.Operator) {
+                '<'  { Emit-Bytes -Bytes ([byte[]]@(0x0F, 0x9C, 0xC0)) } # setl al
+                '>'  { Emit-Bytes -Bytes ([byte[]]@(0x0F, 0x9F, 0xC0)) } # setg al
+                '<=' { Emit-Bytes -Bytes ([byte[]]@(0x0F, 0x9E, 0xC0)) } # setle al
+                '>=' { Emit-Bytes -Bytes ([byte[]]@(0x0F, 0x9D, 0xC0)) } # setge al
+                '==' { Emit-Bytes -Bytes ([byte[]]@(0x0F, 0x94, 0xC0)) } # sete al
+                '!=' { Emit-Bytes -Bytes ([byte[]]@(0x0F, 0x95, 0xC0)) } # setne al
+                default { Throw-SourceError -Line $Node.Line -Column $Node.Column -Message ("Unsupported comparison operator '{0}'." -f $Node.Operator) }
+            }
+            Emit-Bytes -Bytes ([byte[]]@(0x0F, 0xB6, 0xC0)) # movzx eax,al (normalize to 0 or 1)
+            return
+        }
         'Binary' {
             Emit-IntegerExpression -Node $Node.Left
             $tempSlot = Get-TempSlotPosition -Depth $script:TempDepth; Emit-StoreEaxFrame -SlotPosition $tempSlot; $script:TempDepth++
@@ -1172,6 +1268,37 @@ function Emit-Statement {
         }
         'Print' { if ($Statement.Expression.Type -eq 'Integer') { Emit-PrintInteger -Node $Statement.Expression } else { Emit-PrintString -Node $Statement.Expression }; return }
         'Block' { foreach ($child in $Statement.Statements) { Emit-Statement -Statement $child }; return }
+        'If' {
+            $elseLabel = New-UniqueLabel -Prefix 'if_else'
+            $doneLabel = New-UniqueLabel -Prefix 'if_done'
+            Emit-IntegerExpression -Node $Statement.Expression
+            Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0)) # test eax,eax
+            if ($Statement.ElseStatements.Count -gt 0) {
+                Emit-JumpConditional -ConditionCode 0x84 -Label $elseLabel # jz else
+                foreach ($child in $Statement.Statements) { Emit-Statement -Statement $child }
+                Emit-Jump -Label $doneLabel
+                Mark-CodeLabel -Label $elseLabel
+                foreach ($child in $Statement.ElseStatements) { Emit-Statement -Statement $child }
+                Mark-CodeLabel -Label $doneLabel
+            } else {
+                Emit-JumpConditional -ConditionCode 0x84 -Label $doneLabel
+                foreach ($child in $Statement.Statements) { Emit-Statement -Statement $child }
+                Mark-CodeLabel -Label $doneLabel
+            }
+            return
+        }
+        'While' {
+            $loopStart = New-UniqueLabel -Prefix 'while_start'
+            $loopDone = New-UniqueLabel -Prefix 'while_done'
+            Mark-CodeLabel -Label $loopStart
+            Emit-IntegerExpression -Node $Statement.Expression
+            Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0)) # test eax,eax
+            Emit-JumpConditional -ConditionCode 0x84 -Label $loopDone # jz done
+            foreach ($child in $Statement.Statements) { Emit-Statement -Statement $child }
+            Emit-Jump -Label $loopStart
+            Mark-CodeLabel -Label $loopDone
+            return
+        }
         default { Throw-SourceError -Line $Statement.Line -Column $Statement.Column -Message ("Unsupported statement kind '{0}'." -f $Statement.Kind) }
     }
 }
@@ -1342,6 +1469,11 @@ $dataRawSize = Align-Up -Value $dataBytes.Length -Alignment 0x200
 # stay stable within .idata. Lookup tables use the disjoint 0x500-0x610 range;
 # no lookup table may overlap any IAT slot or import-by-name string. Emit-CallIat rebases target RVAs after section placement.
 $idata = [byte[]]::new(0x800)
+# Keep the eight 20-byte IMAGE_IMPORT_DESCRIPTOR rows and null terminator above 0x700.
+# The fixed IAT slots occupy 0x70..0x178, so descriptor storage must not overlap them.
+$descriptorBase = 0x700
+$importDirectorySize = 0xB4
+if (($descriptorBase + $importDirectorySize) -gt $idata.Length) { throw 'Import descriptor table exceeds .idata storage.' }
 $importSets = @(
     [pscustomobject]@{ Descriptor = 0x00; Lookup = 0x500; Iat = 0x70; Dll = 'KERNEL32.dll'; Names = @('GetStdHandle', 'WriteFile', 'ExitProcess') },
     [pscustomobject]@{ Descriptor = 0x14; Lookup = 0x520; Iat = 0x90; Dll = 'USER32.dll'; Names = @('wsprintfA') },
@@ -1377,11 +1509,12 @@ foreach ($set in $importSets) {
         'DXGI.dll' { $nameOffset = 0x272 }
         default { throw "Internal linker error: unsupported import DLL '$($set.Dll)'" }
     }
-    Set-U32 -Buffer $idata -Offset $set.Descriptor -Value ([UInt32]([long]$idataRva + [long]$set.Lookup))
-    Set-U32 -Buffer $idata -Offset ($set.Descriptor + 4) -Value 0
-    Set-U32 -Buffer $idata -Offset ($set.Descriptor + 8) -Value 0
-    Set-U32 -Buffer $idata -Offset ($set.Descriptor + 12) -Value ([UInt32]([long]$idataRva + [long]$nameOffset))
-    Set-U32 -Buffer $idata -Offset ($set.Descriptor + 16) -Value ([UInt32]([long]$idataRva + [long]$set.Iat))
+        $descriptorOffset = [int]($descriptorBase + $set.Descriptor)
+    Set-U32 -Buffer $idata -Offset $descriptorOffset -Value ([UInt32]([long]$idataRva + [long]$set.Lookup))
+    Set-U32 -Buffer $idata -Offset ($descriptorOffset + 4) -Value 0
+    Set-U32 -Buffer $idata -Offset ($descriptorOffset + 8) -Value 0
+    Set-U32 -Buffer $idata -Offset ($descriptorOffset + 12) -Value ([UInt32]([long]$idataRva + [long]$nameOffset))
+    Set-U32 -Buffer $idata -Offset ($descriptorOffset + 16) -Value ([UInt32]([long]$idataRva + [long]$set.Iat))
     for ($apiIndex = 0; $apiIndex -lt $set.Names.Count; $apiIndex++) {
         $hintRva = [UInt64]$apiNameRvas[$set.Names[$apiIndex]]
         Set-U64 -Buffer $idata -Offset ($set.Lookup + ($apiIndex * 8)) -Value ([UInt64]$hintRva)
@@ -1421,7 +1554,7 @@ Set-U32 -Buffer $image -Offset ($opt + 52) -Value 0; Set-U32 -Buffer $image -Off
 Set-U16 -Buffer $image -Offset ($opt + 68) -Value 3; Set-U16 -Buffer $image -Offset ($opt + 70) -Value 0x0140
 Set-U64 -Buffer $image -Offset ($opt + 72) -Value ([UInt64]0x100000); Set-U64 -Buffer $image -Offset ($opt + 80) -Value ([UInt64]0x1000); Set-U64 -Buffer $image -Offset ($opt + 88) -Value ([UInt64]0x100000); Set-U64 -Buffer $image -Offset ($opt + 96) -Value ([UInt64]0x1000)
 Set-U32 -Buffer $image -Offset ($opt + 104) -Value 0; Set-U32 -Buffer $image -Offset ($opt + 108) -Value 16
-Set-U32 -Buffer $image -Offset ($opt + 120) -Value $idataRva; Set-U32 -Buffer $image -Offset ($opt + 124) -Value 0xB4
+Set-U32 -Buffer $image -Offset ($opt + 120) -Value ([UInt32]([long]$idataRva + [long]$descriptorBase)); Set-U32 -Buffer $image -Offset ($opt + 124) -Value $importDirectorySize
 Set-U32 -Buffer $image -Offset ($opt + 152) -Value $relocRva; Set-U32 -Buffer $image -Offset ($opt + 156) -Value 12
 Set-U32 -Buffer $image -Offset ($opt + 208) -Value ([UInt32]([long]$idataRva + 0x70)); Set-U32 -Buffer $image -Offset ($opt + 212) -Value 0x108
 $sectionText = 0x188

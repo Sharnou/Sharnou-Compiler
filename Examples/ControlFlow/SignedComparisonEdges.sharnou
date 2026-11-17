@@ -1,0 +1,17 @@
+let minimum = -2147483648;
+let maximum = 2147483647;
+if (minimum < maximum) {
+    print("signed less");
+}
+if (minimum <= minimum) {
+    print("minimum inclusive");
+}
+if (maximum > minimum) {
+    print("signed greater");
+}
+if (maximum >= maximum) {
+    print("maximum inclusive");
+}
+if (minimum != maximum) {
+    print("not equal");
+}
