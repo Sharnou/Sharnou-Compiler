@@ -94,7 +94,7 @@ function Invoke-PositiveCase {
     & $verifierPath -Path $output
     $lines = @(& $output 2>&1)
     $exitCode = $LASTEXITCODE
-    $actual = (($lines | ForEach-Object { [string]$_ }) -join [Environment]::NewLine).TrimEnd([char[]]@([char]13, [char]10))
+    $actual = (($lines | ForEach-Object { [string]$_ }) -join $nl).TrimEnd([char[]]@([char]13, [char]10))
     if ($exitCode -ne 0) { throw "Program exit code was $exitCode; output=[$actual]." }
     if (-not [string]::Equals($actual, [string]$Case.Expected, [StringComparison]::Ordinal)) {
         throw ("Output mismatch. Expected [{0}], received [{1}]." -f $Case.Expected, $actual)
