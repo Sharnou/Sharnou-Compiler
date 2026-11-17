@@ -161,7 +161,9 @@ while ($true) {
         if ($timestamp -ne 0 -or $forwarder -ne 0) { Fail-PE 'Null import descriptor is not fully zeroed.' }
         break
     }
-    if ($nameRva -eq 0 -or $firstThunk -eq 0) { Fail-PE 'Import descriptor has a missing name or IAT.' }
+    if ($nameRva -eq 0 -or $firstThunk -eq 0) {
+        Fail-PE ("Import descriptor index {0} has missing fields: OFT=0x{1:X8}, NameRva=0x{2:X8}, FirstThunk=0x{3:X8}, descriptorOffset=0x{4:X}." -f $descriptorIndex, $oft, $nameRva, $firstThunk, ($descriptorIndex * 20))
+    }
     $dllName = Read-AsciiZAtRva -Rva $nameRva -Sections $sections.ToArray() -Bytes $bytes
     $null = $foundDlls.Add($dllName)
     $lookupRva = if ($oft -ne 0) { $oft } else { $firstThunk }
