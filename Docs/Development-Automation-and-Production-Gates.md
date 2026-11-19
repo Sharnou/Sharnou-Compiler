@@ -107,8 +107,8 @@ Until these gates pass, label the project as Stage 0 bootstrap / pre-self-hostin
 
 The compiler is the foundation. The detailed IDE and Engine plans live in their own repositories:
 
-- Sharnou IDE: https://github.com/Sharnou/Sharnou-IDE — see Docs/IDE-Roadmap.md.
-- Sharnou Engine: https://github.com/Sharnou/Sharnou-Engine — see docs/PRODUCTION_ROADMAP.md.
+- Sharnou IDE: https://github.com/Sharnou/Sharnou-IDE - see Docs/IDE-Roadmap.md.
+- Sharnou Engine: https://github.com/Sharnou/Sharnou-Engine - see docs/PRODUCTION_ROADMAP.md.
 - Full compiler, runtime and game sequence: Docs/Compiler-Roadmap.md.
 
 The IDE and Engine must consume pinned compiler contracts and verified artifacts. Neither repository may silently substitute another compiler when the Sharnou compiler is incomplete.
