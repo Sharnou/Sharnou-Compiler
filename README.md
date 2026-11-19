@@ -2,6 +2,14 @@
 
 The repository contains the PowerShell/.NET Stage 0 native x64 bootstrap compiler. It emits AMD64 PE32+ images directly and does not invoke an external compiler, assembler, or linker.
 
+## Long-term renderer direction
+
+The accepted product target is a self-contained Sharnou compiler/runtime/IDE/engine stack capable of producing a complete high-performance 3D MMORPG, not merely opening a graphics window. The renderer roadmap covers procedural and imported 3D geometry, glTF/GLB scenes, KTX2 material textures, metallic-roughness PBR, normal/roughness/metallic/AO maps, directional/point/spot lighting, cascaded shadows, skeletal animation and blending, large environments and terrain, particles and atmospheric effects, HDR/post-processing, GPU instancing, and LOD.
+
+The design choice is a purpose-built Sharnou language and toolchain, not a C++-compatible toolchain. Sharnou owns its compiler, linker, runtime, asset pipeline, shader integration, engine APIs, and IDE workflow. The initial rendering backend is Windows x64 with D3D11/DXGI. No MSVC, Clang, Visual Studio, external assembler, or external linker is part of the build chain. Each renderer capability requires native runtime tests and real visual/performance evidence before being marked complete.
+
+See [Docs/Renderer-Roadmap-3D-MMORPG.md](Docs/Renderer-Roadmap-3D-MMORPG.md) for the complete architecture, subsystem details, implementation phases, acceptance gates, and definition of done.
+
 ## Milestone 7A - Control flow
 
 Stage 7A adds native if / else, while, and signed integer comparisons.
