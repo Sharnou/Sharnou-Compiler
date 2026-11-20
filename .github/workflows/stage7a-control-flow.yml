@@ -8,10 +8,21 @@ on:
   pull_request:
     branches:
       - Sharnou-Compiler
+  workflow_dispatch:
+  schedule:
+    - cron: "17 2 * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sharnou-compiler-stage7a-\${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   windows-stage7a:
     runs-on: windows-latest
+    timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@v4
