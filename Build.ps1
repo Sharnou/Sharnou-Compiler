@@ -35,6 +35,16 @@ try {
         $hash = (Get-FileHash -LiteralPath $output -Algorithm SHA256).Hash
         Write-Host "Build result: PASS - $output - SHA256 $hash" -ForegroundColor Green
     }
+    $agentSource = Join-Path $root 'Examples\DevAgent.sharnou'
+    $agentOutput = Join-Path $buildRoot 'SharnouDevAgent.exe'
+    if (-not (Test-Path -LiteralPath $agentSource -PathType Leaf)) { throw "DevAgent source is missing: $agentSource" }
+    if (Test-Path -LiteralPath $agentOutput) { Remove-Item -LiteralPath $agentOutput -Force }
+    Write-Host 'Building native SharnouDevAgent.exe ...'
+    & $compiler -Source $agentSource -Output $agentOutput
+    if (-not (Test-Path -LiteralPath $agentOutput -PathType Leaf)) { throw "Compiler did not produce $agentOutput" }
+    & $verifier -Path $agentOutput
+    $agentHash = (Get-FileHash -LiteralPath $agentOutput -Algorithm SHA256).Hash
+    Write-Host "Build result: PASS - $agentOutput - SHA256 $agentHash" -ForegroundColor Green
     Write-Host 'Build result: PASS' -ForegroundColor Green
 } catch {
     Write-Host "Build result: FAIL - $($_.Exception.Message)" -ForegroundColor Red
