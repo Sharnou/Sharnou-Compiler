@@ -109,6 +109,11 @@ try {
     # This keeps diagnosis tied to the original archived test instead of guessing from its label.
     $stage2Script = Join-Path $workRoot 'Tests\Test-Stage2.ps1'
     $stage2Matches = Select-String -LiteralPath $stage2Script -Pattern 'Unsupported statement syntax' -Context 12, 20
+    $unsupportedSyntaxPath = Join-Path $workRoot 'Tests\UnsupportedSyntax.sharnou'
+    if (Test-Path -LiteralPath $unsupportedSyntaxPath -PathType Leaf) {
+        Write-Host 'Archived UnsupportedSyntax.sharnou source:'
+        Write-Host (Get-Content -LiteralPath $unsupportedSyntaxPath -Raw)
+    }
     foreach ($match in $stage2Matches) {
         Write-Host ('Stage 2 diagnostic context at line ' + $match.LineNumber + ':')
         Write-Host ($match.Context.PreContext -join [Environment]::NewLine)
