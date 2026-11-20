@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "baseline_id": "Sharnou Compiler Milestone 6 historical regression suite",
+  "source_archive": {
+    "filename": "Sharnou-Compiler-Milestone6-D3D11-Release.zip",
+    "sha256": "0b6bf15445a5dfd8cbf93450af7fd2f5fd6239d4ed082ab18b09878a94b8b164",
+    "size_bytes": 95939
+  },
+  "source_sha256_manifest": {
+    "filename": "SHA256SUMS.txt",
+    "sha256": "61539cb577b3c116d25739cdb8286e3de38410af1d1a39fa1418893799f3c9c9"
+  },
+  "bundle": {
+    "filename": "M6-83Cases.payload.json.gz",
+    "sha256": "3dd1d7417874159c0bc625edbbc1e8cee1ae7d8a6ea42f30b4dd80ba92102748",
+    "compressed_size_bytes": 15129,
+    "base64_file": "M6-83Cases.payload.json.gz.b64",
+    "file_count": 88
+  },
+  "suites": [
+    { "path": "Tests/Test-Stage2.ps1", "cases": 25 },
+    { "path": "Tests/Test-Stage4.ps1", "cases": 20 },
+    { "path": "Tests/Test-PEVerifier.ps1", "cases": 4 },
+    { "path": "Tests/Test-Stage5.ps1", "cases": 25 },
+    { "path": "Tests/Test-Stage6.ps1", "cases": 9 }
+  ],
+  "total_cases": 83,
+  "members_verified_against_original_sha256_manifest": true
+}
