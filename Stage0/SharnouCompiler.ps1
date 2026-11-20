@@ -119,12 +119,12 @@ function Initialize-Tokens {
         }
         if (($i + 1) -lt $Text.Length) {
             $pair = $Text.Substring($i, 2)
-            if (@('<=', '>=', '==', '!=') -contains $pair) {
+            if (@('<=', '>=', '==', '!=', '&&', '||') -contains $pair) {
                 Add-Token -Kind 'Symbol' -Text $pair -Value $pair -Line $line -Column $column
                 $i += 2; $column += 2; continue
             }
         }
-        if ('+-*/=();{},<>'.Contains([string]$ch)) {
+        if ('+-*/=();{},<>!'.Contains([string]$ch)) {
             Add-Token -Kind 'Symbol' -Text ([string]$ch) -Value ([string]$ch) -Line $line -Column $column
             $i++; $column++; continue
         }
@@ -150,6 +150,7 @@ function New-Statement {
     return [pscustomobject]@{ Kind = $Kind; Name = $Name; Type = $Type; Slot = $Slot; Expression = $Expression; Statements = $Statements; ElseStatements = $ElseStatements; Line = $Line; Column = $Column }
 }
 function New-IntegerNode { param([long] $Value, [int] $Line, [int] $Column) return (New-AstNode -Kind 'Integer' -Type 'Integer' -Value $Value -Line $Line -Column $Column) }
+function New-BooleanNode { param([bool] $Value, [int] $Line, [int] $Column) return (New-AstNode -Kind 'Boolean' -Type 'Boolean' -Value $Value -Line $Line -Column $Column) }
 function New-StringNode { param([string] $Value, [int] $Line, [int] $Column) return (New-AstNode -Kind 'String' -Type 'String' -Value $Value -Line $Line -Column $Column) }
 function Push-Scope { $script:Scopes.Add([System.Collections.Generic.Dictionary[string, object]]::new([System.StringComparer]::Ordinal)) }
 function Pop-Scope { if ($script:Scopes.Count -le 0) { throw 'Internal scope underflow.' }; $script:Scopes.RemoveAt($script:Scopes.Count - 1) }
@@ -179,6 +180,10 @@ function Parse-Primary {
         return (New-IntegerNode -Value $number -Line $token.Line -Column $token.Column)
     }
     if ($token.Kind -eq 'String') { Move-NextToken | Out-Null; return (New-StringNode -Value ([string]$token.Value) -Line $token.Line -Column $token.Column) }
+    if ($token.Kind -eq 'Identifier' -and ($token.Text -ceq 'true' -or $token.Text -ceq 'false')) {
+        Move-NextToken | Out-Null
+        return (New-BooleanNode -Value ([bool]($token.Text -ceq 'true')) -Line $token.Line -Column $token.Column)
+    }
     if ($token.Kind -eq 'Identifier') {
         Move-NextToken | Out-Null
         $name = [string]$token.Text
@@ -218,6 +223,12 @@ function Parse-Primary {
 }
 function Parse-Unary {
     $token = Get-CurrentToken
+    if ($token.Text -ceq '!') {
+        $operator = Move-NextToken
+        $operand = Parse-Unary
+        if ($operand.Type -ne 'Boolean') { Throw-SourceError -Line $operator.Line -Column $operator.Column -Message "Logical NOT requires a Boolean operand." }
+        return (New-AstNode -Kind 'Not' -Type 'Boolean' -Operator '!' -Operand $operand -Line $operator.Line -Column $operator.Column)
+    }
     if ($token.Text -ceq '+' -or $token.Text -ceq '-') {
         $operator = Move-NextToken; $next = Get-CurrentToken
         if ($operator.Text -ceq '-' -and $next.Kind -eq 'Integer' -and $next.Text -ceq '2147483648') { Move-NextToken | Out-Null; return (New-IntegerNode -Value ([long]([int]::MinValue)) -Line $operator.Line -Column $operator.Column) }
@@ -245,44 +256,91 @@ function Parse-AdditiveExpression {
     }
     return $value
 }
-function Parse-Expression {
+function Parse-ComparisonExpression {
     $left = Parse-AdditiveExpression
     $operatorToken = Get-CurrentToken
     $comparisonOperators = @('<', '>', '<=', '>=', '==', '!=')
     if ($comparisonOperators -contains $operatorToken.Text) {
         $operator = Move-NextToken
         $right = Parse-AdditiveExpression
-        if ($left.Type -ne 'Integer' -or $right.Type -ne 'Integer') {
-            Throw-SourceError -Line $operator.Line -Column $operator.Column -Message ("Comparison '{0}' requires integer operands." -f $operator.Text)
+        if ($left.Type -ne $right.Type -or @('Integer', 'Boolean') -notcontains $left.Type) {
+            Throw-SourceError -Line $operator.Line -Column $operator.Column -Message ("Comparison '{0}' requires matching integer or Boolean operands." -f $operator.Text)
+        }
+        if ($left.Type -eq 'Boolean' -and @('==', '!=') -notcontains $operator.Text) {
+            Throw-SourceError -Line $operator.Line -Column $operator.Column -Message 'Boolean values support only == and != comparisons.'
         }
         $next = Get-CurrentToken
         if ($comparisonOperators -contains $next.Text) {
             Throw-SourceError -Line $next.Line -Column $next.Column -Message 'Chained comparisons are not supported; use a nested if or while statement.'
         }
-        return (New-AstNode -Kind 'Comparison' -Type 'Integer' -Operator ([string]$operator.Text) -Left $left -Right $right -Line $operator.Line -Column $operator.Column)
+        return (New-AstNode -Kind 'Comparison' -Type 'Boolean' -Operator ([string]$operator.Text) -Left $left -Right $right -Line $operator.Line -Column $operator.Column)
     }
     return $left
+}
+function Parse-LogicalAndExpression {
+    $value = Parse-ComparisonExpression
+    while (Test-CurrentText '&&') {
+        $operator = Move-NextToken
+        $right = Parse-ComparisonExpression
+        if ($value.Type -ne 'Boolean' -or $right.Type -ne 'Boolean') { Throw-SourceError -Line $operator.Line -Column $operator.Column -Message 'Logical AND requires Boolean operands.' }
+        $value = New-AstNode -Kind 'Logical' -Type 'Boolean' -Operator '&&' -Left $value -Right $right -Line $operator.Line -Column $operator.Column
+    }
+    return $value
+}
+function Parse-LogicalOrExpression {
+    $value = Parse-LogicalAndExpression
+    while (Test-CurrentText '||') {
+        $operator = Move-NextToken
+        $right = Parse-LogicalAndExpression
+        if ($value.Type -ne 'Boolean' -or $right.Type -ne 'Boolean') { Throw-SourceError -Line $operator.Line -Column $operator.Column -Message 'Logical OR requires Boolean operands.' }
+        $value = New-AstNode -Kind 'Logical' -Type 'Boolean' -Operator '||' -Left $value -Right $right -Line $operator.Line -Column $operator.Column
+    }
+    return $value
+}
+function Parse-Expression {
+    return (Parse-LogicalOrExpression)
 }
 function Get-ConstantValue {
     param([object] $Node)
     if ($Node.Kind -eq 'Integer') { return [pscustomobject]@{ Known = $true; Type = 'Integer'; Value = [long]$Node.Value } }
+    if ($Node.Kind -eq 'Boolean') { return [pscustomobject]@{ Known = $true; Type = 'Boolean'; Value = [bool]$Node.Value } }
     if ($Node.Kind -eq 'String') { return [pscustomobject]@{ Known = $true; Type = 'String'; Value = [string]$Node.Value } }
     if ($Node.Kind -eq 'Variable' -or $Node.Kind -eq 'Call') { return [pscustomobject]@{ Known = $false; Type = $Node.Type; Value = $null } }
     if ($Node.Kind -eq 'Unary') {
         $child = Get-ConstantValue -Node $Node.Operand
         if (-not $child.Known) { return [pscustomobject]@{ Known = $false; Type = 'Integer'; Value = $null } }
-        $number = [long]$child.Value; if ($Node.Operator -eq '-') { $number = -$number }
+        $number = [long]$child.Value
+        if ($Node.Operator -eq '-') { $number = -$number }
         if ($number -lt [int]::MinValue -or $number -gt [int]::MaxValue) { Throw-SourceError -Line $Node.Line -Column $Node.Column -Message 'Integer result is outside the supported signed 32-bit range.' }
         return [pscustomobject]@{ Known = $true; Type = 'Integer'; Value = $number }
+    }
+    if ($Node.Kind -eq 'Not') {
+        $child = Get-ConstantValue -Node $Node.Operand
+        if (-not $child.Known) { return [pscustomobject]@{ Known = $false; Type = 'Boolean'; Value = $null } }
+        return [pscustomobject]@{ Known = $true; Type = 'Boolean'; Value = (-not [bool]$child.Value) }
+    }
+    if ($Node.Kind -eq 'Logical') {
+        $left = Get-ConstantValue -Node $Node.Left
+        if (-not $left.Known) {
+            $null = Get-ConstantValue -Node $Node.Right
+            return [pscustomobject]@{ Known = $false; Type = 'Boolean'; Value = $null }
+        }
+        $leftBoolean = [bool]$left.Value
+        if ($Node.Operator -eq '&&' -and -not $leftBoolean) { return [pscustomobject]@{ Known = $true; Type = 'Boolean'; Value = $false } }
+        if ($Node.Operator -eq '||' -and $leftBoolean) { return [pscustomobject]@{ Known = $true; Type = 'Boolean'; Value = $true } }
+        $right = Get-ConstantValue -Node $Node.Right
+        if (-not $right.Known) { return [pscustomobject]@{ Known = $false; Type = 'Boolean'; Value = $null } }
+        if ($Node.Operator -eq '&&') { $result = ($leftBoolean -and [bool]$right.Value) }
+        elseif ($Node.Operator -eq '||') { $result = ($leftBoolean -or [bool]$right.Value) }
+        else { Throw-SourceError -Line $Node.Line -Column $Node.Column -Message ("Unsupported logical operator '{0}'." -f $Node.Operator) }
+        return [pscustomobject]@{ Known = $true; Type = 'Boolean'; Value = [bool]$result }
     }
     if ($Node.Kind -eq 'Comparison') {
         $left = Get-ConstantValue -Node $Node.Left
         $right = Get-ConstantValue -Node $Node.Right
-        if (-not $left.Known -or -not $right.Known) {
-            return [pscustomobject]@{ Known = $false; Type = 'Integer'; Value = $null }
-        }
-        $a = [long]$left.Value
-        $b = [long]$right.Value
+        if (-not $left.Known -or -not $right.Known) { return [pscustomobject]@{ Known = $false; Type = 'Boolean'; Value = $null } }
+        if ($Node.Left.Type -eq 'Boolean') { $a = [bool]$left.Value; $b = [bool]$right.Value }
+        else { $a = [long]$left.Value; $b = [long]$right.Value }
         switch ($Node.Operator) {
             '<'  { $result = ($a -lt $b) }
             '>'  { $result = ($a -gt $b) }
@@ -292,10 +350,11 @@ function Get-ConstantValue {
             '!=' { $result = ($a -ne $b) }
             default { Throw-SourceError -Line $Node.Line -Column $Node.Column -Message ("Unsupported comparison operator '{0}'." -f $Node.Operator) }
         }
-        return [pscustomobject]@{ Known = $true; Type = 'Integer'; Value = [long]([int]$result) }
+        return [pscustomobject]@{ Known = $true; Type = 'Boolean'; Value = [bool]$result }
     }
     if ($Node.Kind -eq 'Binary') {
-        $left = Get-ConstantValue -Node $Node.Left; $right = Get-ConstantValue -Node $Node.Right
+        $left = Get-ConstantValue -Node $Node.Left
+        $right = Get-ConstantValue -Node $Node.Right
         if (-not $left.Known -or -not $right.Known) { return [pscustomobject]@{ Known = $false; Type = 'Integer'; Value = $null } }
         $a = [long]$left.Value; $b = [long]$right.Value
         switch ($Node.Operator) {
@@ -358,14 +417,14 @@ function Collect-FunctionHeaders {
             $functionStart = $i; $fnToken = $token; $i++
             if ($i -ge $tokens.Length -or $tokens[$i].Kind -ne 'Identifier') { $script:SourceDisplay = $Module.Path; Throw-SourceError -Line $fnToken.Line -Column $fnToken.Column -Message 'Expected a function name after fn.' }
             $nameToken = $tokens[$i]; $name = [string]$nameToken.Text; $i++
-            if (@('print', 'let', 'fn', 'return', 'import', 'if', 'else', 'while') -contains $name) { $script:SourceDisplay = $Module.Path; Throw-SourceError -Line $nameToken.Line -Column $nameToken.Column -Message 'Reserved keyword cannot be used as a function name.' }
+            if (@('print', 'let', 'fn', 'return', 'import', 'if', 'else', 'while', 'true', 'false', 'break', 'continue') -contains $name) { $script:SourceDisplay = $Module.Path; Throw-SourceError -Line $nameToken.Line -Column $nameToken.Column -Message 'Reserved keyword cannot be used as a function name.' }
             if ($i -ge $tokens.Length -or $tokens[$i].Text -cne '(') { $script:SourceDisplay = $Module.Path; Throw-SourceError -Line $nameToken.Line -Column $nameToken.Column -Message "Expected '(' after function name." }; $i++
             $params = [System.Collections.Generic.List[object]]::new(); $seen = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
             if ($i -lt $tokens.Length -and $tokens[$i].Text -cne ')') {
                 while ($true) {
                     if ($i -ge $tokens.Length -or $tokens[$i].Kind -ne 'Identifier') { $script:SourceDisplay = $Module.Path; $cur = $tokens[[Math]::Min($i, $tokens.Length - 1)]; Throw-SourceError -Line $cur.Line -Column $cur.Column -Message 'Expected a parameter name.' }
                     $paramToken = $tokens[$i]
-                    if (@('print', 'let', 'fn', 'return', 'import', 'if', 'else', 'while') -contains $paramToken.Text) { $script:SourceDisplay = $Module.Path; Throw-SourceError -Line $paramToken.Line -Column $paramToken.Column -Message 'Reserved keyword cannot be used as a parameter name.' }
+                    if (@('print', 'let', 'fn', 'return', 'import', 'if', 'else', 'while', 'true', 'false', 'break', 'continue') -contains $paramToken.Text) { $script:SourceDisplay = $Module.Path; Throw-SourceError -Line $paramToken.Line -Column $paramToken.Column -Message 'Reserved keyword cannot be used as a parameter name.' }
                     if (-not $seen.Add([string]$paramToken.Text)) { $script:SourceDisplay = $Module.Path; Throw-SourceError -Line $paramToken.Line -Column $paramToken.Column -Message ("Duplicate parameter '{0}'." -f $paramToken.Text) }
                     $params.Add($paramToken); $i++
                     if ($i -lt $tokens.Length -and $tokens[$i].Text -ceq ',') { $i++; continue }; break
@@ -416,7 +475,7 @@ function Parse-Statement {
         Move-NextToken | Out-Null
         $null = Expect-Text -Text '(' -Description "'(' after if"
         $condition = Parse-Expression
-        if ($condition.Type -ne 'Integer') { Throw-SourceError -Line $token.Line -Column $token.Column -Message 'if condition must be an integer expression or comparison.' }
+        if (@('Integer', 'Boolean') -notcontains $condition.Type) { Throw-SourceError -Line $token.Line -Column $token.Column -Message 'if condition must be an integer or Boolean expression.' }
         Validate-ConstantArithmetic -Node $condition
         $null = Expect-Text -Text ')' -Description "')' after if condition"
         $thenBlock = Parse-BlockStatement
@@ -432,11 +491,20 @@ function Parse-Statement {
         Move-NextToken | Out-Null
         $null = Expect-Text -Text '(' -Description "'(' after while"
         $condition = Parse-Expression
-        if ($condition.Type -ne 'Integer') { Throw-SourceError -Line $token.Line -Column $token.Column -Message 'while condition must be an integer expression or comparison.' }
+        if (@('Integer', 'Boolean') -notcontains $condition.Type) { Throw-SourceError -Line $token.Line -Column $token.Column -Message 'while condition must be an integer or Boolean expression.' }
         Validate-ConstantArithmetic -Node $condition
         $null = Expect-Text -Text ')' -Description "')' after while condition"
+        $script:LoopDepth++
         $body = Parse-BlockStatement
+        $script:LoopDepth--
         return (New-Statement -Kind 'While' -Expression $condition -Statements @($body.Statements) -Line $token.Line -Column $token.Column)
+    }
+    if ($token.Text -ceq 'break' -or $token.Text -ceq 'continue') {
+        if ($script:LoopDepth -le 0) { Throw-SourceError -Line $token.Line -Column $token.Column -Message ("'{0}' is only valid inside a while loop." -f $token.Text) }
+        Move-NextToken | Out-Null
+        $null = Expect-Text -Text ';' -Description "';' after loop-control statement"
+        if ($token.Text -ceq 'break') { return (New-Statement -Kind 'Break' -Line $token.Line -Column $token.Column) }
+        return (New-Statement -Kind 'Continue' -Line $token.Line -Column $token.Column)
     }
     if ($token.Text -ceq 'print') {
         Move-NextToken | Out-Null; $null = Expect-Text -Text '(' -Description "'(' after print"; $expression = Parse-Expression; Validate-ConstantArithmetic -Node $expression; $null = Expect-Text -Text ')' -Description "')' after print expression"; $null = Expect-Text -Text ';' -Description "';' after print statement"
@@ -444,7 +512,7 @@ function Parse-Statement {
     }
     if ($token.Text -ceq 'let') {
         Move-NextToken | Out-Null; $nameToken = Get-CurrentToken
-        if ($nameToken.Kind -ne 'Identifier' -or @('print', 'let', 'fn', 'return', 'import', 'if', 'else', 'while') -contains $nameToken.Text) { Throw-SourceError -Line $nameToken.Line -Column $nameToken.Column -Message "Expected a variable name after 'let'." }
+        if ($nameToken.Kind -ne 'Identifier' -or @('print', 'let', 'fn', 'return', 'import', 'if', 'else', 'while', 'true', 'false', 'break', 'continue') -contains $nameToken.Text) { Throw-SourceError -Line $nameToken.Line -Column $nameToken.Column -Message "Expected a variable name after 'let'." }
         Move-NextToken | Out-Null; $name = [string]$nameToken.Text
         $null = Expect-Text -Text '=' -Description "'=' in variable declaration"
         $expression = Parse-Expression; Validate-ConstantArithmetic -Node $expression; $null = Expect-Text -Text ';' -Description "';' after variable declaration"
@@ -453,13 +521,12 @@ function Parse-Statement {
     }
     if ($token.Text -ceq 'return') {
         if ($null -eq $script:CurrentFunction) { Throw-SourceError -Line $token.Line -Column $token.Column -Message 'return is only valid inside a function.' }
-        if ($script:BlockDepth -ne 0) { Throw-SourceError -Line $token.Line -Column $token.Column -Message 'return must appear at the top level of a function body in the current language subset.' }
         Move-NextToken | Out-Null; $expression = Parse-Expression; Validate-ConstantArithmetic -Node $expression
         if ($expression.Type -ne 'Integer') { Throw-SourceError -Line $token.Line -Column $token.Column -Message 'Function return values must be integers in the current language subset.' }
         $null = Expect-Text -Text ';' -Description "';' after return statement"
         return (New-Statement -Kind 'Return' -Expression $expression -Line $token.Line -Column $token.Column)
     }
-    if (@('print', 'let', 'fn', 'return', 'import', 'if', 'else', 'while') -contains $token.Text) { Throw-SourceError -Line $token.Line -Column $token.Column -Message 'Reserved keyword cannot be used as a variable name.' }
+    if (@('print', 'let', 'fn', 'return', 'import', 'if', 'else', 'while', 'true', 'false', 'break', 'continue') -contains $token.Text) { Throw-SourceError -Line $token.Line -Column $token.Column -Message 'Reserved keyword cannot be used as a variable name.' }
     $nameToken = Move-NextToken; $name = [string]$nameToken.Text
     if (-not (Test-CurrentText '=')) { $next = Get-CurrentToken; Throw-SourceError -Line $next.Line -Column $next.Column -Message ("Expected '=' after variable name '{0}'; only assignment, declarations, and print statements are supported." -f $name) }
     $symbol = Find-Variable -Name $name
@@ -468,8 +535,19 @@ function Parse-Statement {
     if ($symbol.Type -ne $expression.Type) { Throw-SourceError -Line $nameToken.Line -Column $nameToken.Column -Message ("Assignment changes variable '{0}' from {1} to {2}; variable types are fixed after declaration." -f $name, $symbol.Type, $expression.Type) }
     return (New-Statement -Kind 'Assign' -Name $name -Type $symbol.Type -Slot $symbol.Slot -Expression $expression -Line $nameToken.Line -Column $nameToken.Column)
 }
+function Test-StatementsAlwaysReturn {
+    param([object[]] $Statements)
+    foreach ($statement in $Statements) {
+        if ($statement.Kind -eq 'Return') { return $true }
+        if ($statement.Kind -eq 'Block' -and (Test-StatementsAlwaysReturn -Statements $statement.Statements)) { return $true }
+        if ($statement.Kind -eq 'If' -and $statement.ElseStatements.Count -gt 0 -and
+            (Test-StatementsAlwaysReturn -Statements $statement.Statements) -and
+            (Test-StatementsAlwaysReturn -Statements $statement.ElseStatements)) { return $true }
+    }
+    return $false
+}
 function Parse-FunctionDeclaration {
-    $oldScopes = $script:Scopes; $oldContext = $script:ActiveContext; $oldFunction = $script:CurrentFunction; $oldBlockDepth = $script:BlockDepth
+    $oldScopes = $script:Scopes; $oldContext = $script:ActiveContext; $oldFunction = $script:CurrentFunction; $oldBlockDepth = $script:BlockDepth; $oldLoopDepth = $script:LoopDepth
     $fnToken = Move-NextToken; $nameToken = Move-NextToken; $name = [string]$nameToken.Text
     if (-not $script:Functions.ContainsKey($name)) { Throw-SourceError -Line $nameToken.Line -Column $nameToken.Column -Message ("Function '{0}' was not registered during declaration scan." -f $name) }
     $func = $script:Functions[$name]
@@ -488,7 +566,7 @@ function Parse-FunctionDeclaration {
     if ($paramNames.Count -ne $func.Parameters.Count) { Throw-SourceError -Line $nameToken.Line -Column $nameToken.Column -Message 'Function header changed between declaration scan and parse.' }
     for ($i = 0; $i -lt $paramNames.Count; $i++) { if ($paramNames[$i] -cne $func.Parameters[$i].Text) { Throw-SourceError -Line $nameToken.Line -Column $nameToken.Column -Message 'Function parameter list changed between declaration scan and parse.' } }
     $open = Expect-Text -Text '{' -Description "'{' before function body"
-    $script:Scopes = [System.Collections.Generic.List[object]]::new(); Push-Scope; $script:BlockDepth = 0; $script:CurrentFunction = $func
+    $script:Scopes = [System.Collections.Generic.List[object]]::new(); Push-Scope; $script:BlockDepth = 0; $script:LoopDepth = 0; $script:CurrentFunction = $func
     $context = [pscustomobject]@{ Name = $name; SlotCount = 0; TempSlots = 0; ScratchPosition = 0; FrameSize = 0; Statements = [System.Collections.Generic.List[object]]::new() }
     $script:ActiveContext = $context
     for ($i = 0; $i -lt $paramNames.Count; $i++) {
@@ -496,22 +574,17 @@ function Parse-FunctionDeclaration {
         $symbol = Declare-Variable -Name $paramNames[$i] -Type 'Integer' -Line $pt.Line -Column $pt.Column
         if ($symbol.Slot -ne $i) { throw 'Internal parameter slot assignment error.' }
     }
-    $returnExpression = $null
     while (-not (Test-CurrentText '}')) {
         $current = Get-CurrentToken
         if ($current.Kind -eq 'EOF') { Throw-SourceError -Line $open.Line -Column $open.Column -Message 'Unterminated function body; expected }.' }
-        $statement = Parse-Statement
-        if ($statement.Kind -eq 'Return') {
-            $returnExpression = $statement.Expression
-            if (-not (Test-CurrentText '}')) { $next = Get-CurrentToken; Throw-SourceError -Line $next.Line -Column $next.Column -Message 'return must be the final statement in a function in the current language subset.' }
-            break
-        }
-        $context.Statements.Add($statement)
+        $context.Statements.Add((Parse-Statement))
     }
     $null = Expect-Text -Text '}' -Description "'}' after function body"
-    if ($null -eq $returnExpression) { Throw-SourceError -Line $nameToken.Line -Column $nameToken.Column -Message ("Function '{0}' must end with 'return integerExpression;'." -f $name) }
-    $func.Context = $context; $func.BodyStatements = $context.Statements.ToArray(); $func.ReturnExpression = $returnExpression
-    $script:Scopes = $oldScopes; $script:ActiveContext = $oldContext; $script:CurrentFunction = $oldFunction; $script:BlockDepth = $oldBlockDepth
+    if (-not (Test-StatementsAlwaysReturn -Statements $context.Statements.ToArray())) {
+        Throw-SourceError -Line $nameToken.Line -Column $nameToken.Column -Message ("Function '{0}' must return an integer on every control-flow path." -f $name)
+    }
+    $func.Context = $context; $func.BodyStatements = $context.Statements.ToArray(); $func.ReturnExpression = $null
+    $script:Scopes = $oldScopes; $script:ActiveContext = $oldContext; $script:CurrentFunction = $oldFunction; $script:BlockDepth = $oldBlockDepth; $script:LoopDepth = $oldLoopDepth
 }
 function Parse-Module {
     param([object] $Module)
@@ -528,8 +601,8 @@ function Get-ExpressionNodeCount {
     param([object] $Node)
     if ($null -eq $Node) { return 0 }
     $count = 1
-    if ($Node.Kind -eq 'Binary' -or $Node.Kind -eq 'Comparison') { $count += (Get-ExpressionNodeCount -Node $Node.Left); $count += (Get-ExpressionNodeCount -Node $Node.Right) }
-    elseif ($Node.Kind -eq 'Unary') { $count += (Get-ExpressionNodeCount -Node $Node.Operand) }
+    if ($Node.Kind -eq 'Binary' -or $Node.Kind -eq 'Comparison' -or $Node.Kind -eq 'Logical') { $count += (Get-ExpressionNodeCount -Node $Node.Left); $count += (Get-ExpressionNodeCount -Node $Node.Right) }
+    elseif ($Node.Kind -eq 'Unary' -or $Node.Kind -eq 'Not') { $count += (Get-ExpressionNodeCount -Node $Node.Operand) }
     elseif ($Node.Kind -eq 'Call') { foreach ($arg in $Node.Arguments) { $count += (Get-ExpressionNodeCount -Node $arg) } }
     return [int]$count
 }
@@ -1156,11 +1229,47 @@ function Emit-IntegerExpression {
     param([object] $Node)
     switch ($Node.Kind) {
         'Integer' { Emit-Bytes -Bytes ([byte[]]@(0xB8)); Emit-I32 -Value ([long]$Node.Value); return }
+        'Boolean' { Emit-Bytes -Bytes ([byte[]]@(0xB8)); if ([bool]$Node.Value) { Emit-I32 -Value 1 } else { Emit-I32 -Value 0 }; return }
         'Variable' {
-            if ($Node.Type -ne 'Integer') { Throw-SourceError -Line $Node.Line -Column $Node.Column -Message 'Internal type error: integer expression expected.' }
+            if (@('Integer', 'Boolean') -notcontains $Node.Type) { Throw-SourceError -Line $Node.Line -Column $Node.Column -Message 'Internal type error: integer or Boolean expression expected.' }
             Emit-LoadEaxFrame -SlotPosition (0x80 + ([int]$Node.Slot * 16)); return
         }
         'Unary' { Emit-IntegerExpression -Node $Node.Operand; if ($Node.Operator -eq '-') { Emit-Bytes -Bytes ([byte[]]@(0xF7, 0xD8)); Emit-JumpConditional -ConditionCode 0x80 -Label '__runtime_fail' }; return }
+        'Not' {
+            Emit-IntegerExpression -Node $Node.Operand
+            Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0, 0x0F, 0x94, 0xC0, 0x0F, 0xB6, 0xC0))
+            return
+        }
+        'Logical' {
+            $shortLabel = New-UniqueLabel -Prefix 'logical_short'
+            $doneLabel = New-UniqueLabel -Prefix 'logical_done'
+            Emit-IntegerExpression -Node $Node.Left
+            Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
+            if ($Node.Operator -eq '&&') {
+                Emit-JumpConditional -ConditionCode 0x84 -Label $shortLabel
+                Emit-IntegerExpression -Node $Node.Right
+                Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
+                Emit-JumpConditional -ConditionCode 0x84 -Label $shortLabel
+                Emit-Bytes -Bytes ([byte[]]@(0xB8, 0x01, 0x00, 0x00, 0x00))
+                Emit-Jump -Label $doneLabel
+                Mark-CodeLabel -Label $shortLabel
+                Emit-Bytes -Bytes ([byte[]]@(0x31, 0xC0))
+                Mark-CodeLabel -Label $doneLabel
+            } elseif ($Node.Operator -eq '||') {
+                Emit-JumpConditional -ConditionCode 0x85 -Label $shortLabel
+                Emit-IntegerExpression -Node $Node.Right
+                Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
+                Emit-JumpConditional -ConditionCode 0x85 -Label $shortLabel
+                Emit-Bytes -Bytes ([byte[]]@(0x31, 0xC0))
+                Emit-Jump -Label $doneLabel
+                Mark-CodeLabel -Label $shortLabel
+                Emit-Bytes -Bytes ([byte[]]@(0xB8, 0x01, 0x00, 0x00, 0x00))
+                Mark-CodeLabel -Label $doneLabel
+            } else {
+                Throw-SourceError -Line $Node.Line -Column $Node.Column -Message ("Unsupported logical operator '{0}'." -f $Node.Operator)
+            }
+            return
+        }
         'Comparison' {
             Emit-IntegerExpression -Node $Node.Left
             $tempSlot = Get-TempSlotPosition -Depth $script:TempDepth
@@ -1257,16 +1366,31 @@ function Emit-Statement {
     param([object] $Statement)
     switch ($Statement.Kind) {
         'Let' {
-            if ($Statement.Type -eq 'Integer') { Emit-IntegerExpression -Node $Statement.Expression; Emit-StoreEaxFrame -SlotPosition (0x80 + ([int]$Statement.Slot * 16)) }
-            else { Emit-StringExpression -Node $Statement.Expression; $slot = 0x80 + ([int]$Statement.Slot * 16); Emit-StoreRaxFrame -SlotPosition $slot; Emit-StoreEdxFrame -SlotPosition ($slot + 8) }
+            if ($Statement.Type -eq 'String') { Emit-StringExpression -Node $Statement.Expression; $slot = 0x80 + ([int]$Statement.Slot * 16); Emit-StoreRaxFrame -SlotPosition $slot; Emit-StoreEdxFrame -SlotPosition ($slot + 8) }
+            else { Emit-IntegerExpression -Node $Statement.Expression; Emit-StoreEaxFrame -SlotPosition (0x80 + ([int]$Statement.Slot * 16)) }
             return
         }
         'Assign' {
-            if ($Statement.Type -eq 'Integer') { Emit-IntegerExpression -Node $Statement.Expression; Emit-StoreEaxFrame -SlotPosition (0x80 + ([int]$Statement.Slot * 16)) }
-            else { Emit-StringExpression -Node $Statement.Expression; $slot = 0x80 + ([int]$Statement.Slot * 16); Emit-StoreRaxFrame -SlotPosition $slot; Emit-StoreEdxFrame -SlotPosition ($slot + 8) }
+            if ($Statement.Type -eq 'String') { Emit-StringExpression -Node $Statement.Expression; $slot = 0x80 + ([int]$Statement.Slot * 16); Emit-StoreRaxFrame -SlotPosition $slot; Emit-StoreEdxFrame -SlotPosition ($slot + 8) }
+            else { Emit-IntegerExpression -Node $Statement.Expression; Emit-StoreEaxFrame -SlotPosition (0x80 + ([int]$Statement.Slot * 16)) }
             return
         }
-        'Print' { if ($Statement.Expression.Type -eq 'Integer') { Emit-PrintInteger -Node $Statement.Expression } else { Emit-PrintString -Node $Statement.Expression }; return }
+        'Print' { if ($Statement.Expression.Type -eq 'String') { Emit-PrintString -Node $Statement.Expression } else { Emit-PrintInteger -Node $Statement.Expression }; return }
+        'Return' {
+            Emit-IntegerExpression -Node $Statement.Expression
+            Emit-Epilogue
+            return
+        }
+        'Break' {
+            if ($script:EmitLoopStack.Count -le 0) { throw 'Internal code-generation error: break has no active loop target.' }
+            Emit-Jump -Label $script:EmitLoopStack[$script:EmitLoopStack.Count - 1].Done
+            return
+        }
+        'Continue' {
+            if ($script:EmitLoopStack.Count -le 0) { throw 'Internal code-generation error: continue has no active loop target.' }
+            Emit-Jump -Label $script:EmitLoopStack[$script:EmitLoopStack.Count - 1].Start
+            return
+        }
         'Block' { foreach ($child in $Statement.Statements) { Emit-Statement -Statement $child }; return }
         'If' {
             $elseLabel = New-UniqueLabel -Prefix 'if_else'
@@ -1294,7 +1418,12 @@ function Emit-Statement {
             Emit-IntegerExpression -Node $Statement.Expression
             Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0)) # test eax,eax
             Emit-JumpConditional -ConditionCode 0x84 -Label $loopDone # jz done
-            foreach ($child in $Statement.Statements) { Emit-Statement -Statement $child }
+            $script:EmitLoopStack.Add([pscustomobject]@{ Start = $loopStart; Done = $loopDone })
+            try {
+                foreach ($child in $Statement.Statements) { Emit-Statement -Statement $child }
+            } finally {
+                $script:EmitLoopStack.RemoveAt($script:EmitLoopStack.Count - 1)
+            }
             Emit-Jump -Label $loopStart
             Mark-CodeLabel -Label $loopDone
             return
@@ -1389,13 +1518,13 @@ foreach ($module in $script:Modules) { $script:SourceDisplay = $module.Path; Col
 $script:MainStatements = [System.Collections.Generic.List[object]]::new()
 $script:MainContext = [pscustomobject]@{ Name = '__entry'; SlotCount = 0; TempSlots = 0; ScratchPosition = 0; FrameSize = 0; Statements = $script:MainStatements }
 $script:Scopes = [System.Collections.Generic.List[object]]::new(); Push-Scope
-$script:ActiveContext = $script:MainContext; $script:CurrentFunction = $null; $script:BlockDepth = 0
+$script:ActiveContext = $script:MainContext; $script:CurrentFunction = $null; $script:BlockDepth = 0; $script:LoopDepth = 0
 foreach ($module in $script:Modules) { Parse-Module -Module $module }
 
 Set-FrameSize -Context $script:MainContext -NodeCount (Get-StatementsNodeCount -Statements $script:MainStatements.ToArray())
 foreach ($functionObject in $script:Functions.Values) {
     if ($null -eq $functionObject.Context) { throw "Function '$($functionObject.Name)' was declared but not parsed." }
-    Set-FrameSize -Context $functionObject.Context -NodeCount (Get-StatementsNodeCount -Statements $functionObject.BodyStatements -ReturnExpression $functionObject.ReturnExpression)
+    Set-FrameSize -Context $functionObject.Context -NodeCount (Get-StatementsNodeCount -Statements $functionObject.BodyStatements)
 }
 
 $script:Code = [System.Collections.Generic.List[byte]]::new()
@@ -1405,6 +1534,7 @@ $script:DataItems = [System.Collections.Generic.List[object]]::new()
 $script:DataMap = [System.Collections.Generic.Dictionary[string, object]]::new([System.StringComparer]::Ordinal)
 $script:DataLength = 8 # reserved absolute entry-point anchor, patched by the base-relocation directory
 $script:UniqueLabel = 0
+$script:EmitLoopStack = [System.Collections.Generic.List[object]]::new()
 
 # Entry point: main code owns a stack frame; every function gets its own frame.
 Mark-CodeLabel -Label '__entry'
@@ -1418,9 +1548,7 @@ foreach ($functionObject in ($script:Functions.Values | Sort-Object Index)) {
     Mark-CodeLabel -Label $functionObject.Label
     Emit-Prologue -Context $functionObject.Context -Function $functionObject
     foreach ($statement in $functionObject.BodyStatements) { Emit-Statement -Statement $statement }
-    $script:ActiveContext = $functionObject.Context; $script:TempDepth = 0
-    Emit-IntegerExpression -Node $functionObject.ReturnExpression
-    Emit-Epilogue
+    Emit-Jump -Label '__runtime_fail'
 }
 # WINAPI thread callback used by the thread/synchronization smoke-test intrinsic.
 Mark-CodeLabel -Label '__sharnou_worker'
