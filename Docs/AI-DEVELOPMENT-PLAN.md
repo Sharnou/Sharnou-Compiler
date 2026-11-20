@@ -185,3 +185,20 @@ A milestone is complete only when all applicable evidence exists:
 | Sharnou IDE and Honour War integration | Later dependent work |
 
 The latest status, current blockers, issue links, and next action are maintained in [AI-SESSION-STATE.md](AI-SESSION-STATE.md).
+
+
+## 10. Live GitHub status overlay - 2026-11-20
+
+This section records current branch/PR evidence without changing the accepted milestone scope above.
+
+| Work item | Current evidence | Status / boundary |
+|---|---|---|
+| Milestone 7A | Default-branch Windows Actions run `44813123428` succeeded at commit `fc015ba925c001e1f647f3897736f6f4bd64f0dc`; suite declares 8 positive, 12 negative, 3 instruction checks | WINDOWS CI PASS; user-local result not separately reported |
+| Frozen Milestone 6 regression baseline | PR #6, head `9dfe1bc09685a6f7deb9d29b5192b1aae0686039`, run `44700641397`, 83/83 Windows pass; original package SHA-256 `0b6bf15445a5dfd8cbf93450af7fd2f5fd6239d4ed082ab18b09878a94b8b164` | PR open/unmerged; baseline restoration verified on feature branch, default branch still awaits integration |
+| Milestone 7B proposal | PR #5, head `0b8dee87b699eabcaaac37f111686231fb29a82c`, run `44693097619`; PR reports Stage 7A 23/23 and Stage 7B 32/32 | Proposed branch only; not user-accepted or merged |
+| Native DevAgent utility | PR #7 draft; run `44758761226` succeeded through example build/run, regression tests, DevAgent execution and artifact upload | Native test orchestrator proposal; not an AI source-generating agent; open draft |
+| Roadmap/automation extension | PR #4 remains open/unmerged | Documentation and scheduled-workflow proposal; not active on the default branch until merged |
+
+Authoritative live details, blockers, hashes, and next actions are maintained in [AI-SESSION-STATE.md](AI-SESSION-STATE.md) and [AI-ISSUE-REGISTER.md](AI-ISSUE-REGISTER.md). The status tracker is [GitHub Issue #8](https://github.com/Sharnou/Sharnou-Compiler/issues/8).
+
+The connected GitHub toolset cannot create or mutate a GitHub Projects V2 board. The roadmap is therefore a versioned Markdown plan map plus linked GitHub Issues/PRs. Do not misrepresent this as a visual Kanban board.
