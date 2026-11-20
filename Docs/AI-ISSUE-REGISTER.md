@@ -1,6 +1,6 @@
 # AI Issue Register - Sharnou Compiler
 
-**Last reviewed:** 2026-11-20  
+**Last reviewed:** 2026-11-20 22:49 Africa/Cairo
 **Live session tracker:** [Issue #8 - AI Development Plan and Live Session State](https://github.com/Sharnou/Sharnou-Compiler/issues/8)
 
 This register separates active blockers from historical findings. Do not close an issue or mark a risk resolved without the stated evidence.
@@ -95,3 +95,13 @@ The user reported end-to-end Windows success for Milestones 1-6. The summary and
 Two enabled task automations are relevant: daily `Sharnou DevAgent Progress` and weekly `Advance Sharnou Stack`. Their prompts are being updated to read `AGENTS.md`, `AI_START_HERE.md`, the plan/state/issue register, README, and current GitHub issues/PRs before work; then persist session outcomes and issue status after each scheduled run. Three legacy Honour War daily-upgrade tasks remain disabled.
 
 The repository read-first instruction and per-session update rule remain mandatory for manually started AI work. The current connector does not provide an every-chat-turn event trigger or GitHub Projects V2 board mutation; use the versioned Markdown plan map and GitHub Issues as the authoritative roadmap/status system. Do not claim immediate background synchronization between arbitrary chat turns.
+
+
+## Live status review - 2026-11-20 22:49 Africa/Cairo
+
+- **B1 / Issue #9 remains BLOCKED for the default branch.** PR #6 is open/unmerged on automation/restore-m6-83-regression, head 9dfe1bc09685a6f7deb9d29b5192b1aae0686039. Its Windows CI reports 83/83 and preserves archive SHA-256 0b6bf15445a5dfd8cbf93450af7fd2f5fd6239d4ed082ab18b09878a94b8b164; this is feature-branch CI evidence, not default-branch integration.
+- **B2 / Issue #10 remains open for M7A acceptance evidence.** Implementation is present; Windows Actions run 44813123428 is WINDOWS CI PASS. The user has accepted the 7A scope, but has not yet reported a separate local 7A run. Do not mark user-local runtime acceptance.
+- **B3 / self-hosting remains blocked by B1/B2 and the required language-gap audit.** No native self-hosted SharnouCompiler.exe is demonstrated.
+- **H1 / Issue #1 remains a carry-forward ABI audit.** Recheck unwind metadata, large-frame stack probing, nonvolatile register/stack/argument probes, and generic checked higher-arity Windows API marshalling against current compiler source; these are historical findings, not reproduced failures in this session.
+- PR #5 (7B semantics) remains open/unmerged and is not user-accepted scope. PR #7 remains a draft test orchestrator, not an AI source generator. PR #4 remains an open roadmap proposal.
+- No new compiler defect was found or newly reproduced; no new source issue was created in this governance-only session.
