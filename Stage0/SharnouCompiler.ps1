@@ -124,7 +124,7 @@ function Initialize-Tokens {
                 $i += 2; $column += 2; continue
             }
         }
-        if ('+-*/=();{},<>!'.Contains([string]$ch)) {
+        if ('+-*/=();{},<>!:'.Contains([string]$ch)) {
             Add-Token -Kind 'Symbol' -Text ([string]$ch) -Value ([string]$ch) -Line $line -Column $column
             $i++; $column++; continue
         }
@@ -169,6 +169,20 @@ function Declare-Variable {
     $scope.Add($Name, $symbol)
     $script:ActiveContext.SlotCount = [int]($script:ActiveContext.SlotCount + 1)
     return $symbol
+}
+function Resolve-PrimitiveType {
+    param([object] $Token)
+    if ($Token.Kind -ne 'Identifier') {
+        Throw-SourceError -Line $Token.Line -Column $Token.Column -Message 'Expected a primitive type name after type annotation.'
+    }
+    switch -CaseSensitive ([string]$Token.Text) {
+        'i32' { return 'Integer' }
+        'bool' { return 'Boolean' }
+        'string' { return 'String' }
+        default {
+            Throw-SourceError -Line $Token.Line -Column $Token.Column -Message ("Unknown primitive type '{0}'; supported types are i32, bool, and string." -f $Token.Text)
+        }
+    }
 }
 function Parse-Primary {
     $token = Get-CurrentToken
@@ -514,9 +528,20 @@ function Parse-Statement {
         Move-NextToken | Out-Null; $nameToken = Get-CurrentToken
         if ($nameToken.Kind -ne 'Identifier' -or @('print', 'let', 'fn', 'return', 'import', 'if', 'else', 'while', 'true', 'false', 'break', 'continue') -contains $nameToken.Text) { Throw-SourceError -Line $nameToken.Line -Column $nameToken.Column -Message "Expected a variable name after 'let'." }
         Move-NextToken | Out-Null; $name = [string]$nameToken.Text
+        $declaredType = $null
+        if (Test-CurrentText ':') {
+            Move-NextToken | Out-Null
+            $typeToken = Get-CurrentToken
+            $declaredType = Resolve-PrimitiveType -Token $typeToken
+            Move-NextToken | Out-Null
+        }
         $null = Expect-Text -Text '=' -Description "'=' in variable declaration"
         $expression = Parse-Expression; Validate-ConstantArithmetic -Node $expression; $null = Expect-Text -Text ';' -Description "';' after variable declaration"
-        $symbol = Declare-Variable -Name $name -Type $expression.Type -Line $nameToken.Line -Column $nameToken.Column
+        if ($null -ne $declaredType -and $expression.Type -ne $declaredType) {
+            Throw-SourceError -Line $nameToken.Line -Column $nameToken.Column -Message ("Variable '{0}' is declared as {1}, but its initializer has type {2}." -f $name, $declaredType, $expression.Type)
+        }
+        $variableType = if ($null -ne $declaredType) { [string]$declaredType } else { [string]$expression.Type }
+        $symbol = Declare-Variable -Name $name -Type $variableType -Line $nameToken.Line -Column $nameToken.Column
         return (New-Statement -Kind 'Let' -Name $name -Type $symbol.Type -Slot $symbol.Slot -Expression $expression -Line $nameToken.Line -Column $nameToken.Column)
     }
     if ($token.Text -ceq 'return') {
