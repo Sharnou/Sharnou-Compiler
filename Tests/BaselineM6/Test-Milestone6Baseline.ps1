@@ -73,10 +73,10 @@ try {
     }
 
     $payload = $payloadJson | ConvertFrom-Json
-    foreach ($fixture in $payload.files) {
-        if ([string]$fixture.path -like '*UnsupportedSyntax.sharnou') {
-            Write-Host ('Archived unsupported syntax fixture path: ' + $fixture.path)
-            Write-Host ('Archived unsupported syntax fixture source: ' + [string]$fixture.content)
+    foreach ($member in $payload.files) {
+        if ([string]$member.path -eq 'Tests/Test-Stage6.ps1' -or ([string]$member.content).Contains('Graphics.sharnou')) {
+            Write-Host ('Stage 6 compatibility source: ' + $member.path)
+            Write-Host ([string]$member.content)
         }
     }
     if ($payload.files.Count -ne [int]$manifest.bundle.file_count) {
