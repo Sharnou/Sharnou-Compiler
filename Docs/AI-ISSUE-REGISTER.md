@@ -55,3 +55,43 @@ The user reported end-to-end Windows success for Milestones 1-6. The summary and
 3. Preserve unrelated issues and frozen baselines.
 4. Update this register and the live status issue after every AI generation/repair session.
 5. Distinguish user-reported success, static inspection, Windows CI success, not-run, and blocked states.
+
+
+## Live pull request and CI review - 2026-11-20
+
+### B1 status update - 83-case Milestone 6 baseline
+
+- Tracking issue: [#9](https://github.com/Sharnou/Sharnou-Compiler/issues/9).
+- PR #6 is open on `automation/restore-m6-83-regression`, head `9dfe1bc09685a6f7deb9d29b5192b1aae0686039`.
+- PR #6 records original Milestone 6 package SHA-256 `0b6bf15445a5dfd8cbf93450af7fd2f5fd6239d4ed082ab18b09878a94b8b164`.
+- Windows Actions run `44700641397` succeeded; PR evidence reports Stage 2 25, Stage 4 20, PE verifier 4, Stage 5 25, Stage 6 9 = **83/83**.
+- The PR preserves archived suite files/fixtures and uses a temporary compatibility adapter for the old Stage 2 `if` negative fixture, which is now a supported construct.
+- **Current status: WINDOWS CI PASS ON OPEN FEATURE BRANCH; NOT YET INTEGRATED INTO DEFAULT BRANCH.** Keep issue #9 open until reviewed/integrated and the default branch has the reproducible baseline.
+
+### B2 status update - Milestone 7A
+
+- Tracking issue: [#10](https://github.com/Sharnou/Sharnou-Compiler/issues/10).
+- Implementation commit: `943d24d857b89b9b30a426c8fb4025c05413d6a8`.
+- Current default branch HEAD: `fc015ba925c001e1f647f3897736f6f4bd64f0dc`.
+- Windows Actions run `44813123428` succeeded on `windows-latest`, including encoding validation and the Stage 7A test entry point. The suite declares 8 positive, 12 negative, and 3 instruction checks (23).
+- **Current status: WINDOWS CI PASS; USER-LOCAL ACCEPTANCE NOT RECORDED SEPARATELY.** Keep evidence classifications distinct.
+
+### B3 status update - self-hosting / 7B
+
+- PR #5 proposes Boolean values, short-circuit logical operators, break/continue, and nested returns; branch `automation/milestone-7b-boolean-loop-return`; head `0b8dee87b699eabcaaac37f111686231fb29a82c`.
+- Windows CI run `44693097619` succeeded; PR reports Stage 7A 23/23 and Stage 7B 32/32.
+- PR #5 is open and unmerged. Its additional language semantics are **proposed, not user-accepted by this review**. Do not merge or describe them as accepted scope without the user's decision.
+- Native self-hosting remains NOT DEMONSTRATED.
+
+### Open pull requests reviewed
+
+- PR #4: full compiler/Engine roadmap and scheduled validation proposal; open/unmerged.
+- PR #5: Stage 7B Boolean/control-flow extension; open/unmerged; Windows CI success.
+- PR #6: frozen 83-case baseline restore; open/unmerged; Windows 83/83 pass.
+- PR #7: native SharnouDevAgent test orchestrator; draft/open; Windows CI run `44758761226` succeeded through build, execution, regression run, and artifact upload. This utility is not an AI source-generating agent.
+
+### Automation and persistence policy
+
+Two enabled task automations are relevant: daily `Sharnou DevAgent Progress` and weekly `Advance Sharnou Stack`. Their prompts are being updated to read `AGENTS.md`, `AI_START_HERE.md`, the plan/state/issue register, README, and current GitHub issues/PRs before work; then persist session outcomes and issue status after each scheduled run. Three legacy Honour War daily-upgrade tasks remain disabled.
+
+The repository read-first instruction and per-session update rule remain mandatory for manually started AI work. The current connector does not provide an every-chat-turn event trigger or GitHub Projects V2 board mutation; use the versioned Markdown plan map and GitHub Issues as the authoritative roadmap/status system. Do not claim immediate background synchronization between arbitrary chat turns.
