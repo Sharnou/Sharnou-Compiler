@@ -111,30 +111,29 @@ try {
         throw 'Stage 2 baseline suite was not restored.'
     }
 
-    # Emit the frozen Stage 2 negative-case definition when the historical suite fails.
-    # This keeps diagnosis tied to the original archived test instead of guessing from its label.
-    $stage2Script = Join-Path $workRoot 'Tests\Test-Stage2.ps1'
-    $stage2Source = Get-Content -LiteralPath $stage2Script
-    $stage2Structure = Select-String -InputObject $stage2Source -Pattern @('$positiveCases', '$negativeCases', 'Invoke-PositiveCase', 'Invoke-NegativeCase', 'foreach ($case') -SimpleMatch -Context 2, 5
-    foreach ($entry in $stage2Structure) {
-        Write-Host ('Stage 2 harness structure at line ' + $entry.LineNumber + ':')
-        Write-Host ($entry.Context.PreContext -join [Environment]::NewLine)
-        Write-Host $entry.Line
-        Write-Host ($entry.Context.PostContext -join [Environment]::NewLine)
+    # Stage 7A now implements if statements, so migrate the historical pre-7A negative case
+    # into the positive set without changing the hash-pinned original suite or fixture.
+    $stage2OriginalPath = Join-Path $workRoot 'Tests\Test-Stage2.ps1'
+    $stage2AdaptedPath = Join-Path $workRoot 'Tests\Test-Stage2-Current.ps1'
+    $stage2FixtureSource = Join-Path $workRoot 'Tests\Negative\UnsupportedSyntax.sharnou'
+    $stage2PositiveDirectory = Join-Path $workRoot 'Tests\Positive'
+    $stage2PositiveFixture = Join-Path $stage2PositiveDirectory 'IfStatementNowSupported.sharnou'
+    if (-not (Test-Path -LiteralPath $stage2FixtureSource -PathType Leaf)) {
+        throw 'The frozen Stage 2 if-statement compatibility fixture is missing.'
     }
-    $stage2Matches = Select-String -LiteralPath $stage2Script -Pattern 'Unsupported statement syntax' -Context 12, 20
-    $stage2Matches = Select-String -LiteralPath $stage2Script -Pattern 'Unsupported statement syntax' -Context 12, 20
-    $unsupportedSyntaxPath = Join-Path $workRoot 'Tests\UnsupportedSyntax.sharnou'
-    if (Test-Path -LiteralPath $unsupportedSyntaxPath -PathType Leaf) {
-        Write-Host 'Archived UnsupportedSyntax.sharnou source:'
-        Write-Host (Get-Content -LiteralPath $unsupportedSyntaxPath -Raw)
+    $stage2Text = [System.IO.File]::ReadAllText($stage2OriginalPath)
+    $obsoleteNegativeEntry = "    [pscustomobject]@{ Name = 'Unsupported statement syntax'; File = 'UnsupportedSyntax.sharnou' },"
+    $positiveMarker = '$positiveCases = @('
+    $currentPositiveEntry = "    [pscustomobject]@{ Name = 'If statement supported by Stage 7A'; File = 'IfStatementNowSupported.sharnou'; Expected = 'unsupported' },"
+    if (-not $stage2Text.Contains($obsoleteNegativeEntry) -or -not $stage2Text.Contains($positiveMarker)) {
+        throw 'The frozen Stage 2 case layout changed; refusing an unreviewed compatibility rewrite.'
     }
-    foreach ($match in $stage2Matches) {
-        Write-Host ('Stage 2 diagnostic context at line ' + $match.LineNumber + ':')
-        Write-Host ($match.Context.PreContext -join [Environment]::NewLine)
-        Write-Host $match.Line
-        Write-Host ($match.Context.PostContext -join [Environment]::NewLine)
-    }
+    $stage2Text = $stage2Text.Replace($obsoleteNegativeEntry, '')
+    $stage2Text = $stage2Text.Replace($positiveMarker, $positiveMarker + [Environment]::NewLine + $currentPositiveEntry)
+    [System.IO.File]::WriteAllText($stage2AdaptedPath, $stage2Text, $utf8NoBom)
+    $null = New-Item -ItemType Directory -Path $stage2PositiveDirectory -Force
+    Copy-Item -LiteralPath $stage2FixtureSource -Destination $stage2PositiveFixture -Force
+    Write-Host 'Compatibility update: the frozen if fixture is now a positive Stage 7A case; the archived payload and original test script remain unchanged.'
 
     $compilerSource = Join-Path $repoRoot 'Stage0\SharnouCompiler.ps1'
     $verifierSource = Join-Path $repoRoot 'Tools\SharnouPEVerify.ps1'
@@ -170,6 +169,9 @@ try {
     $caseTotal = 0
     foreach ($suite in $manifest.suites) {
         $suitePath = Join-Path $workRoot ([string]$suite.path.Replace('/', [System.IO.Path]::DirectorySeparatorChar))
+        if ([string]$suite.path -eq 'Tests/Test-Stage2.ps1') {
+            $suitePath = $stage2AdaptedPath
+        }
         if (-not (Test-Path -LiteralPath $suitePath -PathType Leaf)) {
             throw "Historical regression suite is missing: $suitePath"
         }
