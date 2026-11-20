@@ -2,6 +2,19 @@
 
 The repository contains the PowerShell/.NET Stage 0 native x64 bootstrap compiler. It emits AMD64 PE32+ images directly and does not invoke an external compiler, assembler, or linker.
 
+## AI development governance - read first
+
+Before any AI-assisted source generation, bug investigation, compiler repair, test modification, or Engine change, read [AI_START_HERE.md](AI_START_HERE.md). It defines the mandatory source-of-truth preflight and session-update process.
+
+- [Master development plan and milestone map](Docs/AI-DEVELOPMENT-PLAN.md)
+- [Latest AI session state and next action](Docs/AI-SESSION-STATE.md)
+- [Known issue and blocker register](Docs/AI-ISSUE-REGISTER.md)
+- [Persistent AI status issue #8](https://github.com/Sharnou/Sharnou-Compiler/issues/8)
+- [Restore exact 83-case regression baseline - issue #9](https://github.com/Sharnou/Sharnou-Compiler/issues/9)
+- [Milestone 7A Windows acceptance - issue #10](https://github.com/Sharnou/Sharnou-Compiler/issues/10)
+
+The AI must read these files from the current branch before every new code-generation or repair session, then update the live state and issue tracker when the session finishes. This is a repository workflow rule; it is not a claim of unattended background monitoring.
+
 ## Long-term renderer direction
 
 The accepted product target is a self-contained Sharnou compiler/runtime/IDE/engine stack capable of producing a complete high-performance 3D MMORPG, not merely opening a graphics window. The renderer roadmap covers procedural and imported 3D geometry, glTF/GLB scenes, KTX2 material textures, metallic-roughness PBR, normal/roughness/metallic/AO maps, directional/point/spot lighting, cascaded shadows, skeletal animation and blending, large environments and terrain, particles and atmospheric effects, HDR/post-processing, GPU instancing, and LOD.
