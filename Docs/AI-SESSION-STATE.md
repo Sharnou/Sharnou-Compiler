@@ -1,6 +1,6 @@
 # AI Session State - Sharnou Compiler
 
-**Last updated:** 2026-11-20  
+**Last updated:** 2026-11-20 22:49 Africa/Cairo
 **Repository:** `Sharnou/Sharnou-Compiler`  
 **Branch:** `Sharnou-Compiler`  
 **Purpose:** Latest durable status for every future AI-assisted compiler/Engine generation, debugging, testing, and repair session.
@@ -190,3 +190,49 @@ At the end of each completed AI work session, persist the source paths changed, 
 3. Review the scope and compatibility of PR #5 before treating its Stage 7B features as accepted.
 4. Re-audit Issue #1 ABI risks against the actual current compiler before larger compiler/runtime work.
 5. After the baseline and control-flow gates are accepted, perform the construct-by-construct Milestone 7B/7C language-gap analysis, then stage the self-hosting implementation plan.
+
+
+## Latest persisted session - 2026-11-20 22:49 Africa/Cairo
+
+**Session type:** Repository state review and documentation/status persistence only.
+
+**Repository:** Sharnou/Sharnou-Compiler  
+**Branch:** Sharnou-Compiler  
+**Starting HEAD reviewed:** f5a12b7c967370bb511a8d4ec6c8a6b9f9afc4b9
+
+### User-confirmed and accepted
+
+- Milestones 1-6 remain USER-REPORTED WINDOWS PASS. In particular, M6: Engine foundation preflight 5/5; all 12 example/Engine builds pass; Stage 6 D3D11 suite 9/9; actual window, DXGI/D3D11 device and swap-chain, render target, 60-frame clear/present, and fail-closed runtime handling passed locally.
+- The user accepted that self-hosting must be preceded by native control flow.
+- Milestone 7A is the next accepted implementation: native if/else, while, signed comparisons (<, >, <=, >=, ==, !=), nested control flow, loop termination, runtime mutation, signed integer edge coverage, source-located diagnostics, and fail-closed unsupported syntax.
+- Keep the existing Windows x64 ABI and stack layout intact, including argument registers, 32-byte shadow store, stack alignment, frame pointer, local/temporary slots, and function calls. Keep PE/linker/import/relocation/verification behavior and all 83 M1-M6 regression cases.
+- No external compiler/toolchain: no MSVC, Clang, Visual Studio, MSBuild, external assembler, external linker, downloaded compiler, or hidden fallback. Source/scripts/tests remain ASCII or UTF-8 without BOM.
+
+### Live repository evidence and open work
+
+- M7A source/tests are present on the default branch. Windows Actions run 44813123428 succeeded; classify this as WINDOWS CI PASS only. No new user-local M7A execution result was supplied in this session.
+- Issue #9 remains open: exact frozen 83-case baseline restoration is represented by PR #6, head 9dfe1bc09685a6f7deb9d29b5192b1aae0686039, Windows CI run 44700641397 with 83/83, but PR #6 remains unmerged. The default branch still lacks the integrated frozen baseline according to current project docs.
+- Issue #10 remains open until M7A acceptance evidence is captured and reconciled with the 83-case baseline.
+- Issue #1 remains open for historical ABI re-audit: PE unwind metadata, large-frame stack probing, nonvolatile-register/runtime probes, and generic higher-arity Windows API call marshalling.
+- PR #5's 7B Boolean/logical/break/continue/nested-return changes are proposed, open, and unmerged; they are not accepted scope without further user approval.
+- PR #7 is a draft native test orchestrator, not an AI source-generating agent. PR #4 is an open/unmerged roadmap proposal.
+- Native Sharnou compiler self-hosting is NOT DEMONSTRATED and must not be claimed.
+
+### Persistence and read-first agreement
+
+Before each future AI source-generation, bug-fix, compiler/linker/PE/ABI/Engine change, test repair, or issue-triage session, fetch and read current branch versions of AGENTS.md, AI_START_HERE.md, Docs/AI-SESSION-STATE.md, Docs/AI-DEVELOPMENT-PLAN.md, Docs/AI-ISSUE-REGISTER.md, README.md, and all task-specific code/tests/fixtures plus open issues/PRs and latest CI evidence.
+
+At the end of each completed session, update this file and GitHub issue #8 with exact changed paths, branch/commit/PR, file hashes, test totals, exit codes/output, evidence category, issues/blockers, and next action. Update the plan map and issue register when accepted scope or blocker status changes. Preserve history; append status rather than silently replacing prior findings.
+
+Daily Sharnou DevAgent Progress and weekly Advance Sharnou Stack task automations are enabled and already include read-first/persist-status prompts. They save on their configured schedule. They do not observe each arbitrary ChatGPT turn; manually started sessions must follow the repository instructions. The GitHub connector does not expose Projects V2 board writes, so the canonical plan map is Markdown plus linked Issues/PRs, not a visual Kanban update.
+
+### Work performed and evidence classification
+
+- Read the live repository instructions, plan, session state, issue register, README, and issues #8-#10.
+- Reviewed default branch head and open PR states #4-#7.
+- Inspected automation definitions and confirmed the two Sharnou compiler/stack automations are enabled; three legacy Honour War upgrade automations remain disabled.
+- No compiler source, examples, tests, or build scripts changed. No build or test was executed by the assistant. This is a documentation/status update, not a source implementation or runtime validation.
+
+### Next dependency-ordered action
+
+Review PR #6 and exact baseline provenance/adaptation; capture user-local M7A verification separately from CI; re-audit issue #1 ABI findings; then complete compiler language-gap analysis before any full self-hosting compiler source generation.
