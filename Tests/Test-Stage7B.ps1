@@ -116,6 +116,16 @@ if ((false || true) && true) { print("parentheses"); } else { print("wrong"); }
         Expected = ('and first' + [char]10 + 'parentheses')
     },
     [pscustomobject]@{
+        Name = 'Boolean equality and logical NOT'
+        File = 'BooleanEqualityAndNot.sharnou'
+        Source = @'
+if (true == false) { print("wrong"); } else { print("equal false"); }
+if (true != false) { print("not equal"); }
+if (!false) { print("not false"); }
+'@
+        Expected = ('equal false' + [char]10 + 'not equal' + [char]10 + 'not false')
+    },
+    [pscustomobject]@{
         Name = 'AND short-circuits the right operand'
         File = 'ShortCircuitAndSkips.sharnou'
         Source = @'
