@@ -1,6 +1,6 @@
 # Sharnou Compiler and Engine - Accepted Development Plan
 
-**Last maintained:** 2026-11-20  
+**Last maintained:** 2026-11-20 22:49 Africa/Cairo
 **Repository:** `Sharnou/Sharnou-Compiler`  
 **Default branch observed:** `Sharnou-Compiler`  
 **Current focus:** Milestone 7A - native control flow  
@@ -202,3 +202,21 @@ This section records current branch/PR evidence without changing the accepted mi
 Authoritative live details, blockers, hashes, and next actions are maintained in [AI-SESSION-STATE.md](AI-SESSION-STATE.md) and [AI-ISSUE-REGISTER.md](AI-ISSUE-REGISTER.md). The status tracker is [GitHub Issue #8](https://github.com/Sharnou/Sharnou-Compiler/issues/8).
 
 The connected GitHub toolset cannot create or mutate a GitHub Projects V2 board. The roadmap is therefore a versioned Markdown plan map plus linked GitHub Issues/PRs. Do not misrepresent this as a visual Kanban board.
+
+
+## User-approved session confirmation - 2026-11-20 22:49 Africa/Cairo
+
+- The user explicitly reconfirmed the Milestone 6 Windows acceptance: Engine foundation preflight 5/5; all 12 examples/Engine builds passed; Stage 6 D3D11 suite 9/9; real window/device/swap-chain/render-target setup and a 60-frame clear/present loop passed; combined result PASS. This remains USER-REPORTED WINDOWS PASS.
+- The user accepted the Milestone 7 readiness decision that self-hosting must wait for native control flow.
+- The user explicitly accepted Milestone 7A as the next implementation scope: native if/else, while, signed integer comparisons <, >, <=, >=, ==, !=, nested logic, loop termination, runtime variable mutation, signed-edge tests, source-located diagnostics, and fail-closed rejection of unsupported constructs.
+- Preserve the existing Windows x64 ABI and stack-frame contract: argument registers, 32-byte shadow space, 16-byte call-site alignment, frame pointer, variable/temporary slot allocation, function-call behavior, and existing PE/import/relocation/verifier behavior.
+- Preserve the cumulative M1-M6 regression count of 83. Exact repository reproducibility remains tracked by issue #9; the open PR #6 is not merged into the default branch.
+- M7A implementation is documented in the current branch, and Windows Actions run 44813123428 is recorded as WINDOWS CI PASS. A separate user-local M7A test result has not been reported; do not infer one from the M6 report or CI.
+- PR #5 proposes 7B Boolean/logical short-circuit, break/continue, and nested returns. That proposal is not accepted scope unless the user explicitly approves it.
+- Do not begin the full Sharnou-written self-hosting compiler before the 7A acceptance and frozen 83-case baseline gates are satisfied and the compiler-source language-gap analysis is complete.
+- Current default branch HEAD reviewed at session start: f5a12b7c967370bb511a8d4ec6c8a6b9f9afc4b9. Open PRs reviewed: #4 roadmap proposal; #5 unaccepted 7B proposal; #6 frozen 83-case restoration with Windows 83/83 CI evidence but not merged; #7 draft native DevAgent test orchestrator, not an AI source-generating agent.
+- Existing enabled task automations were inspected: daily Sharnou DevAgent Progress and weekly Advance Sharnou Stack. Both already include mandatory live-repository read-first instructions and scheduled status persistence. Three legacy Honour War daily-upgrade tasks remain disabled.
+- Persistence boundary: GitHub repository files and issue #8 are the canonical session record. Scheduled automations save on their configured runs; there is no per-chat-turn event hook or continuous background monitor. Manually initiated sessions must follow AGENTS.md / AI_START_HERE.md, read the live repository before work, and persist status before ending.
+- GitHub Projects V2 board-write operations are not exposed by the connected GitHub tool. The accepted plan map is Docs/AI-DEVELOPMENT-PLAN.md plus the live issue register and linked GitHub issues/PRs; do not claim a visual Kanban board was updated.
+- No compiler, test, example, build script, or runtime source was changed in this status-only session. No native build or test was run by the assistant. This session performed repository review and governance/status persistence only.
+- Next dependency-ordered actions: (1) review PR #6 and exact baseline provenance/adaptation, then integrate only through the normal review process; (2) capture M7A user-local Windows run evidence separately from CI; (3) re-audit historical ABI risks in issue #1; (4) only after gates, define the 7B+ compiler-source language gap and self-hosting plan.
