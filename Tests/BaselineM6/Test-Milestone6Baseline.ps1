@@ -73,7 +73,13 @@ try {
     }
 
     $payload = $payloadJson | ConvertFrom-Json
-    foreach ($fixture in @($payload.files | Where-Object { $_.path -match 'UnsupportedSyntax\.sharnou    if ($payload.files.Count -ne [int]$manifest.bundle.file_count) {
+    foreach ($fixture in $payload.files) {
+        if ([string]$fixture.path -like '*UnsupportedSyntax.sharnou') {
+            Write-Host ('Archived unsupported syntax fixture path: ' + $fixture.path)
+            Write-Host ('Archived unsupported syntax fixture source: ' + [string]$fixture.content)
+        }
+    }
+    if ($payload.files.Count -ne [int]$manifest.bundle.file_count) {
         throw "Baseline member count mismatch. Expected $($manifest.bundle.file_count); received $($payload.files.Count)."
     }
 
