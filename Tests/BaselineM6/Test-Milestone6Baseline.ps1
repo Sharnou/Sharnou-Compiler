@@ -105,6 +105,17 @@ try {
         throw 'Stage 2 baseline suite was not restored.'
     }
 
+    # Emit the frozen Stage 2 negative-case definition when the historical suite fails.
+    # This keeps diagnosis tied to the original archived test instead of guessing from its label.
+    $stage2Script = Join-Path $workRoot 'Tests\Test-Stage2.ps1'
+    $stage2Matches = Select-String -LiteralPath $stage2Script -Pattern 'Unsupported statement syntax' -Context 12, 20
+    foreach ($match in $stage2Matches) {
+        Write-Host ('Stage 2 diagnostic context at line ' + $match.LineNumber + ':')
+        Write-Host ($match.Context.PreContext -join [Environment]::NewLine)
+        Write-Host $match.Line
+        Write-Host ($match.Context.PostContext -join [Environment]::NewLine)
+    }
+
     $compilerSource = Join-Path $repoRoot 'Stage0\SharnouCompiler.ps1'
     $verifierSource = Join-Path $repoRoot 'Tools\SharnouPEVerify.ps1'
     foreach ($required in @($compilerSource, $verifierSource)) {
