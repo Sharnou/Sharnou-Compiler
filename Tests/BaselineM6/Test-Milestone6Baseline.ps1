@@ -177,7 +177,9 @@ try {
         Write-Host ''
         Write-Host ('=== Historical baseline suite: ' + $suite.path + ' (' + $suite.cases + ' cases) ===')
         & $suitePath
-        if (-not $?) {
+        $suiteSucceeded = $?
+        $global:LASTEXITCODE = 0
+        if (-not $suiteSucceeded) {
             throw "Historical regression suite reported failure: $($suite.path)"
         }
         $caseTotal += [int]$suite.cases
@@ -187,6 +189,7 @@ try {
         throw "Historical regression accounting mismatch. Expected 83; recorded $caseTotal."
     }
     Write-Host ''
+    $global:LASTEXITCODE = 0
     Write-Host 'Milestone 6 historical regression baseline: PASS (83/83).' -ForegroundColor Green
 }
 catch {
