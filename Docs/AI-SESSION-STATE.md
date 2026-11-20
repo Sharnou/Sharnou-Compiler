@@ -12,8 +12,10 @@
 - **Accepted project direction:** self-contained Sharnou compiler, PE32+ linker, runtime/standard library, Engine, IDE, and Honour War for Windows x64.
 - **User-reported completed history:** Milestones 1-6 passed on the user's Windows PC.
 - **Current development focus:** Milestone 7A - native control flow (if/else, while, signed comparisons).
+- **Persistent AI status tracker:** [GitHub issue #8](https://github.com/Sharnou/Sharnou-Compiler/issues/8); update its body and this file after every completed AI generation/repair session.
+- **Actionable blockers:** [Issue #9 - restore exact 83-case baseline](https://github.com/Sharnou/Sharnou-Compiler/issues/9); [Issue #10 - Milestone 7A Windows acceptance](https://github.com/Sharnou/Sharnou-Compiler/issues/10).
 - **Milestone 7A repository implementation:** present on the `Sharnou-Compiler` branch; implementation commit `943d24d857b89b9b30a426c8fb4025c05413d6a8`.
-- **Latest repository documentation commit before this state record:** `352c65e05524d494970b2d8b52b7089d12d19435` (renderer roadmap link). The AI start protocol and plan-map documents are being added in the subsequent commits.
+- **Current repository head after plan-map documentation:** `e47dd7d5634ed5ccc9302d2d59241790f6de3bdc` (README links governance and plan documents). The preceding documentation commits added `AI_START_HERE.md`, the master plan, session state, and issue register.
 - **Milestone 7A Windows acceptance:** NOT CONFIRMED by the user in the current status record. Do not claim it passed.
 - **Frozen 83-case repository baseline:** BLOCKED / not included in the current branch according to the current README. The user previously reported 83 cases passed locally, but the branch must contain the exact source suites and fixtures before the repository can independently rerun them.
 - **Next action:** reconcile and restore the exact 83-case suite, then run the complete 7A and frozen baseline tests on 64-bit Windows PowerShell 5.1; record logs, exit codes, and hashes.
@@ -79,11 +81,11 @@ The existence of these files is repository evidence only. The user's Windows tes
 
 The current README explicitly states that the Milestone 6 branch imported for this work did not contain the 83-case source suites or fixture directories. The user's earlier local pass is retained as reported history. Before claiming preservation of 83 tests on this branch, recover/pin the exact test scripts and fixtures (including their SHA-256 values), add them without altering their semantics, run all 83 on Windows, and store the run report.
 
-Related existing issue: [Issue #1 - R26.0 baseline / ABI audit](https://github.com/Sharnou/Sharnou-Compiler/issues/1). It describes a pinned R25-R4 baseline and ABI audit; do not assume its 83 cases are identical to the user's M1-M6 package without comparing archive contents and hashes. Keep that historical issue open until its scope is reconciled.
+Tracking issue: [Issue #9 - Restore and pin the exact frozen 83-case Milestone 1-6 regression baseline](https://github.com/Sharnou/Sharnou-Compiler/issues/9). Related existing issue: [Issue #1 - R26.0 baseline / ABI audit](https://github.com/Sharnou/Sharnou-Compiler/issues/1). It describes a pinned R25-R4 baseline and ABI audit; do not assume its 83 cases are identical to the user's M1-M6 package without comparing archive contents and hashes. Keep that historical issue open until its scope is reconciled.
 
 ### B2 - Stage 7A Windows verification not recorded yet
 
-Run `Tests/Test-Stage7A.ps1` through the repository `Test.ps1` on 64-bit Windows PowerShell 5.1 in an interactive desktop session. Capture all case outputs, exact pass/fail totals, exit code, compiler SHA-256, verifier SHA-256, branch and commit SHA. The current README expects eight positive programs, twelve negative programs, and instruction/branch encoding checks.
+Tracking issue: [Issue #10 - Milestone 7A Windows acceptance](https://github.com/Sharnou/Sharnou-Compiler/issues/10). Run `Tests/Test-Stage7A.ps1` through the repository `Test.ps1` on 64-bit Windows PowerShell 5.1 in an interactive desktop session. Capture all case outputs, exact pass/fail totals, exit code, compiler SHA-256, verifier SHA-256, branch and commit SHA. The current README expects eight positive programs, twelve negative programs, and instruction/branch encoding checks.
 
 ### B3 - ABI audit items in historical Issue #1
 
@@ -119,5 +121,6 @@ No claim of a native self-hosted SharnouCompiler.exe is recorded here. Before M7
 - User accepted the Milestone 7 readiness audit: control flow must precede self-hosting.
 - User explicitly accepted Milestone 7A requirements: if/else, while, six signed comparisons, native x64 branches, preservation of the calling convention/frame, preservation of 83 regressions, positive/negative edge tests, ASCII/no BOM, and no external native toolchain.
 - Repository review found Stage 7A implementation commit `943d24d` and a Stage 7A test runner; repo README simultaneously notes the 83 source suites/fixtures are not present on this branch.
-- This session adds the mandatory AI preflight protocol, master roadmap, session state, issue register, and GitHub tracking issues. It does not modify compiler source.
+- This session adds `AI_START_HERE.md`, `Docs/AI-DEVELOPMENT-PLAN.md`, `Docs/AI-SESSION-STATE.md`, `Docs/AI-ISSUE-REGISTER.md`, README links, and tracking issues #8, #9, and #10. It does not modify compiler source.
+- Future sessions must read the source-of-truth files before any code generation or repair, then update `Docs/AI-SESSION-STATE.md` and issue #8 with the new result.
 - Next: capture M7A Windows acceptance and reconcile/restore the exact 83-case baseline before starting 7B self-hosting source generation.
