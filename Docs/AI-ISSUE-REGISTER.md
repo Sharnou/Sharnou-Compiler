@@ -105,3 +105,37 @@ The repository read-first instruction and per-session update rule remain mandato
 - **H1 / Issue #1 remains a carry-forward ABI audit.** Recheck unwind metadata, large-frame stack probing, nonvolatile register/stack/argument probes, and generic checked higher-arity Windows API marshalling against current compiler source; these are historical findings, not reproduced failures in this session.
 - PR #5 (7B semantics) remains open/unmerged and is not user-accepted scope. PR #7 remains a draft test orchestrator, not an AI source generator. PR #4 remains an open roadmap proposal.
 - No new compiler defect was found or newly reproduced; no new source issue was created in this governance-only session.
+
+
+## Live audit update - 2026-11-21 08:43 Africa/Cairo
+
+### B1 / Issue #9 - frozen 83-case baseline
+
+- PR #6 remains open and unmerged at `9dfe1bc09685a6f7deb9d29b5192b1aae0686039`; GitHub reports it mergeable. Run `44700641397` passed Stage 2 25/25, Stage 4 20/20, PE verifier 4/4, Stage 5 25/25, and Stage 6 9/9 (83/83). Run `44700641419` passed Stage 7A 23/23 on the same PR head.
+- PR #6 changes only the five baseline/runner/workflow paths. Its compiler, verifier, Stage 7A test, and Stage 7A workflow blob SHAs are identical to the current default branch. Thus 83 + 7A have passed on one feature-branch commit, but the default branch still lacks the restored baseline files.
+- The 83-case log contains 36 positive and 47 negative cases by case intent (not a manifest field). One historical Stage 2 negative `if` case is run as a positive in a temporary adapter; the archived source and fixture remain hash-checked and unchanged.
+- The payload SHA and embedded member hashes are verified. The original SHA256SUMS digest is recorded but the runner does not independently load that source manifest. The file-by-file comparison against the separate R25-R4 archive remains pending.
+- **Status: WINDOWS CI PASS ON OPEN FEATURE BRANCH; DEFAULT-BRANCH INTEGRATION AND R25-R4 COMPARISON PENDING.**
+
+### B2 / Issue #10 - Milestone 7A
+
+- Default-branch run `44813123428` passed 23/23 at `fc015ba925c001e1f647f3897736f6f4bd64f0dc`; the current branch's compiler/verifier/test/workflow blobs are unchanged from that tested commit.
+- PR #6 run `44700641419` also passed 23/23 on the same commit as the 83-case run `44700641397`.
+- Inventory: 8 positive runtime cases, 12 negative parser/type cases, and 3 aggregate instruction/branch checks. The user has not reported a separate local 7A run.
+- **Status: WINDOWS CI PASS; USER-LOCAL 7A ACCEPTANCE NOT REPORTED.**
+
+### B3 / 7B proposal and self-hosting
+
+- PR #5 remains open/unmerged and unaccepted: `0b8dee87b699eabcaaac37f111686231fb29a82c`; run `44693097619` passed Stage 7A 23/23 and Stage 7B 32/32 (15 positive, 13 negative, 4 instruction checks). It has not been run with the 83-case baseline.
+- PR #5 static review finds the intended Boolean typing, precedence, short-circuit branches, innermost loop target stack, and nested return lowering. Expand tests for dynamic-left short-circuit side effects, outer-loop continue while nested, deep logical branch fixups, and Boolean function argument/return rejection. Add standalone `.sharnou` examples and a same-commit 83 + 23 + 32 CI gate before acceptance.
+- PR #7 remains a draft native test orchestrator, not an autonomous AI source generator. Run `44758761226` built and ran its native executable with exit code 0; it launches PowerShell tests and explicitly reports native self-hosted SharnouCompiler.exe as not implemented.
+
+### H1 / Issue #1 - current-source ABI re-audit
+
+- Current compiler SHA-256: `c97bd0c4d9ad94b1b4855bbdcd6f843f563f75b35771106ae8976cae2bbda250`; verifier SHA-256: `953a20c2274eee42eee2523c5608fd48e6dc574e4b5465464e910db560d55179`.
+- `Stage0/SharnouCompiler.ps1:1305-1316` permits frames up to 0x100000 and emits `push rbp; mov rbp,rsp; sub rsp,imm32` with no `__chkstk` or per-page probe. The PE header sets `SizeOfStackCommit=0x1000` at line 1555.
+- The linker emits exactly `.text`, `.rdata`, `.idata`, and `.reloc`; it populates import and relocation directories but not the PE exception directory. No `.pdata` / `.xdata` is emitted. This is **REPOSITORY PRESENT / STATIC REVIEWED**, not a runtime crash reproduction.
+- No nonvolatile-register sentinel, unwind, or large-frame runtime test was executed in this run. Higher-arity Windows API marshalling remains manually emitted rather than signature-driven.
+- **Status: ABI ACCEPTANCE BLOCKED pending explicit unwind/stack-probe/runtime validation.**
+
+No compiler, verifier, examples, tests, build scripts, or PR branches were changed in this session. Only status documentation and issue bodies are updated.
