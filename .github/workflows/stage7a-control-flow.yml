@@ -1,4 +1,4 @@
-name: Sharnou Compiler Stage 7A
+name: Sharnou Compiler and Native DevAgent
 
 on:
   push:
@@ -33,6 +33,22 @@ jobs:
           }
           Write-Host "PASS: ASCII source and UTF-8 without BOM."
 
-      - name: Run native compiler control-flow tests
+      - name: Build native x64 examples and SharnouDevAgent
+        shell: powershell
+        run: .\Build.ps1
+
+      - name: Run native compiler examples
+        shell: powershell
+        run: .\Run.ps1
+
+      - name: Run control-flow regressions and SharnouDevAgent
         shell: powershell
         run: .\Test.ps1
+
+      - name: Upload SharnouDevAgent.exe
+        uses: actions/upload-artifact@v4
+        with:
+          name: SharnouDevAgent-windows-x64
+          path: Build/Stage7A/SharnouDevAgent.exe
+          if-no-files-found: error
+          retention-days: 14
