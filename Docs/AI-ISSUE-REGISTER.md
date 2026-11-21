@@ -139,3 +139,31 @@ The repository read-first instruction and per-session update rule remain mandato
 - **Status: ABI ACCEPTANCE BLOCKED pending explicit unwind/stack-probe/runtime validation.**
 
 No compiler, verifier, examples, tests, build scripts, or PR branches were changed in this session. Only status documentation and issue bodies are updated.
+
+
+## Scheduled compiler audit - 2026-11-21 09:11 Africa/Cairo
+
+### B1 / Issue #9 - baseline and Milestone 7A reconciliation
+
+- Default branch HEAD at audit start: `b46e81b3e9643c1c4be8f8c615a79be329779346`; Windows run `44878709265` passed Stage 7A 23/23 on that exact commit.
+- PR #6 remains open/unmerged at `9dfe1bc09685a6f7deb9d29b5192b1aae0686039`. Windows runs `44700641397` (83/83) and `44700641419` (7A 23/23) both succeeded on that same PR head. Compiler/verifier/7A test/workflow blobs match default; five baseline paths remain PR-only.
+- The 83-case polarity split is 36 positive / 47 negative by case-intent classification; the manifest records only suite totals. Payload and embedded member hashes are checked; original SHA256SUMS is recorded but not independently re-read by the runner. R25-R4 file-by-file equivalence remains pending.
+- **Status: WINDOWS CI PASS ON OPEN FEATURE BRANCH; DEFAULT-BRANCH BASELINE INTEGRATION PENDING.**
+
+### B2 / Issue #10 - M7A
+
+- Default HEAD `b46e81b3e9643c1c4be8f8c615a79be329779346`, run `44878709265`: 8 positive, 12 negative, 3 instruction checks; 23/23. PR #6 same-head run `44700641419` also passed 23/23.
+- **Status: WINDOWS CI PASS; USER-LOCAL M7A ACCEPTANCE NOT REPORTED SEPARATELY.**
+
+### B3 - 7B candidate blocker
+
+- PR #5 remains open/unmerged/unaccepted. Its run `44693097619` passed 7A 23/23 and candidate 7B 32/32, but did not run the 83-case baseline.
+- Static review found a short-circuit validation defect at candidate compiler lines 322-326: when the left logical operand is dynamic, compile-time constant evaluation still traverses the right operand and can reject a division-by-zero expression even when the runtime left value should skip it. Existing tests cover constant-left short-circuit only.
+- Add dynamic-left short-circuit tests, deeper nested loop-target tests, Boolean function ABI rejection tests, nested return-path cases, .sharnou examples, and rel32 target decoding. Keep PR #5 as proposal only; do not merge or copy it without user acceptance.
+
+### H1 / Issue #1 - ABI carry-forward
+
+- Unwind metadata, large-frame stack probes, nonvolatile-register/stack/argument probes, and generic checked Windows API marshalling remain unresolved. No ABI runtime test was executed in this run.
+- **Status: REPOSITORY PRESENT / STATIC REVIEWED; ABI acceptance remains BLOCKED.**
+
+No new GitHub issue was created because the 7B finding is confined to an unaccepted existing proposal and is recorded against PR #5. Issue #9 and #10 remain open; their status has not changed.
