@@ -297,3 +297,11 @@ PR #11 head `d33778f6f23a006965f25aeb4dfc8e55cdc49d22` passed both workflows:
 - Both run against the same exact PR head; no FAIL test records.
 - PR remains OPEN / UNMERGED; only five baseline additions are in its diff. The default branch still lacks the baseline. R25-R4 archive comparison NOT RUN.
 - After this status-only docs commit, PR #11 will be one documentation-only commit behind default. Source/test content is unchanged.
+
+
+### Synchronized PR head c525a44 - final Windows workflow evidence
+
+- [Run 45004279512](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45004279512): M1-M6 baseline **83/83 PASS**, exact PR head `c525a4491f033dc882488ab84fbb312c5e477061`.
+- [Run 45004279593](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45004279593): Stage 7A **23/23 PASS**, same exact PR head.
+- Both Windows jobs concluded success and passed ASCII/no-BOM checks. No failed test records.
+- PR #11 has exactly five intended baseline paths in its diff and was 6 ahead / 0 behind before this status-only default-branch documentation commit. Default branch still lacks baseline until normal PR integration. No PR merge occurred.
