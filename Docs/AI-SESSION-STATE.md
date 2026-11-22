@@ -578,3 +578,15 @@ Same-head Windows CI:
 The status-only documentation commit below advances default by one commit; PR #11 will therefore be one docs-only commit behind afterwards. Its compiler, verifier, five baseline files, fixtures and test source are unchanged. No CI result is claimed for any later merge-only PR commit.
 
 Issue #9 remains open: PR review/integration is pending and the separate R25-R4 archive file comparison is NOT RUN. Issue #10 remains open: Windows CI passes but user-local 7A acceptance is not separately recorded. Issue #1 remains open and blocked on ABI implementation/runtime evidence.
+
+
+## Final baseline and control-flow CI on synchronized PR head - 2026-11-22
+
+PR #11 synchronized head `c525a4491f033dc882488ab84fbb312c5e477061` completed both Windows workflows successfully:
+- [45004279512](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45004279512), job `windows-m6-83` ID `137152283687`: Stage 2 25/25, Stage 4 20/20, PE verifier 4/4, Stage 5 25/25, Stage 6 9/9; aggregate **83 passed, 0 failed, 83 total**.
+- [45004279593](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45004279593), job `windows-stage7a` ID `137152283815`: **23 passed, 0 failed, 23 total** (8 positive runtime, 12 negative parser/type, 3 instruction/branch checks).
+- Both jobs concluded success, both logs report ASCII/no-BOM PASS, and no FAIL test lines were present.
+
+At this point the feature branch was based on default HEAD `81329d675b8383a54709f41c5a3203b422421740`, compare 6 ahead / 0 behind, and the PR diff contained only the five frozen-baseline paths. This status-only documentation commit may move the feature branch one docs-only commit behind; compiler, verifier, tests, fixtures and baseline payload are unchanged.
+
+PR #11 remains OPEN / UNMERGED. The frozen 83-case suite is proven by Windows CI on the PR branch but is not yet in default. The R25-R4 archive comparison remains NOT RUN. M7A is WINDOWS CI PASS; user-local acceptance is still not separately recorded. ABI issue #1 remains OPEN and blocked on implementation/runtime evidence.
