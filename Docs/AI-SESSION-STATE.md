@@ -1,6 +1,6 @@
 # AI Session State - Sharnou Compiler
 
-**Last updated:** 2026-11-20 22:49 Africa/Cairo
+**Last updated:** 2026-11-22 Africa/Cairo
 **Repository:** `Sharnou/Sharnou-Compiler`  
 **Branch:** `Sharnou-Compiler`  
 **Purpose:** Latest durable status for every future AI-assisted compiler/Engine generation, debugging, testing, and repair session.
@@ -11,14 +11,14 @@
 
 - **Accepted project direction:** self-contained Sharnou compiler, PE32+ linker, runtime/standard library, Engine, IDE, and Honour War for Windows x64.
 - **User-reported completed history:** Milestones 1-6 passed on the user's Windows PC.
-- **Current development focus:** Milestone 7A - native control flow (if/else, while, signed comparisons).
+- **Current development focus:** Milestone 7A implementation is present and Windows-CI verified; the next bounded task is a Milestone 7B proposal and isolated patch plan only.
 - **Persistent AI status tracker:** [GitHub issue #8](https://github.com/Sharnou/Sharnou-Compiler/issues/8); update its body and this file after every completed AI generation/repair session.
 - **Actionable blockers:** [Issue #9 - restore exact 83-case baseline](https://github.com/Sharnou/Sharnou-Compiler/issues/9); [Issue #10 - Milestone 7A Windows acceptance](https://github.com/Sharnou/Sharnou-Compiler/issues/10).
 - **Milestone 7A repository implementation:** present on the `Sharnou-Compiler` branch; implementation commit `943d24d857b89b9b30a426c8fb4025c05413d6a8`.
 - **Plan-map documentation commits:** `c403b4b725200000ba89944798a4bcca618c9885` (AI preflight), `5a5b2c89d0c0c0a4d85bb4111ecb145a83be7cb9` (master plan), `aeb086429bc98e5094bf4d881c02b9100e4cb893` (issue register), and `e47dd7d5634ed5ccc9302d2d59241790f6de3bdc` (README links). The current state file was subsequently updated to include GitHub issue numbers.
-- **Milestone 7A Windows acceptance:** NOT CONFIRMED by the user in the current status record. Do not claim it passed.
-- **Frozen 83-case repository baseline:** BLOCKED / not included in the current branch according to the current README. The user previously reported 83 cases passed locally, but the branch must contain the exact source suites and fixtures before the repository can independently rerun them.
-- **Next action:** reconcile and restore the exact 83-case suite, then run the complete 7A and frozen baseline tests on 64-bit Windows PowerShell 5.1; record logs, exit codes, and hashes.
+- **Milestone 7A Windows CI:** current default-branch run 45004368571 passed 23/23 on HEAD 45c83e1941fd74ca1ce94a4f0bc9ffe72a43efe3. User-local 7A acceptance is still NOT REPORTED separately.
+- **Frozen 83-case repository baseline:** WINDOWS CI PASS 83/83 on open PR #11 head 135b7eec7bf13fc147756dfaeeb3f92eab57a250, with the 7A 23/23 suite passing on that same head. The five baseline paths remain PR-only and are not yet on default.
+- **Next action:** review PR #11 through the normal process without auto-merging; complete the R25-R4 archive comparison; retain ABI gates; prepare 7B as a proposal only until implementation/write authorization.
 
 ## Verified project history (as reported by the user)
 
@@ -590,3 +590,54 @@ PR #11 synchronized head `c525a4491f033dc882488ab84fbb312c5e477061` completed bo
 At this point the feature branch was based on default HEAD `81329d675b8383a54709f41c5a3203b422421740`, compare 6 ahead / 0 behind, and the PR diff contained only the five frozen-baseline paths. This status-only documentation commit may move the feature branch one docs-only commit behind; compiler, verifier, tests, fixtures and baseline payload are unchanged.
 
 PR #11 remains OPEN / UNMERGED. The frozen 83-case suite is proven by Windows CI on the PR branch but is not yet in default. The R25-R4 archive comparison remains NOT RUN. M7A is WINDOWS CI PASS; user-local acceptance is still not separately recorded. ABI issue #1 remains OPEN and blocked on implementation/runtime evidence.
+
+
+## Live compiler audit and Milestone 7B proposal - 2026-11-22
+
+### Repository and branch
+- Repository: `Sharnou/Sharnou-Compiler`.
+- Default branch: `Sharnou-Compiler`.
+- Default HEAD reviewed: `45c83e1941fd74ca1ce94a4f0bc9ffe72a43efe3`.
+- Changed compiler/test/workflow paths: **none**. This run performed repository review, Windows CI log inspection, and status-only persistence.
+- No feature branch, PR, source file, workflow, or user machine was modified. No workflow was dispatched.
+
+### Milestone 7A and frozen baseline - same-head Windows evidence
+- Default-branch Windows run [45004368571](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45004368571), job `windows-stage7a` (`137152555458`), completed SUCCESS on exact default HEAD `45c83e1941fd74ca1ce94a4f0bc9ffe72a43efe3`. Log: ASCII/no-BOM PASS; 8 positive runtime cases, 12 negative diagnostic cases, 3 instruction/branch checks; **23 passed, 0 failed, 23 total**; Stage 7A PASS; Combined PASS.
+- PR [#11](https://github.com/Sharnou/Sharnou-Compiler/pull/11), branch `automation/m6-baseline-current-head-20261122`, exact head `135b7eec7bf13fc147756dfaeeb3f92eab57a250`, base SHA `45c83e1941fd74ca1ce94a4f0bc9ffe72a43efe3`, is OPEN / UNMERGED. Compare: 7 ahead / 0 behind; its diff is five baseline-related additions only.
+- PR #11 Windows baseline run [45004395351](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45004395351), job `windows-m6-83` (`137152637466`), completed SUCCESS on exact PR head `135b7eec7bf13fc147756dfaeeb3f92eab57a250`. Logs: Stage 2 25/25; Stage 4 20/20; PE verifier 4/4; Stage 5 25/25; Stage 6 9/9; aggregate **83 passed, 0 failed, 83 total**; ASCII/no-BOM PASS.
+- PR #11 Windows Stage 7A run [45004395353](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45004395353), job `windows-stage7a` (`137152637335`), completed SUCCESS on the same exact PR head `135b7eec7bf13fc147756dfaeeb3f92eab57a250`: **23 passed, 0 failed, 23 total** (8 positive, 12 negative, 3 instruction/branch checks).
+- Thus 7A and all 83 M1-M6 cases have WINDOWS CI PASS on one current PR head, but the baseline remains absent from default until PR #11 is normally reviewed/integrated. This does not replace user-local 7A evidence.
+
+### PR and issue state
+- PR #11: OPEN / UNMERGED; current head `135b7eec7bf13fc147756dfaeeb3f92eab57a250`; compare 7 ahead / 0 behind; five additions only.
+- PR #6: OPEN / UNMERGED, old head `9dfe1bc09685a6f7deb9d29b5192b1aae0686039`; compare to current default 15 ahead / 37 behind. Do not merge, rebase, or rewrite it automatically.
+- PR #5: OPEN / UNMERGED, proposed 7B head `0b8dee87b699eabcaaac37f111686231fb29a82c`; compare 2 ahead / 37 behind, merge base `352c65e05524d494970b2d8b52b7089d12d19435`. It is stale relative to current default and is a proposal, not accepted implementation.
+- PR #7: OPEN / DRAFT, head `ac3849800412b1208acb540ef090ffb3ac0455ca`; native DevAgent test orchestrator proposal only.
+- PR #4: OPEN / UNMERGED. No PR was modified, approved, or merged.
+- Issues #8, #9, #10 and #1 remain OPEN. Issue #9 awaits normal PR #11 review/integration and the separate R25-R4 archive equivalence comparison. Issue #10 still lacks a separate user-local M7A acceptance report. Issue #1 ABI gates remain unresolved.
+
+### Milestone 7A source audit
+- Current compiler blob: `ee01ef77b068df5d149934fbf463c43b34c54bf3`; recorded file SHA-256: `c97bd0c4d9ad94b1b4855bbdcd6f843f563f75b35771106ae8976cae2bbda250`.
+- PE verifier blob: `3606b57920043882a2277ad41fd0e0578156944a`; recorded file SHA-256: `953a20c2274eee42eee2523c5608fd48e6dc574e4b5465464e910db560d55179`.
+- Stage 7A test blob: `80d8df1c9a6da7c8fb6f2b414c2929f07ba44804`; recorded file SHA-256: `ffd8a3518d8fc943adb97e319a29a8822d4e5c409226597d0010b40da23eae05`.
+- Static review confirms the current subset: signed integer comparisons, zero/nonzero integer truth conditions, comparison normalization, nested if/while, and label-based near-branch fixups. It explicitly rejects chained comparisons, string comparisons, logical AND/OR, else-if shorthand, and returns nested inside control-flow blocks. The Windows CI suite covers eight positive programs, twelve negative cases, and three instruction checks.
+- ABI carry-forward remains: no large-frame stack probe, no `.pdata`/`.xdata` unwind metadata or exception directory, no executed nonvolatile-register/RSP/stack-argument sentinel suite, and no generic signature-driven Windows API marshaller. These are repository/static findings, not new runtime failures. Do not claim self-hosting readiness.
+
+### Milestone 7B proposal - no implementation performed
+The current PR #5 candidate reports Windows CI run [44693097619](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/44693097619): Stage 7A 23/23 plus candidate Stage 7B 32/32 (15 positive, 13 negative, 4 instruction-presence checks), but it did not include the 83-case frozen baseline and is based on an old branch. Do not port or accept it wholesale.
+
+A bounded proposal for a fresh 7B patch after the baseline is on the accepted base:
+1. Boolean scalar values: `true`/`false`, normalized 0/1 storage, Boolean declarations/assignments; reject integer/Boolean implicit conversions and Boolean arithmetic.
+2. Precedence and semantics: unary `!`, comparisons, then `&&`, then `||`; strict Boolean operands for logical operators; `==`/`!=` for matching types; ordered comparisons remain integer-only. Preserve existing integer conditions for 7A compatibility while allowing Boolean conditions explicitly.
+3. Short-circuit native branches: `&&` skips RHS when left is false; `||` skips RHS when left is true; use existing rel32 fixup machinery. Add dynamic-variable-left side-effect tests for both skip and evaluate paths (the current candidate tests use constant left operands only).
+4. Loop control: `break` and `continue` only inside loops; use a nested loop-target stack with push/pop in `try/finally`; break targets the current loop exit and continue targets its condition/header. Add deeper nested-loop and nested-if cases.
+5. Nested returns: allow return in nested if/else/loop blocks, emit the existing ABI epilogue for each return edge; keep conservative definite-return analysis (a loop is not assumed to terminate). Functions remain up to four integer parameters and integer return values in this bounded stage; explicitly reject Boolean function arguments/returns until a separate ABI design is accepted.
+6. Tests: preserve M6 83 + 7A 23; add runtime positives for Boolean assignment/equality/precedence, dynamic short-circuit skip/evaluate paths, break/continue including nested loops, nested returns; negative tests for mixed types, Boolean arithmetic/ordered comparisons, invalid loop-control placement, Boolean function ABI misuse, and missing return paths; add a rel32 decoder that validates each emitted branch target is within a valid code range rather than only checking opcode presence.
+7. Keep the existing Windows x64 call convention and frame contract unchanged: RCX/RDX/R8/R9 integer arguments, EAX integer return, 32-byte shadow space, 16-byte call-site alignment, RBP frame, and existing local/temp stack-slot layout.
+
+Dependency order: obtain normal review/integration of PR #11 (no auto-merge); complete the separate R25-R4 archive comparison; retain Issue #1 ABI gate. Only then create a fresh, isolated 7B feature branch from the accepted current baseline and run **83 + 23 + all 7B tests on the same exact commit**. No source patch, PR update, or workflow dispatch was performed in this run.
+
+### Native compiler / DevAgent state
+- Native self-hosted `SharnouCompiler.exe`: NOT BUILT / NOT RUN.
+- PR #7 DevAgent: prior Windows CI run `44758761226` and artifact `14654214120` prove only a native test orchestrator. It is not a source-generating AI agent. Persistent autonomous worker/checkpoint/recovery, Windows-host deployment, and restart/runtime proof: NOT IMPLEMENTED / NOT RUN.
+- M1-M6 user-local passes remain USER-REPORTED WINDOWS PASS. The current default M7A and same-head PR #11 baseline/7A results above are WINDOWS CI PASS. Source audit is REPOSITORY PRESENT / STATIC REVIEWED. No local Windows execution was performed by the assistant.
