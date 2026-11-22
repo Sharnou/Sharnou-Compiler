@@ -305,3 +305,28 @@ PR #11 head `d33778f6f23a006965f25aeb4dfc8e55cdc49d22` passed both workflows:
 - [Run 45004279593](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45004279593): Stage 7A **23/23 PASS**, same exact PR head.
 - Both Windows jobs concluded success and passed ASCII/no-BOM checks. No failed test records.
 - PR #11 has exactly five intended baseline paths in its diff and was 6 ahead / 0 behind before this status-only default-branch documentation commit. Default branch still lacks baseline until normal PR integration. No PR merge occurred.
+
+
+## Live 7A / frozen-baseline audit and 7B proposal - 2026-11-22
+
+### Current default branch and Windows results
+- Repository `Sharnou/Sharnou-Compiler`, branch `Sharnou-Compiler`, HEAD `45c83e1941fd74ca1ce94a4f0bc9ffe72a43efe3`.
+- Default Windows run [45004368571](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45004368571), job `137152555458`, succeeded on this exact HEAD: Stage 7A 23/23 (8 positive, 12 negative, 3 instruction/branch checks); ASCII/no-BOM PASS.
+- PR #11 current head `135b7eec7bf13fc147756dfaeeb3f92eab57a250`, OPEN / UNMERGED, is 7 ahead / 0 behind and adds only the five frozen-baseline files. Windows run [45004395351](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45004395351), job `137152637466`, succeeded with Stage 2 25/25, Stage 4 20/20, PE verifier 4/4, Stage 5 25/25, Stage 6 9/9: **83/83**. Same-head Windows run [45004395353](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45004395353), job `137152637335`, succeeded with Stage 7A **23/23**. Both runs tested exact PR #11 head `135b7eec7bf13fc147756dfaeeb3f92eab57a250`, which has the current default compiler and Stage 7A source/test blobs.
+- The 83-case M6 suite remains absent from default until normal PR #11 integration. Case-intent classification from the prior audit is 36 positive / 47 negative; this split is not a field in the manifest, which records the exact suite totals.
+- Issue #9 remains OPEN: review/integration of PR #11 and the file-by-file R25-R4 archive comparison remain outstanding. Do not merge PR #11 automatically.
+
+### PR inventory and 7B candidate
+- PR #6 remains OPEN / UNMERGED, head `9dfe1bc09685a6f7deb9d29b5192b1aae0686039`, now 15 ahead / 37 behind current default.
+- PR #5 remains OPEN / UNMERGED, head `0b8dee87b699eabcaaac37f111686231fb29a82c`, 2 ahead / 37 behind; it is an old, unaccepted 7B proposal.
+- PR #7 remains OPEN / DRAFT and is a native test orchestrator proposal, not an AI source-writing agent. PR #4 remains open/unmerged. No PR was changed or merged.
+- PR #5 workflow [44693097619](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/44693097619) succeeded on its older source tree: Stage 7A 23/23 and proposed Stage 7B 32/32 (15 positive, 13 negative, 4 instruction-presence checks). It did not run the 83-case baseline and does not establish current-default acceptance.
+- Static review identifies test gaps in that candidate: all short-circuit side-effect cases use constant left operands; no dedicated Boolean function argument/return ABI rejection tests; branch checks search opcode byte patterns but do not decode/validate rel32 targets. The existing nested-loop case tests innermost break/continue, but deeper nested break/continue coverage should be added. The earlier alleged dynamic-left short-circuit bug was not reproduced; compile-time constant validation is not itself runtime evaluation.
+- Proposed 7B only (not accepted or implemented): Boolean values and strict typing; !, &&, || with precedence and short-circuit runtime branches; break/continue with innermost-loop target stack; nested returns with conservative return-path analysis. Keep the M7A integer condition behavior compatible, do not coerce integer to Boolean in logical expressions, and reject Boolean function arguments/returns while the function ABI remains integer-only.
+- New tests should cover dynamic-variable-left short-circuit skip and evaluate paths, nested loops/conditionals, Boolean typing/negative cases, return-path cases, and a rel32 target decoder. Require M6 83 + M7A 23 + the full 7B suite on one exact commit before acceptance.
+
+### Remaining blockers
+- Issue #10 remains OPEN: Windows CI now verifies Stage 7A, but user-local Stage 7A acceptance has not been separately reported.
+- Issue #1 ABI risks remain OPEN / static-only: no large-frame stack probe; no PE unwind metadata (.pdata/.xdata); no runtime nonvolatile-register/RSP/stack-argument sentinels; no generic checked API-call marshaller.
+- Native self-hosted `SharnouCompiler.exe` is NOT BUILT / NOT RUN. PR #7 DevAgent is only a test orchestrator; autonomous source generation, durable worker/checkpoint/recovery, deployment, and restart/runtime proof are NOT IMPLEMENTED / NOT RUN.
+- Current source changes this session: none. Only repository status documentation was updated; no workflows were dispatched.
