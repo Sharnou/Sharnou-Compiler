@@ -498,3 +498,21 @@ Next dependency order:
 6. Do not adopt the unaccepted 7B proposal in PR #5 without explicit user acceptance and same-commit baseline coverage.
 
 No local Windows command was run by the assistant. No compiler, verifier, Engine or game source was changed. No default-branch source was modified. No PR was merged.
+
+
+## Follow-up result - PR #11 frozen 83-case baseline - 2026-11-22
+
+Windows Actions run [45003405485](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45003405485) completed successfully on PR #11 head `37451e384e2e7e669c8368882225619cc9a67e67`. Job `windows-m6-83` ID `137149638940` concluded `success`.
+
+Exact log summaries:
+- ASCII source / UTF-8 without BOM: PASS.
+- Stage 2: 25 passed, 0 failed, 25 total.
+- Stage 4: 20 passed, 0 failed, 20 total.
+- PE verifier: 4 passed, 0 failed, 4 total.
+- Stage 5: 25 passed, 0 failed, 25 total.
+- Stage 6: 9 passed, 0 failed, 9 total.
+- Aggregate frozen Milestone 1-6 baseline: **83/83 PASS**. No `FAIL:` lines were found in the job log.
+
+Classification: **WINDOWS CI PASS on PR #11**. This is not default-branch integration and not user-local evidence. PR #11 remains open for review. After the two documentation-only default-branch status commits, its base branch is two commits ahead; those commits did not alter compiler or test sources. The PR has not been merged.
+
+Issue #9 remains open until ordinary PR review/integration and the separate R25-R4 archive file-by-file comparison are complete. The R25-R4 comparison remains NOT RUN.
