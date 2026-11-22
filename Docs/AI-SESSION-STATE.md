@@ -351,3 +351,47 @@ Review PR #6 and exact baseline provenance/adaptation; capture user-local M7A ve
 - Next bounded task: keep PR #6 open for normal review; after the baseline integration decision and explicit implementation authorization, prepare an isolated 7B correction/test patch on top of the frozen baseline. Do not dispatch or merge automatically. Require all 138 same-commit Windows results before accepting 7B. Keep ABI repair and native AI-agent implementation as separately gated tasks.
 
 The resulting status-only commit SHA is recorded in GitHub issue #8 after the ref update.
+
+
+## Scheduled compiler and DevAgent audit - 2026-11-22 08:46 Africa/Cairo
+
+Repository: `Sharnou/Sharnou-Compiler`
+Default branch: `Sharnou-Compiler`
+Default HEAD at audit start: `25bc8aac1370b1d6024ae538956c49a6bbba4f07`
+Status-only issue-register commit: `329f1aac33e4a3ed4f5bbbc03ce3d3667d5776bf`
+
+### Live PR state
+
+- PR #6: OPEN / UNMERGED; head `9dfe1bc09685a6f7deb9d29b5192b1aae0686039`; GitHub reports mergeable=false; compare to default is 15 ahead / 19 behind with merge base `352c65e05524d494970b2d8b52b7089d12d19435`. Five baseline-related paths are added. Compiler, verifier, Stage 7A test, and root Test.ps1 blobs are identical to current default. Do not merge, rebase, or rewrite automatically.
+- PR #5: OPEN / UNMERGED / NOT ACCEPTED; head `0b8dee87b699eabcaaac37f111686231fb29a82c`; mergeable=false; 2 ahead / 19 behind. Its 7B implementation is a proposal only.
+- PR #7: OPEN / DRAFT; head `ac3849800412b1208acb540ef090ffb3ac0455ca`; mergeable=false. It is a native test orchestrator, not an AI source-generating agent.
+- PR #4 and #2 remain open/unmerged; PR #3 is merged. Issues #1, #8, #9, #10 remain open.
+
+### Windows Actions evidence
+
+- Run 44880127825: default HEAD `25bc8aac1370b1d6024ae538956c49a6bbba4f07`; `windows-stage7a` success; encoding check PASS; Stage 7A 23 passed / 0 failed / 23 total; Combined result PASS.
+- Run 44700641397: PR #6 head; `windows-m6-83` success; Stage 2 25/25, Stage 4 20/20, PE verifier 4/4, Stage 5 25/25, Stage 6 9/9; frozen baseline PASS 83/83.
+- Run 44700641419: same PR #6 head; `windows-stage7a` success; Stage 7A 23/23; Combined result PASS.
+- Run 44693097619: PR #5 head; `windows-stage7a` success; Stage 7A 23/23 and proposed Stage 7B 32/32 (15 positive, 13 negative, 4 instruction checks). It did not run the 83-case baseline.
+- Run 44758761226: PR #7 head; `windows-stage7a` success; native DevAgent repeated Stage 7A 23/23, verified child exit code 7 propagation, exited 0, and uploaded artifact ID `14654214120`.
+- The 83-case intent split is classified as 36 positive / 47 negative; the manifest records suite totals only. No workflow was dispatched in this run.
+
+### Audit findings
+
+- Current default compiler/verifier/Test-Stage7A blobs: `ee01ef77b068df5d149934fbf463c43b34c54bf3`, `3606b57920043882a2277ad41fd0e0578156944a`, `80d8df1c9a6da7c8fb6f2b414c2929f07ba44804`. Recorded SHA-256 values remain `c97bd0c4d9ad94b1b4855bbdcd6f843f563f75b35771106ae8976cae2bbda250`, `953a20c2274eee42eee2523c5608fd48e6dc574e4b5465464e910db560d55179`, and `ffd8a3518d8fc943adb97e319a29a8822d4e5c409226597d0010b40da23eae05`.
+- PR #6's baseline runner pins the original M6 archive and compressed payload. It validates the payload and embedded member hashes but does not independently read the original `SHA256SUMS.txt`; the manifest provenance boolean is not independently reproduced by the runner. R25-R4 file-by-file comparison remains NOT RUN.
+- Re-review correction: PR #5's `Get-ConstantValue` traverses the RHS when the left operand is dynamic. This is compile-time constant-arithmetic validation, not runtime RHS evaluation. Since the RHS may be reachable, constant divide-by-zero rejection can be a deliberate fail-closed policy. The previous session overclassified this as a confirmed short-circuit defect. The actual gap is missing dynamic-left side-effect tests for AND/OR skip and evaluate paths.
+- PR #5 has 15 positive, 13 negative, and 4 opcode-presence checks. It lacks explicit negative tests for Boolean function arguments/returns and a rel32 target decoder. The current branch/loop emitter uses JZ/JNZ and JMP rel32 fixups; loop targets are pushed/popped with try/finally. ABI-critical functions `Emit-CallFunction`, `Set-FrameSize`, `Emit-Prologue`, and `Emit-Epilogue` are unchanged from default. Issue #1's unwind metadata, large-frame stack probing, nonvolatile-register probes, and generic API marshalling remain open.
+- The PR #7 native agent is a test orchestrator only. It checks workspace files, tests child-process exit-code propagation, and runs PowerShell tests. It does not generate source or build a self-hosted compiler.
+
+### Native build/runtime status
+
+- Native self-hosted `SharnouCompiler.exe`: NOT BUILT / NOT RUN.
+- Native `SharnouDevAgent.exe`: WINDOWS CI PASS as a test orchestrator on PR #7; artifact ID `14654214120`; process exit code 0. Not merged or deployed.
+- Autonomous source generation, persistent worker/checkpoint/recovery, Windows-host deployment, and restart/runtime proof: NOT IMPLEMENTED / NOT RUN.
+
+### Changes and next dependency
+
+- Changed paths in this run: `Docs/AI-ISSUE-REGISTER.md` and this session-state file only. No source changes: compiler, verifier, examples, tests, build scripts, workflows, Engine, IDE, and game source are unchanged. No PR changes, merge, rebase, or workflow dispatch.
+- Evidence: M1-M6 USER-REPORTED WINDOWS PASS; default 7A and PR #6 baseline/7A WINDOWS CI PASS; PR #5 7B WINDOWS CI PASS on an unaccepted, stale branch; PR #7 native test orchestrator WINDOWS CI PASS; 7B observations REPOSITORY PRESENT / STATIC REVIEWED; self-hosting and autonomous agent NOT RUN / NOT IMPLEMENTED.
+- Next bounded task: resolve PR #6's stale/non-mergeable integration path by explicit review without altering the frozen payload. Once baseline is integrated or equivalently included in a fresh isolated candidate branch, prepare the corrected 7B patch plan and require all 138 cases (83 + 23 + 32) to pass on one Windows commit. Keep ABI repair and autonomous agent work separately gated.
