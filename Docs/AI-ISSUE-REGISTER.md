@@ -213,3 +213,10 @@ No new GitHub issue was created because the 7B finding is confined to an unaccep
 - Status-only documentation changes: this issue register and the session-state file. No compiler, verifier, examples, tests, build scripts, workflows, Engine, IDE, or game source changed. No PR was created, modified, rebased, or merged; no workflow was dispatched; no local Windows build/test was run by the assistant.
 - Evidence classification: M1-M6 remains USER-REPORTED WINDOWS PASS; default 7A 23/23 and PR #6 83/83 plus 7A 23/23 are WINDOWS CI PASS; PR #5 7B 32/32 is WINDOWS CI PASS on an unaccepted, stale proposal branch; PR #7 is WINDOWS CI PASS as a test orchestrator; 7B source observations are REPOSITORY PRESENT / STATIC REVIEWED; native self-hosting and autonomous AI agent are NOT RUN / NOT IMPLEMENTED.
 - Next bounded task: resolve PR #6's stale/non-mergeable integration path through explicit review, preserving the frozen payload and current compiler blobs. After the baseline is integrated or equivalently included in a fresh isolated candidate branch, prepare the corrected 7B test/patch plan and require 83 + 23 + 32 = 138 same-commit Windows results. Keep ABI repair and autonomous agent implementation separately gated.
+
+
+## PR mergeability re-check correction - 2026-11-22
+
+A repeated live GitHub PR metadata read supersedes the initial mergeability values recorded in the audit above. At default HEAD `c7bd85a108d97800e7f03b338cf60089a18f4f4e`, GitHub reports PR #6, PR #5, PR #7, and PR #4 as `mergeable=true`; they are still OPEN and UNMERGED (PR #7 remains DRAFT). The initial read returned false, but two subsequent reads returned true. Use the repeated latest value; do not describe these PRs as conflict-blocked.
+
+The compare endpoints still report divergence from default: PR #6 is 15 commits ahead / 21 behind, PR #5 is 2 ahead / 21 behind, and PR #7 is 9 ahead / 21 behind, all with merge base `352c65e05524d494970b2d8b52b7089d12d19435`. This is a staleness/integration review concern, not proof of merge conflicts. PR #6 must remain unmerged by this automation regardless of the GitHub mergeable flag. No PR state or source was changed.
