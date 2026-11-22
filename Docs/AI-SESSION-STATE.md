@@ -542,3 +542,24 @@ The default branch still does not contain the baseline; PR #11 remains OPEN / UN
 - Windows run 45003405485 passed the frozen M1-M6 suite 83/83, and run 45003405576 passed Stage 7A 23/23, both on predecessor source/test tree commit `37451e384e2e7e669c8368882225619cc9a67e67`. The later PR merge commits only synchronize status-document commits; compiler/verifier/tests/payload blobs are unchanged. No new runtime run is claimed for merge commit `939a8b6...`.
 - The final status-doc write itself advances default branch after base `b90710f...`; PR #11 may therefore be one docs-only commit behind after this status write. This does not change its five-file diff or tested code/test blobs.
 - PR remains OPEN / UNMERGED for review. The default branch still does not contain the frozen baseline. The R25-R4 archive comparison remains NOT RUN.
+
+
+## Final current-head Windows validation - 2026-11-22
+
+### PR #11 frozen baseline
+
+- Branch `automation/m6-baseline-current-head-20261122`, exact tested head `3e8dec1475d45ae2537fc30bd398ebe5a7ee7b67`.
+- Windows run [45004007198](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45004007198) completed SUCCESS; job `windows-m6-83` ID `137151468446`.
+- Results: Stage 2 25/25; Stage 4 20/20; PE verifier 4/4; Stage 5 25/25; Stage 6 9/9; aggregate **83/83 PASS**; ASCII/no-BOM check PASS.
+- Windows run [45004007206](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45004007206) completed SUCCESS on the same exact head; job `windows-stage7a` ID `137151468216`; Stage 7A **23/23 PASS**.
+- No `FAIL:` result lines appear in either workflow log. These are WINDOWS CI PASS results on PR #11, not user-local runs.
+
+### PR / issue state
+
+- PR #11 is open and not merged. It adds exactly five frozen-baseline files. At this validation snapshot, PR branch compared 4 commits ahead / 0 behind default. Default HEAD at this status write: `bd72a8636e6948bbf4834dff4eae47c0fcf97c01`.
+- Issue #9 remains OPEN until normal PR integration and the separate R25-R4 archive file-by-file comparison. The suite is not yet on default.
+- Issue #10: default-branch Stage 7A run 44996610001 passed 23/23 on earlier default source HEAD; the PR #11 head also passed 23/23 in run 45004007206. User-local 7A result remains unreported.
+- Issue #1 ABI status is unchanged: source-level static findings only; stack probing, unwind metadata, runtime preservation/stack/argument tests, and generic API marshalling remain unimplemented/unverified.
+- Issue #8 body and this session-state file have been synchronized. Daily `Sharnou DevAgent Progress` is enabled; weekly `Advance Sharnou Stack` remains enabled. Legacy Honour War daily-upgrade tasks remain disabled.
+
+The default-branch documentation commit below is status-only. No compiler, PE verifier, test, build, Engine, or game source was changed. No PR was merged.
