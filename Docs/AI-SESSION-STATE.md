@@ -532,3 +532,13 @@ Windows CI on the source/test tree before the documentation-only sync:
 - The sync commit adds only the two status-document commits as the second parent. Compiler, verifier, tests, fixtures, manifest and frozen payload blobs were not changed. No separate CI run is claimed on merge commit `614a9...`.
 
 The default branch still does not contain the baseline; PR #11 remains OPEN / UNMERGED for normal review. The R25-R4 archive comparison remains NOT RUN.
+
+
+## Final PR #11 state - 2026-11-22
+
+- PR #11 head after synchronization: `939a8b63085e0ef8f2f23b01d5122d4c702e7625`.
+- It was based on default HEAD `b90710f05abb85563e6c87885dbd72caba61899d`, compare 3 ahead / 0 behind at the time of that check.
+- PR diff remains exactly five baseline files. No compiler, PE verifier, Stage 7A implementation, existing regression script or fixture is changed.
+- Windows run 45003405485 passed the frozen M1-M6 suite 83/83, and run 45003405576 passed Stage 7A 23/23, both on predecessor source/test tree commit `37451e384e2e7e669c8368882225619cc9a67e67`. The later PR merge commits only synchronize status-document commits; compiler/verifier/tests/payload blobs are unchanged. No new runtime run is claimed for merge commit `939a8b6...`.
+- The final status-doc write itself advances default branch after base `b90710f...`; PR #11 may therefore be one docs-only commit behind after this status write. This does not change its five-file diff or tested code/test blobs.
+- PR remains OPEN / UNMERGED for review. The default branch still does not contain the frozen baseline. The R25-R4 archive comparison remains NOT RUN.
