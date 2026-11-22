@@ -412,3 +412,107 @@ Repeated live GitHub connector reads returned alternating `mergeable` values for
 ## Final default HEAD and PR divergence snapshot - 2026-11-22
 
 At default HEAD `e965c0e0848855b48b1e7cfe27707e0d369eb56b`, compare reported PR #6 15 ahead / 25 behind, PR #5 2 ahead / 25 behind, and PR #7 9 ahead / 25 behind, all diverged from merge base `352c65e05524d494970b2d8b52b7089d12d19435`. The earlier two-commit increment referred to the state before the two final consistency-note commits; this snapshot supersedes it. The two status-only commits appended after this snapshot add two more commits to default, so expected behind counts become 27. Re-query before any future branch operation. GitHub mergeable metadata remains UNSTABLE / UNKNOWN after alternating reads. No PR is merged or modified.
+
+
+## Session update - 2026-11-22 - baseline integration, 7A CI and ABI gate audit
+
+**Session type:** Repository triage, frozen-baseline integration preparation, status synchronization and current-source ABI audit. No compiler or PE-verifier source was modified.
+
+### Starting repository state
+
+- Repository: `Sharnou/Sharnou-Compiler`.
+- Default branch: `Sharnou-Compiler`.
+- Starting/default HEAD: `d79873e1941b22f1f9eb1413d58e874d77d54e17`.
+- Current compiler blob: `ee01ef77b068df5d149934fbf463c43b34c54bf3`; previously recorded content SHA-256 for that exact blob: `c97bd0c4d9ad94b1b4855bbdcd6f843f563f75b35771106ae8976cae2bbda250`.
+- Current PE verifier blob: `3606b57920043882a2277ad41fd0e0578156944a`.
+- Stage 7A test blob: `80d8df1c9a6da7c8fb6f2b414c2929f07ba44804`; root `Test.ps1` blob: `699eb04aefdf1149aa5807107ce351f8c2aae676`.
+
+### B1 / Issue #9 - frozen M1-M6 83-case suite
+
+The old PR #6 branch is open/unmerged and diverged 15 commits ahead / 27 behind the current default HEAD. It was not merged, rebased, or rewritten.
+
+A fresh feature branch and PR were created to replay the exact same five baseline file blobs from the current default commit:
+
+- Branch: `automation/m6-baseline-current-head-20261122`.
+- Commit: `37451e384e2e7e669c8368882225619cc9a67e67`.
+- New PR: [#11 - Restore frozen Milestone 6 83-case baseline on current default head](https://github.com/Sharnou/Sharnou-Compiler/pull/11).
+- Base commit: `d79873e1941b22f1f9eb1413d58e874d77d54e17`.
+- Changed paths (five additions only):
+  - `.github/workflows/milestone6-baseline.yml`
+  - `StdLib/Graphics.sharnou`
+  - `Tests/BaselineM6/M6-83Cases.payload.json.gz.b64`
+  - `Tests/BaselineM6/Test-Milestone6Baseline.ps1`
+  - `Tests/BaselineM6/manifest.json`
+- The exact blob identities from PR #6 were reused. No compiler, PE verifier, Stage 7A test, or existing test source was modified.
+- Frozen M6 package SHA-256: `0b6bf15445a5dfd8cbf93450af7fd2f5fd6239d4ed082ab18b09878a94b8b164`.
+- Compressed payload SHA-256: `3dd1d7417874159c0bc625edbbc1e8cee1ae7d8a6ea42f30b4dd80ba92102748`; 88 embedded source/fixture members.
+- New Windows workflow run [45003405485](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45003405485) started on PR #11 head `37451e384e2e7e669c8368882225619cc9a67e67`. At the time of this status write, job `windows-m6-83` was IN_PROGRESS; no result is claimed yet.
+- Earlier PR #6 Windows run [44700641397](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/44700641397) logged 83/83 on the old PR head. That historical result is not substituted for PR #11's own run.
+- The separate R25-R4 archive file-by-file comparison remains NOT RUN. Its pinned SHA-256 is `CA01AEACB2E35C6E8039E58F15202A01399DAEA3E0A24E7B4D357772C8EF1274`. The two 83-case suites are not assumed identical.
+- Issue #9 remains OPEN/BLOCKED pending PR #11 Windows 83/83, default-branch integration through normal review, and the separate R25-R4 comparison. No PR was merged.
+
+### B2 / Issue #10 - Milestone 7A
+
+Default-branch Windows run [44996610001](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/44996610001) completed successfully on exact default HEAD `d79873e1941b22f1f9eb1413d58e874d77d54e17`.
+
+- Job: `windows-stage7a`, conclusion `success`.
+- Source encoding: ASCII/no-BOM check PASS.
+- Test log: 8 positive runtime + 12 negative diagnostic + 3 instruction/branch encoding checks = 23 passed, 0 failed, 23 total.
+- Test log includes `Stage 7A test result: PASS` and `Combined result: PASS`.
+
+Classification: **WINDOWS CI PASS**. User-local Milestone 7A acceptance is still NOT REPORTED separately. Issue #10 remains open because the 83-case dependency and evidence reconciliation are still pending.
+
+### H1 / Issue #1 - current Windows x64 ABI re-audit
+
+Re-read current compiler and verifier. Static findings remain:
+
+1. `Set-FrameSize` allows frame sizes up to `0x100000`. `Emit-Prologue` emits `push rbp; mov rbp,rsp; sub rsp,imm32` with no `__chkstk` or per-page stack-touch probe. PE stack commit is `0x1000`.
+2. The linker emits only `.text`, `.rdata`, `.idata`, and `.reloc`; exception data directory is not populated. No `.pdata` / `.xdata` unwind records are emitted.
+3. The verifier does not validate unwind metadata because the image does not yet contain it.
+4. Higher-arity Windows API calls are manually emitted, not produced by a generic signature-driven checked marshaller.
+5. No new runtime sentinel tests for nonvolatile registers, RSP alignment, stack arguments or unwind walking were executed in this session.
+
+Classification: **REPOSITORY PRESENT / STATIC REVIEWED**. No ABI runtime test, stack-probe experiment or unwind-walking test was run. Issue #1 remains OPEN. Required gates: documented large-frame probing, Windows x64 unwind metadata and verifier support, nonvolatile-register/RSP/argument-value runtime probes, and validated generic Windows API argument marshalling.
+
+### Issue #8 and scheduled status synchronization
+
+The daily `Sharnou DevAgent Progress` automation was found disabled, despite its saved instructions already containing the mandatory read-first and persist-status protocol. It has been re-enabled. The weekly `Advance Sharnou Stack` automation remains enabled. The three legacy Honour War daily-upgrade automations remain disabled.
+
+This does not provide per-chat-turn background monitoring. The repository read-first and save-after-session requirements remain active, and the scheduled automation runs only on its configured schedule.
+
+### Evidence classification and next actions
+
+- M1-M6: USER-REPORTED WINDOWS PASS.
+- M6 frozen 83/83: WINDOWS CI PASS on old PR #6 head; fresh PR #11 run 45003405485 IN PROGRESS at status write.
+- M7A: WINDOWS CI PASS 23/23 on current default HEAD, run 44996610001.
+- ABI: REPOSITORY PRESENT / STATIC REVIEWED; acceptance BLOCKED.
+- Native self-hosted `SharnouCompiler.exe`: NOT BUILT / NOT RUN.
+- Autonomous source-generating DevAgent: NOT IMPLEMENTED / NOT RUN. The separate PR #7 artifact remains a test orchestrator, not an AI source generator.
+
+Next dependency order:
+1. Complete and inspect PR #11 Windows run 45003405485; require all five historical suite totals and 83/83 with zero failures/skips.
+2. Review/integrate PR #11 through the normal PR review process; do not auto-merge.
+3. Complete the exact R25-R4 archive comparison.
+4. Close M7A local-acceptance evidence only when the user reports it; retain the current Windows CI result.
+5. Implement and runtime-validate the ABI gates in issue #1 before starting native self-hosting.
+6. Do not adopt the unaccepted 7B proposal in PR #5 without explicit user acceptance and same-commit baseline coverage.
+
+No local Windows command was run by the assistant. No compiler, verifier, Engine or game source was changed. No default-branch source was modified. No PR was merged.
+
+
+## Follow-up result - PR #11 frozen 83-case baseline - 2026-11-22
+
+Windows Actions run [45003405485](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45003405485) completed successfully on PR #11 head `37451e384e2e7e669c8368882225619cc9a67e67`. Job `windows-m6-83` ID `137149638940` concluded `success`.
+
+Exact log summaries:
+- ASCII source / UTF-8 without BOM: PASS.
+- Stage 2: 25 passed, 0 failed, 25 total.
+- Stage 4: 20 passed, 0 failed, 20 total.
+- PE verifier: 4 passed, 0 failed, 4 total.
+- Stage 5: 25 passed, 0 failed, 25 total.
+- Stage 6: 9 passed, 0 failed, 9 total.
+- Aggregate frozen Milestone 1-6 baseline: **83/83 PASS**. No `FAIL:` lines were found in the job log.
+
+Classification: **WINDOWS CI PASS on PR #11**. This is not default-branch integration and not user-local evidence. PR #11 remains open for review. After the two documentation-only default-branch status commits, its base branch is two commits ahead; those commits did not alter compiler or test sources. The PR has not been merged.
+
+Issue #9 remains open until ordinary PR review/integration and the separate R25-R4 archive file-by-file comparison are complete. The R25-R4 comparison remains NOT RUN.

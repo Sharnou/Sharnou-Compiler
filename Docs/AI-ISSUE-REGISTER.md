@@ -1,6 +1,6 @@
 # AI Issue Register - Sharnou Compiler
 
-**Last reviewed:** 2026-11-20 22:49 Africa/Cairo
+**Last reviewed:** 2026-11-22
 **Live session tracker:** [Issue #8 - AI Development Plan and Live Session State](https://github.com/Sharnou/Sharnou-Compiler/issues/8)
 
 This register separates active blockers from historical findings. Do not close an issue or mark a risk resolved without the stated evidence.
@@ -11,9 +11,13 @@ This register separates active blockers from historical findings. Do not close a
 
 - Tracking issue: [#9 - Restore and pin the exact frozen 83-case Milestone 1-6 regression baseline](https://github.com/Sharnou/Sharnou-Compiler/issues/9)
 - User reports the cumulative 83 cases passed locally through Milestone 6.
-- Current repository README says the imported branch did not include the 83 test scripts and fixture directories.
-- Required: recover the exact accepted package, compare file-by-file and hash-by-hash against the historical R25-R4/R26.0 archive in issue #1, restore a pristine baseline and manifest, then rerun 83/83 on Windows.
-- **Status: BLOCKED.**
+- The 83-case suite is not yet present on the default branch.
+- Fresh integration PR [#11](https://github.com/Sharnou/Sharnou-Compiler/pull/11) adds only the five exact frozen baseline file blobs from PR #6, but is based directly on current default HEAD `d79873e1941b22f1f9eb1413d58e874d77d54e17`.
+- PR #11 head: `37451e384e2e7e669c8368882225619cc9a67e67`; branch `automation/m6-baseline-current-head-20261122`.
+- New Windows baseline run [45003405485](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45003405485) completed SUCCESS on PR #11 head `37451e384e2e7e669c8368882225619cc9a67e67`; its log reports Stage 2 25/25, Stage 4 20/20, PE verifier 4/4, Stage 5 25/25, Stage 6 9/9, aggregate 83/83, and ASCII/no-BOM PASS. This is WINDOWS CI PASS on PR #11, not default-branch integration.
+- M6 package SHA-256: `0b6bf15445a5dfd8cbf93450af7fd2f5fd6239d4ed082ab18b09878a94b8b164`; compressed payload SHA-256: `3dd1d7417874159c0bc625edbbc1e8cee1ae7d8a6ea42f30b4dd80ba92102748`.
+- Required next: obtain 83/83 on PR #11, review/integrate through normal PR process, then compare the M6 archive member-by-member against the separate R25-R4 archive (SHA-256 `CA01AEACB2E35C6E8039E58F15202A01399DAEA3E0A24E7B4D357772C8EF1274`). Do not assume equal case counts mean identical suites.
+- **Status: PR #11 WINDOWS CI PASS 83/83; DEFAULT-BRANCH BASELINE NOT YET RESTORED; NORMAL PR REVIEW/INTEGRATION AND R25-R4 COMPARISON STILL PENDING.**
 
 ### B2 - Milestone 7A Windows acceptance not yet recorded
 
@@ -21,13 +25,14 @@ This register separates active blockers from historical findings. Do not close a
 - Implementation commit: `943d24d857b89b9b30a426c8fb4025c05413d6a8`.
 - Test file: `Tests/Test-Stage7A.ps1`.
 - Current test inventory: eight positive examples, twelve negative cases, and native instruction/branch encoding checks.
-- Required: run 64-bit Windows PowerShell 5.1 in an interactive desktop session; capture every test label, totals, output, exit code, compiler/verifier hashes, and commit SHA.
-- **Status: IMPLEMENTATION PRESENT; WINDOWS ACCEPTANCE NOT CONFIRMED.**
+- Default-branch Windows run [44996610001](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/44996610001) passed on exact HEAD `d79873e1941b22f1f9eb1413d58e874d77d54e17`: 8 positive runtime cases + 12 negative diagnostic cases + 3 instruction/branch checks = 23/23; job `windows-stage7a` succeeded.
+- Log includes ASCII/no-BOM PASS, `Stage 7A test result: PASS`, and `Combined result: PASS`.
+- **Status: WINDOWS CI PASS 23/23; USER-LOCAL WINDOWS ACCEPTANCE NOT REPORTED.** Keep issue #10 open pending the separate frozen 83-case baseline and any user-local acceptance record.
 
 ### B3 - Self-hosting gate not yet met
 
 - Tracking issue: [#8 - AI Development Plan and Live Session State](https://github.com/Sharnou/Sharnou-Compiler/issues/8)
-- Do not generate the full compiler-in-Sharnou implementation until 7A runtime verification and exact frozen 83-case regression restoration/replay are complete.
+- Do not generate the full compiler-in-Sharnou implementation until the default-branch 83-case baseline is restored/replayed, 7A evidence is reconciled, and the ABI blockers in issue #1 have passed runtime validation.
 - Next design activity after those gates: inspect the actual compiler source and write a construct-by-construct language feature gap inventory for Milestone 7B.
 - **Status: BLOCKED BY B1 AND B2.**
 
@@ -41,7 +46,12 @@ This register separates active blockers from historical findings. Do not close a
   - Missing large-frame stack probing; historical inspection saw a `0x1140` frame with a `0x1000` stack commit and no probe.
   - Nonvolatile-register sentinels and runtime RSP/argument-value probes had not been run.
   - Higher-arity Windows API calls were manually marshalled; a generic checked call builder was still needed.
-- These findings must be re-audited against the actual current compiler before self-hosting or more complex Engine APIs. They are historical issue findings, not defects newly reproduced in this session.
+- Current default-branch re-audit at HEAD `d79873e1941b22f1f9eb1413d58e874d77d54e17` re-confirmed these risks in the present source: compiler blob `ee01ef77b068df5d149934fbf463c43b34c54bf3` (content SHA-256 `c97bd0c4d9ad94b1b4855bbdcd6f843f563f75b35771106ae8976cae2bbda250`); verifier blob `3606b57920043882a2277ad41fd0e0578156944a`.
+- `Set-FrameSize` permits frames up to 0x100000; `Emit-Prologue` subtracts the frame size without stack probing; PE stack commit remains 0x1000.
+- No exception directory, `.pdata`, or `.xdata` is emitted or validated. The verifier has no unwind-table gate.
+- No runtime nonvolatile-register/RSP/stack-argument sentinel suite was run. Higher-arity Windows API marshalling remains manual, with no generic signature-driven checked call builder.
+- Classification: **REPOSITORY PRESENT / STATIC REVIEWED**. No runtime ABI failure was reproduced in this session.
+- Required gates: large-frame stack probe design/runtime test; x64 unwind metadata generation plus PE validation and unwind-walk tests; nonvolatile register, RSP alignment and argument-slot runtime probes; generic checked Windows API argument marshalling.
 - Keep issue #1 open until its baseline and ABI acceptance gates are satisfied.
 
 ## Resolved user-reported milestones
@@ -230,3 +240,23 @@ The GitHub connector returned alternating `mergeable` values for PRs #6, #5, and
 ## Final default HEAD and PR divergence snapshot - 2026-11-22
 
 At default HEAD `e965c0e0848855b48b1e7cfe27707e0d369eb56b`, the compare endpoint reported PR #6 15 ahead / 25 behind, PR #5 2 ahead / 25 behind, and PR #7 9 ahead / 25 behind; all are diverged from merge base `352c65e05524d494970b2d8b52b7089d12d19435`. The earlier note's two-commit increment described the state before the two final consistency-note commits; this snapshot supersedes it. The two status-only commits appended after this snapshot add two more commits to default, so expected behind counts become 27. Re-query before future branch operations. GitHub's mergeable field remains UNSTABLE / UNKNOWN due alternating reads. No PR is merged or modified.
+
+
+## Live status update - 2026-11-22 - issue synchronization
+
+- New baseline integration PR: [#11](https://github.com/Sharnou/Sharnou-Compiler/pull/11), branch `automation/m6-baseline-current-head-20261122`, commit `37451e384e2e7e669c8368882225619cc9a67e67`, based on current default `d79873e1941b22f1f9eb1413d58e874d77d54e17`. It adds five exact file blobs reused from PR #6; no compiler/test implementation files changed.
+- PR #11 Windows run [45003405485](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45003405485) was in progress when recorded. Do not report new-head 83-case success until its log is inspected.
+- Default branch Stage 7A Windows run [44996610001](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/44996610001) passed 23/23 on exact HEAD `d79873e...` (8 positive, 12 negative, 3 instruction checks). This is WINDOWS CI PASS, not separate user-local evidence.
+- PR #6 remains open/unmerged and untouched; its old head is 15 ahead / 27 behind current default. PR #11 is the fresh integration path. PR #5 remains an unaccepted Stage 7B proposal; PR #7 remains a draft test orchestrator, not an AI source generator.
+- Issue #1 current-source ABI inspection remains static-only and confirms no stack probe, no unwind metadata, no runtime ABI sentinel tests, and no generic API marshaller. Self-hosting remains blocked.
+- Daily `Sharnou DevAgent Progress` automation was re-enabled; weekly `Advance Sharnou Stack` remains enabled; old Honour War daily-upgrade automations remain disabled.
+- No compiler, PE verifier, Stage 7A test or engine/game source was changed. No PR was merged; no local Windows build/test was executed by the assistant.
+
+
+### Fresh PR #11 Windows baseline replay - 2026-11-22
+
+- Run [45003405485](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45003405485), job `windows-m6-83` ID `137149638940`, completed with conclusion `success` on exact PR head `37451e384e2e7e669c8368882225619cc9a67e67`.
+- Windows logs: Stage 2 25/25; Stage 4 20/20; PE verifier 4/4; Stage 5 25/25; Stage 6 9/9; aggregate 83/83. ASCII/no-BOM check PASS; no FAIL lines in log.
+- Classification: **WINDOWS CI PASS ON PR #11**. The default branch still does not contain the baseline because PR #11 remains open/unmerged.
+- PR #11 is two documentation-only commits behind the latest default head after session-state/register updates; no compiler/test sources were changed in those two commits.
+- The separate R25-R4 archive comparison remains NOT RUN. Do not close issue #9 yet.
