@@ -516,3 +516,19 @@ Exact log summaries:
 Classification: **WINDOWS CI PASS on PR #11**. This is not default-branch integration and not user-local evidence. PR #11 remains open for review. After the two documentation-only default-branch status commits, its base branch is two commits ahead; those commits did not alter compiler or test sources. The PR has not been merged.
 
 Issue #9 remains open until ordinary PR review/integration and the separate R25-R4 archive file-by-file comparison are complete. The R25-R4 comparison remains NOT RUN.
+
+
+## PR #11 replay complete and branch synchronized - 2026-11-22
+
+- PR #11: https://github.com/Sharnou/Sharnou-Compiler/pull/11
+- Feature branch: `automation/m6-baseline-current-head-20261122`
+- Current branch head after a non-force two-parent sync with latest default docs: `614a9badfd4aa2b9682bad384147c3b1e6066020`.
+- Current default branch parent: `cbc8ea0e0bb65e1a4bf1de748fb9aad8d30433ae`.
+- PR compare: 2 commits ahead, 0 behind; only the five intended frozen-baseline files appear in the PR diff.
+
+Windows CI on the source/test tree before the documentation-only sync:
+- [45003405485](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45003405485): `windows-m6-83` success, Stage 2 25/25, Stage 4 20/20, PE verifier 4/4, Stage 5 25/25, Stage 6 9/9; aggregate 83/83.
+- [45003405576](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45003405576): `windows-stage7a` success, 23/23 on the same predecessor `37451e384e2e7e669c8368882225619cc9a67e67`.
+- The sync commit adds only the two status-document commits as the second parent. Compiler, verifier, tests, fixtures, manifest and frozen payload blobs were not changed. No separate CI run is claimed on merge commit `614a9...`.
+
+The default branch still does not contain the baseline; PR #11 remains OPEN / UNMERGED for normal review. The R25-R4 archive comparison remains NOT RUN.
