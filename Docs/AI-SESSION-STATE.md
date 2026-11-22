@@ -395,3 +395,10 @@ Status-only issue-register commit: `329f1aac33e4a3ed4f5bbbc03ce3d3667d5776bf`
 - Changed paths in this run: `Docs/AI-ISSUE-REGISTER.md` and this session-state file only. No source changes: compiler, verifier, examples, tests, build scripts, workflows, Engine, IDE, and game source are unchanged. No PR changes, merge, rebase, or workflow dispatch.
 - Evidence: M1-M6 USER-REPORTED WINDOWS PASS; default 7A and PR #6 baseline/7A WINDOWS CI PASS; PR #5 7B WINDOWS CI PASS on an unaccepted, stale branch; PR #7 native test orchestrator WINDOWS CI PASS; 7B observations REPOSITORY PRESENT / STATIC REVIEWED; self-hosting and autonomous agent NOT RUN / NOT IMPLEMENTED.
 - Next bounded task: resolve PR #6's stale/non-mergeable integration path by explicit review without altering the frozen payload. Once baseline is integrated or equivalently included in a fresh isolated candidate branch, prepare the corrected 7B patch plan and require all 138 cases (83 + 23 + 32) to pass on one Windows commit. Keep ABI repair and autonomous agent work separately gated.
+
+
+## PR mergeability re-check correction - 2026-11-22
+
+The initial PR metadata read in the preceding audit returned `mergeable=false` for PR #6, #5, and #7. Two subsequent live reads returned `mergeable=true` for PR #6, #5, #7, and #4 at then-current default HEAD `c7bd85a108d97800e7f03b338cf60089a18f4f4e`. The later repeated value supersedes the initial value. All remain OPEN / UNMERGED; PR #7 remains DRAFT. Do not describe them as merge-conflict blocked.
+
+The compare endpoints still show divergence: PR #6 15 ahead / 21 behind; PR #5 2 ahead / 21 behind; PR #7 9 ahead / 21 behind; common merge base `352c65e05524d494970b2d8b52b7089d12d19435`. These are stale branches requiring review, not evidence of merge conflicts. PR #6 remains expressly unmerged by this automation. No PR state or source changed.
