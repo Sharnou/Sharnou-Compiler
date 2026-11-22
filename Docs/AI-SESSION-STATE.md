@@ -407,3 +407,8 @@ The compare endpoints still show divergence: PR #6 15 ahead / 21 behind; PR #5 2
 ## Final PR metadata consistency note - 2026-11-22
 
 Repeated live GitHub connector reads returned alternating `mergeable` values for PRs #6, #5, and #7 (false, true, false, then true). Treat the mergeable field as UNSTABLE / UNKNOWN for this session; do not infer conflicts or a clean merge from it. Stable facts: PR #6/#5 remain OPEN / UNMERGED and PR #7 remains OPEN / DRAFT / UNMERGED; head SHAs are unchanged; compare reports divergence. At default HEAD `c7bd85a108d97800e7f03b338cf60089a18f4f4e`, PR #6 was 15 ahead / 21 behind, PR #5 2 ahead / 21 behind, PR #7 9 ahead / 21 behind. Two later status-only documentation commits add two more commits to the default branch; re-run compare before any future branch operation. PR #6 must not be merged by this automation regardless of mergeability metadata. No PR state or source changed.
+
+
+## Final default HEAD and PR divergence snapshot - 2026-11-22
+
+At default HEAD `e965c0e0848855b48b1e7cfe27707e0d369eb56b`, compare reported PR #6 15 ahead / 25 behind, PR #5 2 ahead / 25 behind, and PR #7 9 ahead / 25 behind, all diverged from merge base `352c65e05524d494970b2d8b52b7089d12d19435`. The earlier two-commit increment referred to the state before the two final consistency-note commits; this snapshot supersedes it. The two status-only commits appended after this snapshot add two more commits to default, so expected behind counts become 27. Re-query before any future branch operation. GitHub mergeable metadata remains UNSTABLE / UNKNOWN after alternating reads. No PR is merged or modified.
