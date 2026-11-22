@@ -563,3 +563,18 @@ The default branch still does not contain the baseline; PR #11 remains OPEN / UN
 - Issue #8 body and this session-state file have been synchronized. Daily `Sharnou DevAgent Progress` is enabled; weekly `Advance Sharnou Stack` remains enabled. Legacy Honour War daily-upgrade tasks remain disabled.
 
 The default-branch documentation commit below is status-only. No compiler, PE verifier, test, build, Engine, or game source was changed. No PR was merged.
+
+
+## Latest PR #11 exact-head results - 2026-11-22
+
+PR #11 current tested feature-branch head: `d33778f6f23a006965f25aeb4dfc8e55cdc49d22`.
+
+Same-head Windows CI:
+- M1-M6 frozen baseline [run 45004124843](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45004124843), job `windows-m6-83` ID `137151818001`, conclusion success: Stage 2 25/25, Stage 4 20/20, PE verifier 4/4, Stage 5 25/25, Stage 6 9/9; aggregate **83 passed, 0 failed, 83 total**.
+- Stage 7A [run 45004124879](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45004124879), job `windows-stage7a` ID `137151817931`, conclusion success: **23 passed, 0 failed, 23 total** (8 positive runtime, 12 negative diagnostic, 3 instruction/branch checks).
+- Both workflows report ASCII/no-BOM PASS and no failed test records.
+- PR compare before this status-only commit: 5 commits ahead / 0 behind; exactly five frozen-baseline paths in the diff. Default base HEAD at this check: `e0e281ea53c5ace7279d42f949a5ee06cf0d80ee`.
+
+The status-only documentation commit below advances default by one commit; PR #11 will therefore be one docs-only commit behind afterwards. Its compiler, verifier, five baseline files, fixtures and test source are unchanged. No CI result is claimed for any later merge-only PR commit.
+
+Issue #9 remains open: PR review/integration is pending and the separate R25-R4 archive file comparison is NOT RUN. Issue #10 remains open: Windows CI passes but user-local 7A acceptance is not separately recorded. Issue #1 remains open and blocked on ABI implementation/runtime evidence.

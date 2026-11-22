@@ -287,3 +287,13 @@ At default HEAD `e965c0e0848855b48b1e7cfe27707e0d369eb56b`, the compare endpoint
 - Both runs tested the same exact PR head. No FAIL result lines were present.
 - PR #11 is OPEN / UNMERGED. It has only five intended baseline additions. The default branch still does not contain those files until normal PR integration.
 - Issue #9 remains open until integration and R25-R4 archive comparison. Issue #10 has WINDOWS CI PASS but no separate user-local M7A confirmation. Issue #1 ABI gates remain unresolved and static-only.
+
+
+### Latest exact-head Windows results - 2026-11-22
+
+PR #11 head `d33778f6f23a006965f25aeb4dfc8e55cdc49d22` passed both workflows:
+- [45004124843](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45004124843): frozen M1-M6 83/83, job success. Breakdown: Stage2 25, Stage4 20, PE verifier 4, Stage5 25, Stage6 9. ASCII/no-BOM PASS.
+- [45004124879](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45004124879): Stage 7A 23/23, job success (8 positive, 12 negative, 3 instruction/branch checks). ASCII/no-BOM PASS.
+- Both run against the same exact PR head; no FAIL test records.
+- PR remains OPEN / UNMERGED; only five baseline additions are in its diff. The default branch still lacks the baseline. R25-R4 archive comparison NOT RUN.
+- After this status-only docs commit, PR #11 will be one documentation-only commit behind default. Source/test content is unchanged.
