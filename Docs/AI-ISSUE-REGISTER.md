@@ -14,10 +14,10 @@ This register separates active blockers from historical findings. Do not close a
 - The 83-case suite is not yet present on the default branch.
 - Fresh integration PR [#11](https://github.com/Sharnou/Sharnou-Compiler/pull/11) adds only the five exact frozen baseline file blobs from PR #6, but is based directly on current default HEAD `d79873e1941b22f1f9eb1413d58e874d77d54e17`.
 - PR #11 head: `37451e384e2e7e669c8368882225619cc9a67e67`; branch `automation/m6-baseline-current-head-20261122`.
-- New Windows baseline run [45003405485](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45003405485) completed SUCCESS on PR #11 head `37451e384e2e7e669c8368882225619cc9a67e67`; its log reports Stage 2 25/25, Stage 4 20/20, PE verifier 4/4, Stage 5 25/25, Stage 6 9/9, aggregate 83/83, and ASCII/no-BOM PASS. This is WINDOWS CI PASS on PR #11, not default-branch integration.
+- New Windows baseline run [45003405485](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45003405485) completed SUCCESS on PR #11 predecessor head `37451e384e2e7e669c8368882225619cc9a67e67`; its log reports Stage 2 25/25, Stage 4 20/20, PE verifier 4/4, Stage 5 25/25, Stage 6 9/9, aggregate 83/83, and ASCII/no-BOM PASS. Stage 7A run [45003405576](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45003405576) also passed 23/23 on that same predecessor. PR branch is now synchronized with latest default docs at head `614a9badfd4aa2b9682bad384147c3b1e6066020`, compare 2 ahead / 0 behind; only five baseline paths differ. The sync added status-only documentation as second parent; compiler/verifier/tests/fixtures/payload are unchanged. These are WINDOWS CI PASS results for the unchanged code/test tree, not a run on the merge commit.
 - M6 package SHA-256: `0b6bf15445a5dfd8cbf93450af7fd2f5fd6239d4ed082ab18b09878a94b8b164`; compressed payload SHA-256: `3dd1d7417874159c0bc625edbbc1e8cee1ae7d8a6ea42f30b4dd80ba92102748`.
 - Required next: obtain 83/83 on PR #11, review/integrate through normal PR process, then compare the M6 archive member-by-member against the separate R25-R4 archive (SHA-256 `CA01AEACB2E35C6E8039E58F15202A01399DAEA3E0A24E7B4D357772C8EF1274`). Do not assume equal case counts mean identical suites.
-- **Status: PR #11 WINDOWS CI PASS 83/83; DEFAULT-BRANCH BASELINE NOT YET RESTORED; NORMAL PR REVIEW/INTEGRATION AND R25-R4 COMPARISON STILL PENDING.**
+- **Status: PR #11 WINDOWS CI PASS 83/83; branch synchronized and ready for normal review; DEFAULT-BRANCH BASELINE NOT YET RESTORED; R25-R4 COMPARISON NOT RUN.**
 
 ### B2 - Milestone 7A Windows acceptance not yet recorded
 
@@ -260,3 +260,12 @@ At default HEAD `e965c0e0848855b48b1e7cfe27707e0d369eb56b`, the compare endpoint
 - Classification: **WINDOWS CI PASS ON PR #11**. The default branch still does not contain the baseline because PR #11 remains open/unmerged.
 - PR #11 is two documentation-only commits behind the latest default head after session-state/register updates; no compiler/test sources were changed in those two commits.
 - The separate R25-R4 archive comparison remains NOT RUN. Do not close issue #9 yet.
+
+
+### PR #11 post-CI branch synchronization - 2026-11-22
+
+- New PR head: `614a9badfd4aa2b9682bad384147c3b1e6066020`; base: `cbc8ea0e0bb65e1a4bf1de748fb9aad8d30433ae`; compare status ahead 2 / behind 0.
+- Run 45003405485: Windows baseline 83/83, conclusion success, on predecessor tree commit 37451e3...
+- Run 45003405576: Stage 7A 23/23, conclusion success, on the same predecessor tree commit.
+- Branch sync was a non-force merge commit incorporating only two status-document commits from default. The five baseline file blobs and all compiler/verifier/test/fixture blobs are unchanged. No Windows run is claimed on merge commit 614a9...
+- PR #11 remains open; do not close issue #9 until normal PR integration and the independent R25-R4 archive comparison are complete.
