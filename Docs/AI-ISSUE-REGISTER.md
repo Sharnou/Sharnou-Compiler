@@ -269,3 +269,11 @@ At default HEAD `e965c0e0848855b48b1e7cfe27707e0d369eb56b`, the compare endpoint
 - Run 45003405576: Stage 7A 23/23, conclusion success, on the same predecessor tree commit.
 - Branch sync was a non-force merge commit incorporating only two status-document commits from default. The five baseline file blobs and all compiler/verifier/test/fixture blobs are unchanged. No Windows run is claimed on merge commit 614a9...
 - PR #11 remains open; do not close issue #9 until normal PR integration and the independent R25-R4 archive comparison are complete.
+
+
+### Final PR #11 head and status snapshot - 2026-11-22
+
+- Feature branch head: `939a8b63085e0ef8f2f23b01d5122d4c702e7625`; base at last compare: `b90710f05abb85563e6c87885dbd72caba61899d`; PR diff exactly five baseline paths.
+- PR #11 Windows evidence: run 45003405485 baseline 83/83; run 45003405576 Stage 7A 23/23; both run on predecessor code/test tree `37451e384e2e7e669c8368882225619cc9a67e67`. Subsequent merge commits add only status docs from default, without changing compiler/verifier/test/fixture/payload blobs. Do not claim CI on `939a8b6...`.
+- This status-only documentation commit advances default; PR #11 will be one docs-only commit behind afterward. No source conflict is introduced by the status docs.
+- PR #11 remains open/unmerged. Baseline is not yet on default. Issue #9 remains open until normal integration and the separate R25-R4 archive comparison are complete.
