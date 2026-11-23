@@ -677,3 +677,41 @@ Dependency order: obtain normal review/integration of PR #11 (no auto-merge); co
 - Issue #1 ABI gates remain OPEN: large-frame stack probing, PE unwind metadata, runtime nonvolatile-register/RSP/stack-argument sentinels, and generic checked Windows API-call marshalling. Persistent agent worker/checkpoint/recovery, model connectivity, source generation, Windows-host deployment and restart proof are NOT IMPLEMENTED / NOT RUN.
 - No compiler, verifier, test, build-script, runtime, Engine or game source changes were made. No workflow was dispatched. The only intended writes in this session are the authorized status documents and issue records.
 - Do not update the accepted development plan: 7B remains unaccepted. Next dependency order is normal human review/integration decision for PR #11 (never auto-merge), complete the R25-R4 file-by-file comparison and retain the Issue #1 ABI gate; only then create a fresh isolated 7B branch and require 83 + 23 + all 7B cases on one exact commit. Before any autonomous agent code execution, design and review a bounded process policy, durable worker/checkpoint/recovery, audit trail and restart test.
+
+
+## DevAgent autonomy architecture session - 2026-11-24
+
+### User request
+The user requested SharnouDevAgent be advanced from a simple test orchestrator to a high-capability development agent: internet/local search, read/download/learn, structured reasoning and planning, specialist agent creation/editing, bug solving and bounded automatic correction, authorized reverse engineering, and optional second opinions from ChatGPT/OpenAI or Perplexity, without requiring those services for local operation.
+
+### Repository preflight and exact source audit
+- Mandatory read-first documents read from the current branch: `AGENTS.md`, `AI_START_HERE.md`, `Docs/AI-SESSION-STATE.md`, `Docs/AI-DEVELOPMENT-PLAN.md`, `Docs/AI-ISSUE-REGISTER.md`, and `README.md`.
+- Starting default branch HEAD: `cf8a9cd26cf3819d1ee3156155eafa5259c39b05`.
+- Current Stage 0 compiler blob `ee01ef77b068df5d149934fbf463c43b34c54bf3` does not contain `sh_dev_run_process`, `CreateProcessA`, or `GetExitCodeProcess`. The DevAgent native test utility is only on open draft PR #7's `automation/sharnou-dev-agent-native` branch.
+- PR #7's `Examples/DevAgent.sharnou` checks workspace files, probes child exit-code propagation, and launches the Stage 7A PowerShell regression suite. Its own PR description explicitly states it is a native test/development orchestrator, not an AI source-generating agent.
+- PR #7 branch compiler blob `86d9d25350d581b165ee79b0664f8b6640e6408b` implements `sh_dev_run_process(String)->Integer` using `CreateProcessA`, waits with `WaitForSingleObject(INFINITE)`, returns the child code with `GetExitCodeProcess`, and uses a fixed 1024-byte command buffer. Static inspection found no executable allowlist, structured argument vector, timeout, cancellation, Job Object process-tree containment, restricted-token/AppContainer policy, or durable task journal. Do not expose this interface to model-generated command strings.
+- PR #7 remains an open draft according to the repository status record. Its Windows run `44758761226` passed as a test orchestrator and uploaded artifact `14654214120`; this is not evidence of AI code generation or autonomous repair.
+- The current plan/state still record the frozen 83-case M1-M6 suite as absent from default pending normal PR #11 integration, M7A as Windows-CI tested but not separately user-locally recorded in that state, and ABI issue #1 as open. These preconditions remain material to compiler-controlled autonomy.
+
+### Persisted design
+- Added `Docs/SHARNOU-DEVAGENT-AUTONOMOUS-ARCHITECTURE.md` (commit `0e05166c1ef284af9ccdc3ecb2ada19262364c58`).
+- Added a README roadmap link (commit `3d8fb0bacb01cf82730d904d1cc2a40f0290765e`).
+- Created tracking issue [#14](https://github.com/Sharnou/Sharnou-Compiler/issues/14).
+- The architecture specifies an in-process Sharnou-owned local inference runtime, typed tool registry, safe process broker, native WinHTTP search/fetch/download, quarantine/hash/provenance, local knowledge index, task graph and evidence journal, declarative agent manifests, staged patch/rollback loops, authorized static PE/x64 reverse engineering, and optional OpenAI Responses / Perplexity Agent API adapters.
+- Remote provider calls are optional. A local model and its weights are required for generative offline reasoning; retrieval memory alone is not model training. Local operations must work with networking disabled.
+- Agent-generated operations are limited by capability and workspace policy. No unrestricted shell, privilege escalation, silent policy changes, auto-execution of downloads, auto-merge, or auto-release. External API credentials must be protected with Windows Credential Manager or DPAPI and must not be exposed to prompts/logs.
+
+### Changed paths and execution evidence
+- Changed only documentation/tracking: `Docs/SHARNOU-DEVAGENT-AUTONOMOUS-ARCHITECTURE.md`, `README.md`, `Docs/AI-DEVELOPMENT-PLAN.md`, `Docs/AI-SESSION-STATE.md`, `Docs/AI-ISSUE-REGISTER.md`, and issue #8/#14 records.
+- No compiler, PE verifier, example, test fixture, build script, workflow, Engine, IDE, or game source was modified. No branch/PR was merged, no workflow was dispatched, and no Windows build or native test was executed by the assistant.
+- Evidence classification: REPOSITORY PRESENT / STATIC REVIEWED for the existing DevAgent code and architecture proposal; WINDOWS CI PASS (historical PR #7 test-orchestrator run only); NOT IMPLEMENTED / NOT RUN for the autonomous AI agent and local LLM runtime.
+
+### Dependency-ordered next actions
+1. Keep the 83-case restoration/provenance gate and issue #1 ABI audit open; no autonomous compiler write access until these gates are reconciled.
+2. Design/implement Phase B process broker first: typed executable IDs and argument arrays, canonical workspace roots, hash allowlists, timeouts/cancellation, process-tree containment, bounded I/O, and negative tests. Do not reuse PR #7's raw command-line API for model-directed execution.
+3. Implement native research/read/download and quarantine with host policy and integrity evidence.
+4. Build one supported Sharnou-owned local model inference path and prove offline operation with model-file hash and golden-vector tests.
+5. Add task planning, evidence memory/restart recovery, agent manifest factory, bounded repair/rollback, and static reverse-engineering tools.
+6. Add optional remote AI adapters only after local mode is independently functional and credential/redaction tests pass.
+
+This session is architecture and governance only; it is not a claim that SharnouDevAgent has gained these capabilities.
