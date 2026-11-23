@@ -88,3 +88,14 @@ The Milestone 6 branch imported for this work did not contain the 83-case regres
 ## Toolchain boundary
 
 The bootstrap is PowerShell/.NET and emits PE32+ output itself. No MSVC, Clang, Visual Studio, external assembler, external linker, compiler package, or download is used.
+
+## Compiler roadmap
+
+The canonical development plan covers the Stage 0 bootstrap, control flow, the type system and native backend, PE/linker hardening, native self-hosting, the standard library/runtime, Sharnou IDE integration, the 3D Engine, and Honour War. It separates repository-verified capability from owner-reported milestone evidence and future work.
+
+See [Docs/Compiler-Roadmap.md](Docs/Compiler-Roadmap.md). This roadmap is a forward plan; future stages are not complete until their implementation and acceptance gates pass.
+
+
+## Development automation and production readiness
+
+See [Docs/Development-Automation-and-Production-Gates.md](Docs/Development-Automation-and-Production-Gates.md) for the GitHub Actions and background-development automation contract, the staged self-hosting sequence, production acceptance gates, and evidence policy. The full implementation roadmap remains in [Docs/Compiler-Roadmap.md](Docs/Compiler-Roadmap.md).
