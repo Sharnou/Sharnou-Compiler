@@ -1,0 +1,59 @@
+// SharnouDevAgent is a native development assistant for the Stage 0 compiler.
+ // It checks the workspace, runs the Stage 7A suite, and reports bootstrap readiness.
+print("SharnouDevAgent v0.1");
+print("Compiler development workspace preflight");
+
+let workspaceOk = 1;
+
+if (sh_file_exists("Stage0\\SharnouCompiler.ps1") == 1) {
+    print("PASS: Stage 0 bootstrap compiler found");
+    let compilerBytes = sh_file_size("Stage0\\SharnouCompiler.ps1");
+    print("Bootstrap compiler source bytes:");
+    print(compilerBytes);
+} else {
+    print("FAIL: Stage 0 bootstrap compiler missing");
+    workspaceOk = 0;
+}
+
+if (sh_file_exists("Tools\\SharnouPEVerify.ps1") == 1) {
+    print("PASS: Sharnou PE verifier found");
+} else {
+    print("FAIL: Sharnou PE verifier missing");
+    workspaceOk = 0;
+}
+
+if (sh_file_exists("Tests\\Test-Stage7A.ps1") == 1) {
+    print("PASS: Stage 7A regression suite found");
+} else {
+    print("FAIL: Stage 7A regression suite missing");
+    workspaceOk = 0;
+}
+
+print("Testing child-process exit-code propagation...");
+let childStatus = sh_dev_run_process("cmd.exe /d /c exit 7");
+if (childStatus == 7) {
+    print("PASS: Child process exit code 7 propagated correctly");
+} else {
+    print("FAIL: Child process exit-code propagation");
+    workspaceOk = 0;
+}
+
+if (workspaceOk == 1) {
+    print("Running the Stage 7A native compiler regression suite...");
+    let regressionStatus = sh_dev_run_process("powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File .\\Tests\\Test-Stage7A.ps1");
+    print("Stage 7A regression process exit code:");
+    print(regressionStatus);
+    if (regressionStatus == 0) {
+        print("PASS: Stage 7A regression suite completed");
+        print("Self-hosted native SharnouCompiler.exe: NOT YET IMPLEMENTED");
+        print("SharnouDevAgent result: PASS");
+        let exitStatus = sh_process_exit(0);
+    } else {
+        print("FAIL: Stage 7A regression suite failed");
+        print("SharnouDevAgent result: FAIL");
+        let exitStatus = sh_process_exit(1);
+    }
+} else {
+    print("SharnouDevAgent result: FAIL");
+    let exitStatus = sh_process_exit(1);
+}

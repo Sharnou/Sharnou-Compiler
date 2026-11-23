@@ -689,6 +689,143 @@ function Emit-BuiltinArguments {
         $script:TempDepth++
     }
 }
+
+function Emit-DevRunProcess {
+    param([int] $ArgumentSlot, [int] $BaseDepth)
+    $scratch = [int]$script:ActiveContext.ScratchPosition
+    $commandSlot = $scratch
+    $startupSlot = $scratch + 0x500
+    $processSlot = $scratch + 0x580
+    $saveRdiSlot = Get-TempSlotPosition -Depth ($BaseDepth + 1)
+    $saveRsiSlot = Get-TempSlotPosition -Depth ($BaseDepth + 2)
+    $resultSlot = Get-TempSlotPosition -Depth ($BaseDepth + 3)
+    $exitCodeSlot = Get-TempSlotPosition -Depth ($BaseDepth + 4)
+    $tooLong = New-UniqueLabel -Prefix 'dev_process_command_too_long'
+    $createFailed = New-UniqueLabel -Prefix 'dev_process_create_failed'
+    $waitFailed = New-UniqueLabel -Prefix 'dev_process_wait_failed'
+    $exitFailed = New-UniqueLabel -Prefix 'dev_process_exit_failed'
+    $cleanup = New-UniqueLabel -Prefix 'dev_process_cleanup'
+    $skipThreadClose = New-UniqueLabel -Prefix 'dev_process_skip_thread_close'
+    $skipProcessClose = New-UniqueLabel -Prefix 'dev_process_skip_process_close'
+    $done = New-UniqueLabel -Prefix 'dev_process_done'
+
+    # Preserve Windows x64 nonvolatile registers used by REP MOVSB / REP STOSQ.
+    Emit-StoreRdiFrame -SlotPosition $saveRdiSlot
+    Emit-StoreRsiFrame -SlotPosition $saveRsiSlot
+
+    # Zero PROCESS_INFORMATION (3 qwords) before any early-failure branch.
+    Emit-LeaRaxFrame -SlotPosition $processSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC7, 0x31, 0xC0, 0xB9, 0x03, 0x00, 0x00, 0x00, 0xF3, 0x48, 0xAB))
+    # Zero STARTUPINFOA (13 qwords), then set cb and STARTF_USESTDHANDLES.
+    Emit-LeaRaxFrame -SlotPosition $startupSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC7, 0x31, 0xC0, 0xB9, 0x0D, 0x00, 0x00, 0x00, 0xF3, 0x48, 0xAB))
+    Emit-StoreBits32Frame -SlotPosition $startupSlot -Value ([UInt32]104)
+    Emit-StoreBits32Frame -SlotPosition ($startupSlot + 60) -Value ([UInt32]0x100)
+
+    # Reject unbounded command lines before copying into the fixed 1024-byte scratch area.
+    Emit-LoadEaxFrame -SlotPosition ($ArgumentSlot + 8)
+    Emit-Bytes -Bytes ([byte[]]@(0x3D))
+    Emit-I32 -Value 1023
+    Emit-JumpConditional -ConditionCode 0x87 -Label $tooLong
+
+    # Copy the immutable source literal into a mutable, NUL-terminated command line.
+    Emit-LoadRaxFrame -SlotPosition $ArgumentSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC6)) # RSI = source pointer
+    Emit-LeaRaxFrame -SlotPosition $commandSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC7)) # RDI = command buffer
+    Emit-LoadEaxFrame -SlotPosition ($ArgumentSlot + 8)
+    Emit-Bytes -Bytes ([byte[]]@(0x89, 0xC1, 0xF3, 0xA4, 0xC6, 0x07, 0x00)) # MOV ECX,EAX; REP MOVSB; *RDI=0
+
+    # Get and install the parent's standard handles for an inheriting child process.
+    foreach ($handleSpec in @(
+        [pscustomobject]@{ Value = -10; Offset = 80 },
+        [pscustomobject]@{ Value = -11; Offset = 88 },
+        [pscustomobject]@{ Value = -12; Offset = 96 }
+    )) {
+        Emit-Bytes -Bytes ([byte[]]@(0xB9))
+        Emit-I32 -Value $handleSpec.Value
+        Emit-Bytes -Bytes ([byte[]]@(0x48, 0x83, 0xEC, 0x20))
+        Emit-CallIat -TargetRva ([UInt32]0x3070) # GetStdHandle
+        Emit-Bytes -Bytes ([byte[]]@(0x48, 0x83, 0xC4, 0x20))
+        Emit-StoreRaxFrame -SlotPosition ($startupSlot + $handleSpec.Offset)
+    }
+
+    # CreateProcessA(NULL, commandLine, NULL, NULL, TRUE, 0, NULL, NULL, startup, processInfo).
+    Emit-Bytes -Bytes ([byte[]]@(0x33, 0xC9))
+    Emit-LeaRaxFrame -SlotPosition $commandSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC2, 0x45, 0x33, 0xC0, 0x45, 0x33, 0xC9))
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x83, 0xEC, 0x50))
+    Emit-StackArgumentImmediate -Offset 0x20 -Value 1
+    Emit-StackArgumentImmediate -Offset 0x28 -Value 0
+    Emit-StackArgumentImmediate -Offset 0x30 -Value 0
+    Emit-StackArgumentImmediate -Offset 0x38 -Value 0
+    Emit-LeaRaxFrame -SlotPosition $startupSlot
+    Emit-StackArgumentRax -Offset 0x40
+    Emit-LeaRaxFrame -SlotPosition $processSlot
+    Emit-StackArgumentRax -Offset 0x48
+    Emit-CallIat -TargetRva ([UInt32]0x3178) # CreateProcessA
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x83, 0xC4, 0x50, 0x85, 0xC0))
+    Emit-JumpConditional -ConditionCode 0x84 -Label $createFailed
+
+    # Wait for the child to terminate. WAIT_OBJECT_0 is the only success result accepted.
+    Emit-LoadRcxFrame -SlotPosition $processSlot
+    Emit-Bytes -Bytes ([byte[]]@(0xBA, 0xFF, 0xFF, 0xFF, 0xFF, 0x48, 0x83, 0xEC, 0x20))
+    Emit-CallIat -TargetRva ([UInt32]0x30D0) # WaitForSingleObject(INFINITE)
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x83, 0xC4, 0x20, 0x85, 0xC0))
+    Emit-JumpConditional -ConditionCode 0x85 -Label $waitFailed
+
+    # Read the real child exit code into a stack slot.
+    Emit-LoadRcxFrame -SlotPosition $processSlot
+    Emit-LeaRaxFrame -SlotPosition $exitCodeSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC2, 0x48, 0x83, 0xEC, 0x20))
+    Emit-CallIat -TargetRva ([UInt32]0x3180) # GetExitCodeProcess
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x83, 0xC4, 0x20, 0x85, 0xC0))
+    Emit-JumpConditional -ConditionCode 0x84 -Label $exitFailed
+    Emit-LoadEaxFrame -SlotPosition $exitCodeSlot
+    Emit-StoreEaxFrame -SlotPosition $resultSlot
+    Emit-Jump -Label $cleanup
+
+    Mark-CodeLabel -Label $tooLong
+    Emit-Bytes -Bytes ([byte[]]@(0xB8, 0xF6, 0xFF, 0xFF, 0xFF)) # -10: command line exceeds 1023 bytes
+    Emit-StoreEaxFrame -SlotPosition $resultSlot
+    Emit-Jump -Label $cleanup
+
+    Mark-CodeLabel -Label $createFailed
+    Emit-Bytes -Bytes ([byte[]]@(0xB8, 0xF5, 0xFF, 0xFF, 0xFF)) # -11: CreateProcessA failed
+    Emit-StoreEaxFrame -SlotPosition $resultSlot
+    Emit-Jump -Label $cleanup
+
+    Mark-CodeLabel -Label $waitFailed
+    Emit-Bytes -Bytes ([byte[]]@(0xB8, 0xF4, 0xFF, 0xFF, 0xFF)) # -12: child wait failed
+    Emit-StoreEaxFrame -SlotPosition $resultSlot
+    Emit-Jump -Label $cleanup
+
+    Mark-CodeLabel -Label $exitFailed
+    Emit-Bytes -Bytes ([byte[]]@(0xB8, 0xF3, 0xFF, 0xFF, 0xFF)) # -13: GetExitCodeProcess failed
+    Emit-StoreEaxFrame -SlotPosition $resultSlot
+
+    Mark-CodeLabel -Label $cleanup
+    Emit-LoadRcxFrame -SlotPosition ($processSlot + 8)
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x85, 0xC9))
+    Emit-JumpConditional -ConditionCode 0x84 -Label $skipThreadClose
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x83, 0xEC, 0x20))
+    Emit-CallIat -TargetRva ([UInt32]0x30B8) # CloseHandle(thread)
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x83, 0xC4, 0x20))
+    Mark-CodeLabel -Label $skipThreadClose
+    Emit-LoadRcxFrame -SlotPosition $processSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x85, 0xC9))
+    Emit-JumpConditional -ConditionCode 0x84 -Label $skipProcessClose
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x83, 0xEC, 0x20))
+    Emit-CallIat -TargetRva ([UInt32]0x30B8) # CloseHandle(process)
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x83, 0xC4, 0x20))
+    Mark-CodeLabel -Label $skipProcessClose
+    Emit-LoadRdiFrame -SlotPosition $saveRdiSlot
+    Emit-LoadRsiFrame -SlotPosition $saveRsiSlot
+    Emit-LoadEaxFrame -SlotPosition $resultSlot
+    Emit-Jump -Label $done
+    Mark-CodeLabel -Label $done
+}
+
 function Emit-BuiltinCall {
     param([object] $Node)
     $baseDepth = [int]$script:TempDepth
@@ -854,6 +991,13 @@ function Emit-BuiltinCall {
             Mark-CodeLabel -Label $doneLabel
         }
         'D3D11RenderDemo' { Emit-D3D11RenderDemo -BaseDepth $baseDepth -ArgumentSlots $argSlots }
+        'DevRunProcess' { Emit-DevRunProcess -ArgumentSlot $argSlots[0] -BaseDepth $baseDepth }
+        'ProcessExit' {
+            Emit-LoadEaxFrame -SlotPosition $argSlots[0]
+            Emit-Bytes -Bytes ([byte[]]@(0x89, 0xC1, 0x48, 0x83, 0xEC, 0x20)) # ECX = exit code; reserve shadow space
+            Emit-CallIat -TargetRva ([UInt32]0x3080) # ExitProcess
+            Emit-Bytes -Bytes ([byte[]]@(0x48, 0x83, 0xC4, 0x20, 0xCC)) # unreachable fail-stop trap
+        }
         'WindowProbe' {
             $titleSlot = $argSlots[0]; $instanceSlot = Get-TempSlotPosition -Depth ($baseDepth + 1); $windowSlot = Get-TempSlotPosition -Depth ($baseDepth + 2)
             $failLabel = New-UniqueLabel -Prefix 'window_create_fail'; $doneLabel = New-UniqueLabel -Prefix 'window_create_done'
@@ -1377,6 +1521,8 @@ $builtinDefinitions = @(
     [pscustomobject]@{ Name = 'sh_window_pump_once'; Builtin = 'WindowPump'; ParameterTypes = @(); ReturnType = 'Integer' },
     [pscustomobject]@{ Name = 'sh_thread_sync_probe'; Builtin = 'ThreadSyncProbe'; ParameterTypes = @(); ReturnType = 'Integer' },
     [pscustomobject]@{ Name = 'sh_d3d11_render_demo'; Builtin = 'D3D11RenderDemo'; ParameterTypes = @('String', 'Integer'); ReturnType = 'Integer' }
+    [pscustomobject]@{ Name = 'sh_dev_run_process'; Builtin = 'DevRunProcess'; ParameterTypes = @('String'); ReturnType = 'Integer' },
+    [pscustomobject]@{ Name = 'sh_process_exit'; Builtin = 'ProcessExit'; ParameterTypes = @('Integer'); ReturnType = 'Integer' }
 )
 foreach ($definition in $builtinDefinitions) { $script:Builtins.Add($definition.Name, $definition) }
 $script:Modules = [System.Collections.Generic.List[object]]::new()
@@ -1472,7 +1618,7 @@ $idata = [byte[]]::new(0x800)
 # Keep the eight 20-byte IMAGE_IMPORT_DESCRIPTOR rows and null terminator above 0x700.
 # The fixed IAT slots occupy 0x70..0x178, so descriptor storage must not overlap them.
 $descriptorBase = 0x700
-$importDirectorySize = 0xB4
+$importDirectorySize = 0xC8
 if (($descriptorBase + $importDirectorySize) -gt $idata.Length) { throw 'Import descriptor table exceeds .idata storage.' }
 $importSets = @(
     [pscustomobject]@{ Descriptor = 0x00; Lookup = 0x500; Iat = 0x70; Dll = 'KERNEL32.dll'; Names = @('GetStdHandle', 'WriteFile', 'ExitProcess') },
@@ -1483,6 +1629,7 @@ $importSets = @(
     [pscustomobject]@{ Descriptor = 0x64; Lookup = 0x5D0; Iat = 0x140; Dll = 'DXGI.dll'; Names = @('CreateDXGIFactory') },
     [pscustomobject]@{ Descriptor = 0x78; Lookup = 0x5E0; Iat = 0x150; Dll = 'KERNEL32.dll'; Names = @('QueryPerformanceCounter', 'QueryPerformanceFrequency') },
     [pscustomobject]@{ Descriptor = 0x8C; Lookup = 0x600; Iat = 0x168; Dll = 'USER32.dll'; Names = @('IsWindow') }
+    [pscustomobject]@{ Descriptor = 0xA0; Lookup = 0x620; Iat = 0x178; Dll = 'KERNEL32.dll'; Names = @('CreateProcessA', 'GetExitCodeProcess') }
 )
 $apiNameRvas = @{}
 $nameCursor = 0x280
@@ -1529,6 +1676,7 @@ $script:StdLibIatOffsets = @{
     'PeekMessageA' = [UInt32]0x108; 'TranslateMessage' = [UInt32]0x110; 'DispatchMessageA' = [UInt32]0x118; 'DestroyWindow' = [UInt32]0x120
     'D3D11CreateDeviceAndSwapChain' = [UInt32]0x130; 'CreateDXGIFactory' = [UInt32]0x140
     'QueryPerformanceCounter' = [UInt32]0x150; 'QueryPerformanceFrequency' = [UInt32]0x158; 'IsWindow' = [UInt32]0x168
+    'CreateProcessA' = [UInt32]0x178; 'GetExitCodeProcess' = [UInt32]0x180
 }
 
 # One DIR64 relocation patches the absolute image-base + entry-point pointer at the dynamic .rdata RVA.
@@ -1556,7 +1704,7 @@ Set-U64 -Buffer $image -Offset ($opt + 72) -Value ([UInt64]0x100000); Set-U64 -B
 Set-U32 -Buffer $image -Offset ($opt + 104) -Value 0; Set-U32 -Buffer $image -Offset ($opt + 108) -Value 16
 Set-U32 -Buffer $image -Offset ($opt + 120) -Value ([UInt32]([long]$idataRva + [long]$descriptorBase)); Set-U32 -Buffer $image -Offset ($opt + 124) -Value $importDirectorySize
 Set-U32 -Buffer $image -Offset ($opt + 152) -Value $relocRva; Set-U32 -Buffer $image -Offset ($opt + 156) -Value 12
-Set-U32 -Buffer $image -Offset ($opt + 208) -Value ([UInt32]([long]$idataRva + 0x70)); Set-U32 -Buffer $image -Offset ($opt + 212) -Value 0x108
+Set-U32 -Buffer $image -Offset ($opt + 208) -Value ([UInt32]([long]$idataRva + 0x70)); Set-U32 -Buffer $image -Offset ($opt + 212) -Value 0x120
 $sectionText = 0x188
 Set-Ascii -Buffer $image -Offset $sectionText -Value '.text'; Set-U32 -Buffer $image -Offset ($sectionText + 8) -Value $codeBytes.Length; Set-U32 -Buffer $image -Offset ($sectionText + 12) -Value $textRva; Set-U32 -Buffer $image -Offset ($sectionText + 16) -Value $textRawSize; Set-U32 -Buffer $image -Offset ($sectionText + 20) -Value $textRawPointer; Set-U32 -Buffer $image -Offset ($sectionText + 36) -Value 0x60000020
 $sectionData = 0x1B0
