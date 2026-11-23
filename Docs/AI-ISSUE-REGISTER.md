@@ -330,3 +330,17 @@ PR #11 head `d33778f6f23a006965f25aeb4dfc8e55cdc49d22` passed both workflows:
 - Issue #1 ABI risks remain OPEN / static-only: no large-frame stack probe; no PE unwind metadata (.pdata/.xdata); no runtime nonvolatile-register/RSP/stack-argument sentinels; no generic checked API-call marshaller.
 - Native self-hosted `SharnouCompiler.exe` is NOT BUILT / NOT RUN. PR #7 DevAgent is only a test orchestrator; autonomous source generation, durable worker/checkpoint/recovery, deployment, and restart/runtime proof are NOT IMPLEMENTED / NOT RUN.
 - Current source changes this session: none. Only repository status documentation was updated; no workflows were dispatched.
+
+
+## Live audit - 2026-11-23
+
+- Default branch HEAD: `12a7daade17ee01519566eea5bc668ecab4a537e`. Latest default Windows run [45006046266](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45006046266) passed Stage 7A 23/23 (8 positive, 12 negative, 3 instruction/branch checks).
+- PR #6 remains OPEN / UNMERGED at `9dfe1bc09685a6f7deb9d29b5192b1aae0686039`, 15 ahead / 39 behind. Its same-head Windows runs 44700641397 (83/83, attempt 2) and 44700641419 (7A 23/23, attempt 2) succeeded. Do not merge it.
+- PR #11 remains OPEN / UNMERGED at `135b7eec7bf13fc147756dfaeeb3f92eab57a250`, 7 ahead / 2 behind current default. The two commits behind are docs-only; the five-file baseline diff is unchanged. Same-head runs 45004395351 (83/83) and 45004395353 (7A 23/23) succeeded.
+- The 83-case totals are Stage 2 25, Stage 4 20, PE verifier 4, Stage 5 25, Stage 6 9; case-intent split 36 positive / 47 negative. The baseline remains PR-only, not part of default.
+- Compiler SHA-256 reported by Windows CI: `f1cb1ea2920c62c781f317b52ba281c2a7df72f626638a4aab71ff8d2dd47ead`; PE verifier SHA-256: `8efec55da3a1614f30272227f8d8158710337cb06148fb7f98b8fa2ff013a3de`. Current default and PR #11 compiler/verifier/test/workflow blobs match.
+- Baseline provenance gate remains open: the runner checks the compressed bundle and embedded member hashes but does not read the original `SHA256SUMS.txt`; the separate R25-R4 archive comparison is NOT RUN.
+- PR #5 remains an unaccepted 7B proposal; run 44693097619 passed 7A 23/23 and 7B 32/32 on its old head, without the 83-case suite. Add dynamic-variable-left short-circuit tests, Boolean function ABI rejection tests, deeper nested-loop tests and rel32 target decoding before any acceptance.
+- PR #7 remains a DRAFT native test orchestrator. Run 44758761226 built `SharnouDevAgent.exe` (SHA-256 `9F128ED96972858B13C763B4324813B3D6A1970737F2403C10C70717CE947341`), executed it with exit code 0 and uploaded artifact 14654214120. It does not generate source or connect to an AI service. Its process API has no allowlist, sandbox, timeout, process-tree containment or cancellation; this is a design gate before model-controlled execution.
+- Issue #1 ABI risks remain open. Native `SharnouCompiler.exe`, durable autonomous worker/checkpoint/recovery, model/API connectivity, source generation, host deployment and restart proof remain NOT BUILT / NOT IMPLEMENTED / NOT RUN.
+- No source changes and no workflow dispatch. 7B remains unaccepted; do not update the accepted development plan. Next: normal review of PR #11, R25-R4 archive comparison, ABI gate, then a fresh isolated 7B branch with 83 + 23 + 7B validation on one exact commit.
