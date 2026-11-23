@@ -344,3 +344,15 @@ PR #11 head `d33778f6f23a006965f25aeb4dfc8e55cdc49d22` passed both workflows:
 - PR #7 remains a DRAFT native test orchestrator. Run 44758761226 built `SharnouDevAgent.exe` (SHA-256 `9F128ED96972858B13C763B4324813B3D6A1970737F2403C10C70717CE947341`), executed it with exit code 0 and uploaded artifact 14654214120. It does not generate source or connect to an AI service. Its process API has no allowlist, sandbox, timeout, process-tree containment or cancellation; this is a design gate before model-controlled execution.
 - Issue #1 ABI risks remain open. Native `SharnouCompiler.exe`, durable autonomous worker/checkpoint/recovery, model/API connectivity, source generation, host deployment and restart proof remain NOT BUILT / NOT IMPLEMENTED / NOT RUN.
 - No source changes and no workflow dispatch. 7B remains unaccepted; do not update the accepted development plan. Next: normal review of PR #11, R25-R4 archive comparison, ABI gate, then a fresh isolated 7B branch with 83 + 23 + 7B validation on one exact commit.
+
+
+## Issue #14 - Autonomous SharnouDevAgent architecture and implementation
+
+- Tracking issue: https://github.com/Sharnou/Sharnou-Compiler/issues/14
+- Architecture: `Docs/SHARNOU-DEVAGENT-AUTONOMOUS-ARCHITECTURE.md`.
+- User request: advance the native test orchestrator into a local-first autonomous software-development agent with web/local search, read/download/learn, planning/reasoning, specialist agent creation/editing, bug repair and test-backed auto-correction, authorized reverse engineering, and optional OpenAI/Perplexity second opinions.
+- Current default branch has no DevAgent process intrinsic. Open draft PR #7 is only a test orchestrator. Its `CreateProcessA` wrapper accepts raw command text and waits indefinitely; no allowlist, timeout/cancellation, Job Object containment, or durable recovery exists. It is not suitable for model-controlled execution.
+- Required first gates: resolve the frozen 83-case baseline integration and ABI issue #1; design a typed process broker with allowlisted executables/argument arrays, workspace boundaries, timeout/cancellation, process-tree containment, bounded output, and security tests; then add native WinHTTP/research/download quarantine, content-addressed knowledge store, one in-process local inference runtime, task planning/evidence memory, declarative agent profiles, bounded patch/rollback, and authorized static PE/x64 analysis.
+- OpenAI Responses and Perplexity Agent API are optional provider adapters, not local dependencies. API secrets must use Windows Credential Manager/DPAPI, must never enter source/prompts/logs, and private source must not be transmitted without explicit approval.
+- Do not grant broad system-level control, privilege escalation, automatic execution of downloaded binaries, arbitrary shell access, or auto-merge/release. Agent manifests cannot grant themselves new permissions.
+- Status: ARCHITECTURE RECORDED; SOURCE IMPLEMENTATION NOT STARTED; LOCAL MODEL NOT BUILT; AUTONOMOUS SOURCE REPAIR NOT RUN.
