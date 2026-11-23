@@ -88,3 +88,7 @@ The Milestone 6 branch imported for this work did not contain the 83-case regres
 ## Toolchain boundary
 
 The bootstrap is PowerShell/.NET and emits PE32+ output itself. No MSVC, Clang, Visual Studio, external assembler, external linker, compiler package, or download is used.
+
+## Autonomous SharnouDevAgent roadmap
+
+The requested autonomous development-agent architecture is documented in [Docs/SHARNOU-DEVAGENT-AUTONOMOUS-ARCHITECTURE.md](Docs/SHARNOU-DEVAGENT-AUTONOMOUS-ARCHITECTURE.md) and tracked in [issue #14](https://github.com/Sharnou/Sharnou-Compiler/issues/14). The existing native DevAgent prototype on draft PR #7 is a test orchestrator, not an AI source-generating agent. The roadmap requires a safe typed tool broker, local in-process model inference, durable knowledge/task memory, validated agent profiles, bounded repair transactions, static reverse engineering, and optional external-provider adapters. No autonomous source execution is enabled by this documentation change.
