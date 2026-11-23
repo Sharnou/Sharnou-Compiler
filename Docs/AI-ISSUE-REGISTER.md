@@ -344,3 +344,15 @@ PR #11 head `d33778f6f23a006965f25aeb4dfc8e55cdc49d22` passed both workflows:
 - PR #7 remains a DRAFT native test orchestrator. Run 44758761226 built `SharnouDevAgent.exe` (SHA-256 `9F128ED96972858B13C763B4324813B3D6A1970737F2403C10C70717CE947341`), executed it with exit code 0 and uploaded artifact 14654214120. It does not generate source or connect to an AI service. Its process API has no allowlist, sandbox, timeout, process-tree containment or cancellation; this is a design gate before model-controlled execution.
 - Issue #1 ABI risks remain open. Native `SharnouCompiler.exe`, durable autonomous worker/checkpoint/recovery, model/API connectivity, source generation, host deployment and restart proof remain NOT BUILT / NOT IMPLEMENTED / NOT RUN.
 - No source changes and no workflow dispatch. 7B remains unaccepted; do not update the accepted development plan. Next: normal review of PR #11, R25-R4 archive comparison, ABI gate, then a fresh isolated 7B branch with 83 + 23 + 7B validation on one exact commit.
+
+
+## Issue #12 - Windows Binary Reverse Engineer capability for SharnouDevAgent
+
+- Status: OPEN / PROPOSED; no implementation has been made.
+- Current DevAgent prototype is only in draft PR #7 and is not present on the default branch. Its Windows CI run `44758761226` validates a native regression-test orchestrator, not AI source generation.
+- Security prerequisite: replace free-form `CreateProcessA` command strings with a typed allowlisted tool dispatcher, workspace-root confinement, bounded output, timeout/cancellation, and process-tree containment before accepting model-generated task plans.
+- Proposed bounded first implementation: a read-only PE32/PE32+ parser with strict offset/size validation, hashes, sections, imports, exports/forwarders, relocations, exception/unwind data, resources, debug/PDB, TLS, load config, certificate table, and JSON evidence reports. It must not execute or load the input file.
+- D3D shader APIs `D3DCompile`, `D3DCompileFromFile`, `D3DDisassemble`, and `D3DCreateBlob` belong to the D3DCompiler runtime; distinguish HLSL/DXBC analysis from native PE/x64 disassembly.
+- DLL catalogue must distinguish core `KERNEL32.dll`, `USER32.dll`, `GDI32.dll`, `D3D11.dll`, `DXGI.dll`; optional `D2D1.dll`, `DWrite.dll`, `DWMAPI.dll`; system `SHELL32.dll`, `ADVAPI32.dll`, `OLE32.dll`; and optional/legacy `D3D11SDKLayers.dll`, `D3DCompiler_47.dll`, `D3DCompiler_43.dll`.
+- Runtime probing must be limited to trusted modules from System32 via a fully qualified path or `LoadLibraryExW` with `LOAD_LIBRARY_SEARCH_SYSTEM32`, and known names passed to `GetProcAddress`. Do not load arbitrary user DLLs into the agent process.
+- Acceptance: malformed/valid PE fixtures, bounds/overflow tests, export/import resolution, Windows allowlisted export probes with exact resolved paths, HLSL compile/error/disassembly/ID3DBlob lifecycle tests, missing compiler/debug-layer fallback tests, and process-runner security tests. Run the restored 83-case baseline plus current Stage 7A and new skill suites on one Windows commit before claiming regression preservation.
