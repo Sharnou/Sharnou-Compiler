@@ -764,3 +764,12 @@ This session is architecture and governance only; it is not a claim that Sharnou
 - No compiler, verifier, test, fixture, build script, runtime, Engine, IDE, game or workflow source changes. No workflow dispatch, PR creation/modification/merge, deployment, or local Windows execution. The accepted development plan is unchanged because 7B and the additional DevAgent capabilities remain unaccepted proposals.
 - Evidence: USER-REPORTED WINDOWS PASS (historical M1-M6 report); WINDOWS CI PASS (default 7A 23/23; PR #11 same-head 83/83 + 7A 23/23; PR #6 83/83 + 7A 23/23; PR #5 proposal 7A 23/23 + 7B 32/32; PR #7 native test orchestrator; PR #13 docs-only workflow); REPOSITORY PRESENT / STATIC REVIEWED (current compiler, baseline runner/manifest, 7B proposal and DevAgent architecture); NOT RUN (R25-R4 archive comparison, ABI runtime probes, user-local 7A acceptance, native self-hosted compiler, autonomous AI agent); BLOCKED (default baseline integration and remaining provenance/ABI gates).
 - Next bounded task: obtain normal human review for PR #11 without automated merge; complete the independent R25-R4 archive comparison and resolve the original SHA256SUMS provenance discrepancy. Then complete the ABI gate plan. Only after explicit 7B scope approval, prepare a fresh isolated patch from the then-current default and require the combined baseline + 7A + 7B suite on one exact commit.
+
+
+### Post-status documentation CI verification - 2026-11-24
+
+The two status-only commits above triggered the existing push workflow; both completed successfully:
+- Run [45340099960](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45340099960), exact commit `1d55cd00d93e60d0c57bf5be180b7afe229d2a3d`, job `windows-stage7a` (`138261413749`): SUCCESS; source encoding PASS; Stage 7A 23 passed, 0 failed, 23 total.
+- Run [45340141791](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45340141791), exact commit `f4c018f171b45e997615b7e933281a0401804e43`, job `windows-stage7a` (`138261550209`): SUCCESS; source encoding PASS; Stage 7A 23 passed, 0 failed, 23 total.
+- These are documentation-only follow-up CI checks, not new compiler-source, baseline, or 7B runs. The PowerShell test step did not print a separate numeric process exit code; the step and job concluded success.
+- GitHub issue #8 was updated with the same follow-up evidence. No issue state changed.
