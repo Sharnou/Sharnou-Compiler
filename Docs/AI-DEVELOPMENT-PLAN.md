@@ -245,7 +245,7 @@ This is a separate requested product track, not a declaration that an AI agent e
 
 Dependency order: restore/pin the exact 83-case baseline and retain the ABI gates; then build a restricted process broker; then native search/read/download/quarantine and persistent evidence memory; then local model inference; then planner/subagents and validated agent manifests; then bounded self-correction and static reverse engineering; finally optional provider adapters. The default 7A/compiler scope and the self-hosting prerequisite are not bypassed by this parallel DevAgent track.
 
-Current status: ARCHITECTURE RECORDED; IMPLEMENTATION NOT STARTED; LOCAL INFERENCE NOT BUILT; AUTONOMOUS REPAIR NOT RUN. Acceptance requires offline operation without AI provider credentials, durable restart recovery, process isolation and timeouts, source-hash/evidence journals, passing security/rollback tests, and Windows runtime evidence.
+Current status: ABI PREREQUISITES WINDOWS CI PASS (PR #17); SECURE PROCESS BROKER DESIGN RECORDED BUT NATIVE IMPLEMENTATION NOT STARTED; LOCAL INFERENCE NOT BUILT; AUTONOMOUS REPAIR NOT RUN. Acceptance requires offline operation without AI provider credentials, durable restart recovery, process isolation and timeouts, source-hash/evidence journals, passing security/rollback tests, and Windows runtime evidence.
 ## 2026-11-25 - stack-probe and unwind repair
 
 PR #16 implements the outstanding large-frame stack-probe and x64 unwind-table defects identified in issue #1. Windows Actions run [45705513598](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45705513598) passed on PR head `b1365dc17bb5aeaad74462633fadfdc29b56fa3e`:
@@ -256,3 +256,10 @@ PR #16 implements the outstanding large-frame stack-probe and x64 unwind-table d
 - ASCII/no-BOM: PASS; combined result: PASS.
 
 The linker now emits `.pdata` / `.xdata`, a PE exception directory, and a private leaf stack-probe helper that touches each 4 KiB page before the fixed RSP allocation. The verifier validates the six-section layout, runtime-function ranges, unwind records and stack-probe code. PR #16 remains open/unmerged. These checks do not close the separate 83-case baseline gate or all ABI runtime probes; see issues #1 and #9.
+
+ 
+## 2026-11-26 - ABI gate passed; process broker next
+
+PR #17 now has Windows CI evidence for the runtime ABI tranche and frozen M1-M6 baseline on the same head: Stage 7A 24/24, collection imports 2/2, stack-probe/unwind 6/6, runtime ABI sentinel/alignment/argument/marshalling tests PASS, and M1-M6 83/83. Evidence: [45717111101](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45717111101) and [45717111040](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45717111040).
+
+The next dependency is the secure native process broker. The security contract is recorded in [SHARNOU-DEVAGENT-PROCESS-BROKER-SECURITY-DESIGN.md](SHARNOU-DEVAGENT-PROCESS-BROKER-SECURITY-DESIGN.md). The old raw-string `sh_dev_run_process(String)` prototype is explicitly rejected. The broker must use immutable tool IDs, exact script hashes, workspace confinement, a restricted token, suspended creation, Job Object process-tree containment, timeout/cancellation, bounded output, and adversarial tests. No model-controlled process execution is enabled.
