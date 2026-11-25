@@ -39,6 +39,7 @@ try {
         $hashPath = Join-Path $repoRoot $tool.Path
         $toolHash = (Get-FileHash -LiteralPath $hashPath -Algorithm SHA256).Hash
         $entry = @($manifest.tools | Where-Object { [int]$_.id -eq $tool.Id })
+        Write-Host ("DEVAGENT_TOOL_SHA256|{0}|{1}|{2}" -f $tool.Id, $tool.Path, $toolHash)
         if ($entry.Count -ne 1 -or [string]$entry[0].path -cne $tool.Path -or [string]$entry[0].sha256 -cne $toolHash) {
             throw "Pinned DevAgent tool hash/path mismatch for tool ID $($tool.Id)."
         }
