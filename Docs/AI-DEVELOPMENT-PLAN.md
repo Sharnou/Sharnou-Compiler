@@ -1,6 +1,6 @@
 # Sharnou Compiler and Engine - Accepted Development Plan
 
-**Last maintained:** 2026-11-20 22:49 Africa/Cairo
+**Last maintained:** 2026-11-25
 **Repository:** `Sharnou/Sharnou-Compiler`  
 **Default branch observed:** `Sharnou-Compiler`  
 **Current focus:** Milestone 7A - native control flow  
@@ -112,7 +112,7 @@ Preserve the existing Windows x64 ABI, caller shadow store, stack alignment, fra
 
 Current documented subset restrictions must remain explicit until deliberately implemented and tested: chained comparisons, string comparisons, logical AND/OR, else-if shorthand, and return nested inside a control-flow block are rejected. Use nested if statements for nested logic.
 
-The branch currently contains a Stage 7A implementation and test runner. The current README identifies eight positive example cases and twelve negative parser/type cases, plus instruction-encoding checks. This does not by itself prove the user's Windows acceptance run; see the session-state and issue register.
+The branch currently contains a Stage 7A implementation and test runner. The current suite contains nine positive runtime cases, twelve negative parser/type cases, and three native instruction/branch checks (24 total). Test.ps1 also runs two Stage 5 collection-import regression cases. User-local Windows results are recorded in the session-state and issue register.
 
 ## 5. After 7A - planned self-hosting work
 
