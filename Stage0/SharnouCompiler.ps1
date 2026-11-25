@@ -1207,12 +1207,24 @@ function Emit-IntegerExpression {
         'Call' {
             if (-not [string]::IsNullOrEmpty([string]$Node.Builtin)) { Emit-BuiltinCall -Node $Node; return }
             $baseDepth = [int]$script:TempDepth
-            for ($i = 0; $i -lt $Node.Arguments.Count; $i++) {
+            $argumentCount = [int]$Node.Arguments.Count
+            if ($argumentCount -gt 16) {
+                Throw-SourceError -Line $Node.Line -Column $Node.Column -Message "Function calls support at most 16 integer arguments under the current Windows x64 ABI subset."
+            }
+            # Evaluate every argument before touching ABI registers or outgoing stack slots.
+            for ($i = 0; $i -lt $argumentCount; $i++) {
                 Emit-IntegerExpression -Node $Node.Arguments[$i]
                 Emit-StoreEaxFrame -SlotPosition (Get-TempSlotPosition -Depth $script:TempDepth)
                 $script:TempDepth++
             }
-            for ($i = 0; $i -lt $Node.Arguments.Count; $i++) {
+            # Every Windows x64 call reserves 32 bytes of shadow space. Additional
+            # arguments occupy 8-byte slots beginning at [RSP+0x20]. The total is
+            # rounded to 16 bytes so RSP remains call-site aligned.
+            $stackArgumentCount = [Math]::Max(0, $argumentCount - 4)
+            $callFrameSize = Align-Up -Value (0x20 + ($stackArgumentCount * 8)) -Alignment 0x10
+            Emit-Bytes -Bytes ([byte[]]@(0x48, 0x81, 0xEC))
+            Emit-I32 -Value $callFrameSize
+            for ($i = 0; $i -lt [Math]::Min(4, $argumentCount); $i++) {
                 Emit-LoadEaxFrame -SlotPosition (Get-TempSlotPosition -Depth ($baseDepth + $i))
                 switch ($i) {
                     0 { Emit-Bytes -Bytes ([byte[]]@(0x89, 0xC1)) }
@@ -1221,8 +1233,14 @@ function Emit-IntegerExpression {
                     3 { Emit-Bytes -Bytes ([byte[]]@(0x41, 0x89, 0xC1)) }
                 }
             }
+            for ($i = 4; $i -lt $argumentCount; $i++) {
+                Emit-LoadEaxFrame -SlotPosition (Get-TempSlotPosition -Depth ($baseDepth + $i))
+                Emit-StackArgumentRax -Offset (0x20 + (($i - 4) * 8))
+            }
             Emit-CallFunction -Name $Node.Name
-            $script:TempDepth -= $Node.Arguments.Count
+            Emit-Bytes -Bytes ([byte[]]@(0x48, 0x81, 0xC4))
+            Emit-I32 -Value $callFrameSize
+            $script:TempDepth -= $argumentCount
             return
         }
         default { Throw-SourceError -Line $Node.Line -Column $Node.Column -Message 'Internal code-generation error: unsupported integer expression node.' }
@@ -1336,7 +1354,10 @@ function Emit-Prologue {
     $Context.StackAllocCodeOffset = $Context.PrologueSize
     if ($Context.PrologueSize -gt 255) { throw "Generated unwind prologue exceeds 255 bytes: $($Context.PrologueSize)." }
     if ($null -ne $Function) {
-        for ($i = 0; $i -lt $Function.Parameters.Count; $i++) {
+        if ($Function.Parameters.Count -gt 16) {
+            throw "Function '$($Function.Name)' exceeds the supported Windows x64 integer-argument limit of 16."
+        }
+        for ($i = 0; $i -lt [Math]::Min(4, $Function.Parameters.Count); $i++) {
             $slotPosition = 0x80 + ($i * 16)
             switch ($i) {
                 0 { Emit-StoreEcxFrame -SlotPosition $slotPosition }
@@ -1344,6 +1365,15 @@ function Emit-Prologue {
                 2 { Emit-StoreR8dFrame -SlotPosition $slotPosition }
                 3 { Emit-StoreR9dFrame -SlotPosition $slotPosition }
             }
+        }
+        # Windows x64 arguments 5..16 are passed in 8-byte stack slots.
+        # After PUSH RBP, the first stack argument is at [RBP+0x30].
+        for ($i = 4; $i -lt $Function.Parameters.Count; $i++) {
+            $slotPosition = 0x80 + ($i * 16)
+            $incomingOffset = 0x30 + (($i - 4) * 8)
+            Emit-Bytes -Bytes ([byte[]]@(0x8B, 0x85)) # mov eax,dword ptr [rbp+disp32]
+            Emit-I32 -Value $incomingOffset
+            Emit-StoreEaxFrame -SlotPosition $slotPosition
         }
     }
     Emit-Bytes -Bytes ([byte[]]@(0xB9, 0xF5, 0xFF, 0xFF, 0xFF, 0x48, 0x83, 0xEC, 0x20)); Emit-CallIat -TargetRva ([UInt32]0x3070); Emit-Bytes -Bytes ([byte[]]@(0x48, 0x83, 0xC4, 0x20))
