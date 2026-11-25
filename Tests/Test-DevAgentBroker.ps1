@@ -62,6 +62,9 @@ try {
     if (-not $compilerSource.Contains('KILL_ON_JOB_CLOSE') -or -not $compilerSource.Contains('ACTIVE_PROCESS') -or -not $compilerSource.Contains('0x2308')) {
         throw 'Job Object kill-on-close, active-process and memory-limit flags are missing.'
     }
+    if (-not $compilerSource.Contains('GetFileAttributesA') -or -not $compilerSource.Contains('0x400')) {
+        throw 'Broker workspace path and reparse-point checks are missing.'
+    }
 
     New-Item -ItemType Directory -Path $buildRoot -Force | Out-Null
     Remove-Item -LiteralPath $childPidPath -Force -ErrorAction SilentlyContinue
@@ -129,6 +132,7 @@ try {
     }
 
     Write-Host 'PASS: compiler pins manifest SHA-256 and all six tool-script hashes' -ForegroundColor Green
+    Write-Host 'PASS: workspace directories and fixed tool paths reject missing/reparse-point entries' -ForegroundColor Green
     Write-Host 'PASS: runtime SHA-256 mismatch rejected before modified tool execution' -ForegroundColor Green
     Write-Host 'PASS: unknown tool IDs rejected before process creation' -ForegroundColor Green
     Write-Host 'PASS: timeout values below policy minimum rejected' -ForegroundColor Green
