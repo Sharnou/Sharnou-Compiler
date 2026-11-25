@@ -372,7 +372,13 @@ function Collect-FunctionHeaders {
                 }
             }
             if ($i -ge $tokens.Length -or $tokens[$i].Text -cne ')') { $script:SourceDisplay = $Module.Path; Throw-SourceError -Line $nameToken.Line -Column $nameToken.Column -Message "Expected ')' after function parameters." }; $i++
-            if ($params.Count -gt 16) { $script:SourceDisplay = $Module.Path; Throw-SourceError -Line $nameToken.Line -Column $nameToken.Column -Message 'Sharnou functions support at most 16 integer parameters (four register arguments and twelve stack arguments under the Windows x64 ABI).'
+            $legacyBaselineMode = [string]::Equals([Environment]::GetEnvironmentVariable('SHARNOU_BASELINE_M1_M6'), '1', [StringComparison]::Ordinal)
+            if ($params.Count -gt 16 -or ($legacyBaselineMode -and $params.Count -gt 4)) {
+                $script:SourceDisplay = $Module.Path
+                if ($legacyBaselineMode) {
+                    Throw-SourceError -Line $nameToken.Line -Column $nameToken.Column -Message 'Historical M1-M6 compatibility mode permits at most four integer function parameters.'
+                }
+                Throw-SourceError -Line $nameToken.Line -Column $nameToken.Column -Message 'Sharnou functions support at most 16 integer parameters (four register arguments and twelve stack arguments under the Windows x64 ABI).'
             }
             if ($i -ge $tokens.Length -or $tokens[$i].Text -cne '{') { $script:SourceDisplay = $Module.Path; Throw-SourceError -Line $nameToken.Line -Column $nameToken.Column -Message "Expected '{' to start the function body." }
             $bodyOpen = $i; $i++; $braceDepth = 1
