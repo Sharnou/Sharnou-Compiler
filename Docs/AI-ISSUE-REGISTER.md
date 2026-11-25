@@ -419,3 +419,14 @@ Classification: REPOSITORY PRESENT / STATIC REVIEWED; historical PR #7 WINDOWS C
 - Local failing executable link record: 1 module, 0 functions, 1,171 code bytes, 57 data bytes; local output shows only six labels.
 - PR #15's independent 13-output equivalent generated 3,573 code bytes and 275 data bytes; Windows runtime output matched all 13 expected labels.
 - Distinct output strings are stored in the generated data section, so the local 57-byte data section strongly suggests the local binary did not contain the seven additional labels. This makes an incomplete/stale test fixture or an untested local syntax path more likely than a general signed-Jcc lowering defect. The exact local source remains required for final root-cause attribution.
+
+
+## 2026-11-25 user-local Milestone 7A validation
+
+- Source snapshot: PR #15 head `de4e64e3f45bc142391886033c33a825722a6eca`.
+- User-reported Windows run: Stage 7A 24/24 (9 positive, 12 negative, 3 native instruction/branch checks); Stage 5 collection-import regression 2/2; Combined result PASS.
+- Native build/run: 9/9 control-flow executables built and PE-verified; 9/9 returned exit code 0 with expected output. BranchConditionCodes emitted all 13 expected lines; canonical and legacy collection imports both passed.
+- The eight PowerShell `InputObjectNotBound` errors came from piping `Get-ChildItem` results into the parameterless `Test.ps1`; they are not compiler/test-case failures. Run `Get-ChildItem ...` and ` .\Test.ps1` separately.
+- Frozen M1-M6 83-case baseline was not run in this log; issue #9 / PR #11 remain separate and unmerged.
+- Issue #1 remains open: static review of this compiler snapshot still shows no large-frame stack probing and no PE x64 unwind metadata. Microsoft documents stack probing for fixed allocations at least one page and unwind tables for non-leaf functions. These are static ABI gaps, not failures reported by the current M7A run.
+- README and accepted-plan test counts are updated to 9 positive + 12 negative + 3 instruction checks = 24, plus the separate 2-case collection import regression.
