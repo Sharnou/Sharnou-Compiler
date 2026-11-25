@@ -1373,7 +1373,7 @@ function New-UnwindInfoBytes {
     if (($countOfCodes % 2) -ne 0) { $bytes.Add([byte]0); $bytes.Add([byte]0) }
     return $bytes.ToArray()
 }
-function Emit-Epilogue { Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xEC, 0x5D, 0xC3)) }
+function Emit-Epilogue { Emit-Bytes -Bytes ([byte[]]@(0x48, 0x8D, 0x65, 0x00, 0x5D, 0xC3)) } # lea rsp,[rbp+0]; pop rbp; ret (legal x64 epilogue)
 function Test-ImageBasic {
     param([byte[]] $Image)
     if ($Image.Length -lt 0x400 -or $Image[0] -ne 0x4D -or $Image[1] -ne 0x5A) { throw 'Internal linker validation: invalid DOS header.' }
