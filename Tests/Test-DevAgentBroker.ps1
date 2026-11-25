@@ -49,6 +49,9 @@ try {
         if (-not (Test-Path -LiteralPath $required -PathType Leaf)) { throw "Required broker test input is missing: $required" }
     }
     $compilerSource = [IO.File]::ReadAllText($compilerPath)
+    if (-not $compilerSource.Contains($manifestHash) -or -not $compilerSource.Contains('Get-FileHash -LiteralPath $p -Algorithm SHA256') -or -not $compilerSource.Contains('exit 91')) {
+        throw 'Compiler must pin the tool manifest and verify each tool script SHA-256 before execution.'
+    }
     if ($compilerSource.Contains('sh_dev_run_process')) { throw 'Unsafe raw-command process API must not be present.' }
     if (-not $compilerSource.Contains('[switch] $EnableDevAgentTools') -or -not $compilerSource.Contains("Name = 'sh_dev_run_tool'; Builtin = 'DevRunTool'; ParameterTypes = @('Integer', 'Integer')")) {
         throw 'Typed integer-only process broker API is missing.'
@@ -81,26 +84,52 @@ try {
     if (-not (Test-Path -LiteralPath $outputPath -PathType Leaf)) { throw 'Compiler did not produce the DevAgent broker fixture.' }
     & $verifierPath -Path $outputPath
 
-    $lines = @(& $outputPath 2>&1)
-    $exitCode = $LASTEXITCODE
-    # The allowlisted child shares the Windows console, so its Stage 7A
-    # PASS lines are visible too. Compare only the broker's numeric return records.
-    $numericLines = @($lines | ForEach-Object { [string]$_ } | Where-Object { $_ -match '^-?[0-9]+$' })
-    $actual = ($numericLines -join $nl).TrimEnd([char[]]@([char]13, [char]10))
-    if ($exitCode -ne 0) { throw "Broker fixture process exited with code $exitCode. Output=[$actual]." }
-    if (-not [string]::Equals($actual, $expected, [StringComparison]::Ordinal)) {
-        throw "Broker fixture output mismatch. Expected=[$expected] Actual=[$actual]."
+    $successOriginalBytes = [IO.File]::ReadAllBytes($successScriptPath)
+    try {
+        $lines = @(& $outputPath 2>&1)
+        $exitCode = $LASTEXITCODE
+        # Child console diagnostics may be visible; compare only broker numeric return records.
+        $numericLines = @($lines | ForEach-Object { [string]$_ } | Where-Object { $_ -match '^-?[0-9]+$' })
+        $actual = ($numericLines -join $nl).TrimEnd([char[]]@([char]13, [char]10))
+        if ($exitCode -ne 0) { throw "Broker fixture process exited with code $exitCode. Output=[$actual]." }
+        if (-not [string]::Equals($actual, $expected, [StringComparison]::Ordinal)) {
+            throw "Broker fixture output mismatch. Expected=[$expected] Actual=[$actual]."
+        }
+
+        if (-not (Test-Path -LiteralPath $childPidPath -PathType Leaf)) {
+            throw 'Timeout probe did not publish the child PID before the broker timeout.'
+        }
+        $childPid = [int](Get-Content -LiteralPath $childPidPath -Raw)
+        if ($null -ne (Get-Process -Id $childPid -ErrorAction SilentlyContinue)) {
+            throw "Job Object timeout failed to terminate descendant process PID $childPid."
+        }
+
+        # Tamper with the fixed success tool after the PE is built. The embedded
+        # SHA-256 must reject it before the script's exit 37 can execute.
+        [IO.File]::AppendAllText($successScriptPath, "`r`n# intentional broker hash mismatch test`r`n", [Text.Encoding]::ASCII)
+        Remove-Item -LiteralPath $childPidPath -Force -ErrorAction SilentlyContinue
+        $tamperedLines = @(& $outputPath 2>&1)
+        $tamperedExitCode = $LASTEXITCODE
+        $tamperedNumericLines = @($tamperedLines | ForEach-Object { [string]$_ } | Where-Object { $_ -match '^-?[0-9]+$' })
+        $tamperedActual = ($tamperedNumericLines -join $nl).TrimEnd([char[]]@([char]13, [char]10))
+        $tamperedExpected = @('-100', '-101', '91', '-110') -join $nl
+        if ($tamperedExitCode -ne 0 -or -not [string]::Equals($tamperedActual, $tamperedExpected, [StringComparison]::Ordinal)) {
+            throw "Runtime script hash tampering was not rejected. Expected=[$tamperedExpected] Actual=[$tamperedActual] ExitCode=$tamperedExitCode."
+        }
+        if (-not (Test-Path -LiteralPath $childPidPath -PathType Leaf)) {
+            throw 'Timeout probe did not publish the child PID during hash-tamper replay.'
+        }
+        $tamperedChildPid = [int](Get-Content -LiteralPath $childPidPath -Raw)
+        if ($null -ne (Get-Process -Id $tamperedChildPid -ErrorAction SilentlyContinue)) {
+            throw "Job Object timeout failed to terminate descendant process PID $tamperedChildPid during hash-tamper replay."
+        }
+    }
+    finally {
+        [IO.File]::WriteAllBytes($successScriptPath, $successOriginalBytes)
     }
 
-    if (-not (Test-Path -LiteralPath $childPidPath -PathType Leaf)) {
-        throw 'Timeout probe did not publish the child PID before the broker timeout.'
-    }
-    $childPid = [int](Get-Content -LiteralPath $childPidPath -Raw)
-    $survivor = Get-Process -Id $childPid -ErrorAction SilentlyContinue
-    if ($null -ne $survivor) {
-        throw "Job Object timeout failed to terminate descendant process PID $childPid."
-    }
-
+    Write-Host 'PASS: compiler pins manifest SHA-256 and all six tool-script hashes' -ForegroundColor Green
+    Write-Host 'PASS: runtime SHA-256 mismatch rejected before modified tool execution' -ForegroundColor Green
     Write-Host 'PASS: unknown tool IDs rejected before process creation' -ForegroundColor Green
     Write-Host 'PASS: timeout values below policy minimum rejected' -ForegroundColor Green
     Write-Host 'PASS: fixed allowlisted Stage 7A tool launched by absolute System32 PowerShell path' -ForegroundColor Green
