@@ -875,13 +875,6 @@ function Emit-DevRunTool {
     Emit-StoreRsiFrame -SlotPosition $saveRsiSlot
 
     # Reject all unknown tool IDs and out-of-policy timeouts before any process creation.
-    Emit-LoadEaxFrame -SlotPosition $ToolSlot
-    for ($i = 0; $i -lt $toolLabels.Count; $i++) {
-        Emit-Bytes -Bytes ([byte[]]@(0x3D))
-        Emit-I32 -Value ($i + 1)
-        Emit-JumpConditional -ConditionCode 0x84 -Label $toolLabels[$i]
-    }
-    Emit-Jump -Label $unknownTool
     Emit-LoadEaxFrame -SlotPosition $TimeoutSlot
     Emit-Bytes -Bytes ([byte[]]@(0x3D))
     Emit-I32 -Value 1000
@@ -889,6 +882,13 @@ function Emit-DevRunTool {
     Emit-Bytes -Bytes ([byte[]]@(0x3D))
     Emit-I32 -Value 300000
     Emit-JumpConditional -ConditionCode 0x87 -Label $invalidTimeout
+    Emit-LoadEaxFrame -SlotPosition $ToolSlot
+    for ($i = 0; $i -lt $toolLabels.Count; $i++) {
+        Emit-Bytes -Bytes ([byte[]]@(0x3D))
+        Emit-I32 -Value ($i + 1)
+        Emit-JumpConditional -ConditionCode 0x84 -Label $toolLabels[$i]
+    }
+    Emit-Jump -Label $unknownTool
 
     for ($i = 0; $i -lt $commandItems.Count; $i++) {
         Mark-CodeLabel -Label $toolLabels[$i]
@@ -928,6 +928,9 @@ function Emit-DevRunTool {
     Emit-Win64CallIat -TargetRva ([UInt32]0x3180) -StackArguments @() # GetCurrentDirectoryA
     Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
     Emit-JumpConditional -ConditionCode 0x84 -Label $directoryFail
+    Emit-Bytes -Bytes ([byte[]]@(0x3D))
+    Emit-I32 -Value 260
+    Emit-JumpConditional -ConditionCode 0x87 -Label $directoryFail
 
     # Zero STARTUPINFOA, PROCESS_INFORMATION and JOBOBJECT_EXTENDED_LIMIT_INFORMATION.
     for ($i = 0; $i -lt 13; $i++) { Emit-StoreZero64Frame -SlotPosition ($startupSlot + ($i * 8)) }
@@ -1011,25 +1014,43 @@ function Emit-DevRunTool {
     Emit-LoadRcxFrame -SlotPosition $jobHandleSlot
     Emit-Bytes -Bytes ([byte[]]@(0xBA, 0x01, 0x00, 0xAD, 0xDE))
     Emit-Win64CallIat -TargetRva ([UInt32]0x31B0) -StackArguments @() # TerminateJobObject
-    Emit-Jump -Label $waitFail
+    Emit-LoadRaxFrame -SlotPosition $processSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1, 0xBA, 0x88, 0x13, 0x00, 0x00))
+    Emit-Win64CallIat -TargetRva ([UInt32]0x30D0) -StackArguments @() # WaitForSingleObject(5000)
+    Emit-Bytes -Bytes ([byte[]]@(0xB8, 0x92, 0xFF, 0xFF, 0xFF)) # -110: timeout
+    Emit-StoreEaxFrame -SlotPosition $resultSlot
+    Emit-Jump -Label $cleanup
 
     Mark-CodeLabel -Label $assignFail
     Emit-LoadRcxFrame -SlotPosition $processSlot
     Emit-Bytes -Bytes ([byte[]]@(0xBA, 0x02, 0x00, 0xAD, 0xDE))
-    Emit-Win64CallIat -TargetRva ([UInt32]0x31C0) -StackArguments @() # TerminateProcess
-    Emit-Jump -Label $waitFail
+    Emit-Win64CallIat -TargetRva ([UInt32]0x31C0) -StackArguments @() # TerminateProcess (not yet assigned to job)
+    Emit-LoadRaxFrame -SlotPosition $processSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1, 0xBA, 0x88, 0x13, 0x00, 0x00))
+    Emit-Win64CallIat -TargetRva ([UInt32]0x30D0) -StackArguments @()
+    Emit-Bytes -Bytes ([byte[]]@(0xB8, 0x95, 0xFF, 0xFF, 0xFF)) # -107: job assignment failed
+    Emit-StoreEaxFrame -SlotPosition $resultSlot
+    Emit-Jump -Label $cleanup
 
     Mark-CodeLabel -Label $resumeFail
     Emit-LoadRcxFrame -SlotPosition $jobHandleSlot
     Emit-Bytes -Bytes ([byte[]]@(0xBA, 0x03, 0x00, 0xAD, 0xDE))
-    Emit-Win64CallIat -TargetRva ([UInt32]0x31B0) -StackArguments @()
-    Emit-Jump -Label $waitFail
+    Emit-Win64CallIat -TargetRva ([UInt32]0x31B0) -StackArguments @() # TerminateJobObject
+    Emit-LoadRaxFrame -SlotPosition $processSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1, 0xBA, 0x88, 0x13, 0x00, 0x00))
+    Emit-Win64CallIat -TargetRva ([UInt32]0x30D0) -StackArguments @()
+    Emit-Bytes -Bytes ([byte[]]@(0xB8, 0x94, 0xFF, 0xFF, 0xFF)) # -108: resume failed
+    Emit-StoreEaxFrame -SlotPosition $resultSlot
+    Emit-Jump -Label $cleanup
 
     Mark-CodeLabel -Label $waitFail
-    Emit-LoadRcxFrame -SlotPosition $processSlot
+    Emit-LoadRcxFrame -SlotPosition $jobHandleSlot
     Emit-Bytes -Bytes ([byte[]]@(0xBA, 0x04, 0x00, 0xAD, 0xDE))
-    Emit-Win64CallIat -TargetRva ([UInt32]0x31C0) -StackArguments @() # TerminateProcess
-    Emit-Bytes -Bytes ([byte[]]@(0xB8, 0x94, 0xFF, 0xFF, 0xFF)) # -108: wait/termination failure
+    Emit-Win64CallIat -TargetRva ([UInt32]0x31B0) -StackArguments @() # TerminateJobObject
+    Emit-LoadRaxFrame -SlotPosition $processSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1, 0xBA, 0x88, 0x13, 0x00, 0x00))
+    Emit-Win64CallIat -TargetRva ([UInt32]0x30D0) -StackArguments @()
+    Emit-Bytes -Bytes ([byte[]]@(0xB8, 0x93, 0xFF, 0xFF, 0xFF)) # -109: wait/exit-code failure
     Emit-StoreEaxFrame -SlotPosition $resultSlot
     Emit-Jump -Label $cleanup
 
@@ -1053,15 +1074,6 @@ function Emit-DevRunTool {
     Emit-Bytes -Bytes ([byte[]]@(0xB8, 0x96, 0xFF, 0xFF, 0xFF)) # -106
     Emit-StoreEaxFrame -SlotPosition $resultSlot
     Emit-Jump -Label $cleanup
-    Mark-CodeLabel -Label $assignFail
-    Emit-Bytes -Bytes ([byte[]]@(0xB8, 0x95, 0xFF, 0xFF, 0xFF)) # -107
-    Emit-StoreEaxFrame -SlotPosition $resultSlot
-    Emit-Jump -Label $cleanup
-    Mark-CodeLabel -Label $resumeFail
-    Emit-Bytes -Bytes ([byte[]]@(0xB8, 0x94, 0xFF, 0xFF, 0xFF)) # -108
-    Emit-StoreEaxFrame -SlotPosition $resultSlot
-    Emit-Jump -Label $cleanup
-
     Mark-CodeLabel -Label $cleanup
     # Close the primary thread, process and job handles. Closing the job also
     # terminates any remaining descendants because KILL_ON_JOB_CLOSE is set.
