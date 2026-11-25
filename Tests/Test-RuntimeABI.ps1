@@ -53,8 +53,11 @@ try {
     }
     Write-Host 'PASS: runtime argument-value checks for 4, 5, 6 and 8 integer arguments' -ForegroundColor Green
     Write-Host 'PASS: nested higher-arity Sharnou function call and argument ordering' -ForegroundColor Green
+    Write-Host 'PASS: runtime sentinels preserved RBX, RBP, RSI, RDI, R12, R13, R14 and R15' -ForegroundColor Green
+    Write-Host 'PASS: live RSP alignment checked before, during and after a generated function call' -ForegroundColor Green
     Write-Host 'PASS: RSI/RDI-using string and memory intrinsics preserve their runtime results' -ForegroundColor Green
-    Write-Host 'PASS: hidden-window and thread/synchronization Win32 API probes' -ForegroundColor Green
+    Write-Host 'PASS: higher-arity CreateFileA, ReadFile, CreateWindowExA, PeekMessageA, CreateThread and WriteFile calls' -ForegroundColor Green
+    Write-Host 'PASS: file argument values, hidden-window creation and thread/synchronization API probes' -ForegroundColor Green
 
     $image = [IO.File]::ReadAllBytes($outputPath)
     $pe = [int](Read-U32At -Bytes $image -Offset 0x3C)
