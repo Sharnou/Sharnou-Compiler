@@ -21,6 +21,18 @@ try {
     foreach ($required in @($compilerPath, $verifierPath, $fixturePath, $timeoutScriptPath)) {
         if (-not (Test-Path -LiteralPath $required -PathType Leaf)) { throw "Required broker test input is missing: $required" }
     }
+    $compilerSource = [IO.File]::ReadAllText($compilerPath)
+    if ($compilerSource.Contains('sh_dev_run_process')) { throw 'Unsafe raw-command process API must not be present.' }
+    if (-not $compilerSource.Contains("Name = 'sh_dev_run_tool'; Builtin = 'DevRunTool'; ParameterTypes = @('Integer', 'Integer')")) {
+        throw 'Typed integer-only process broker API is missing.'
+    }
+    if (-not $compilerSource.Contains('bInheritHandles = FALSE') -or -not $compilerSource.Contains('CREATE_SUSPENDED')) {
+        throw 'Broker must create suspended children without inherited handles.'
+    }
+    if (-not $compilerSource.Contains('KILL_ON_JOB_CLOSE') -or -not $compilerSource.Contains('JOB_OBJECT_LIMIT_ACTIVE_PROCESS')) {
+        throw 'Job Object containment and active-process policy are missing.'
+    }
+
     New-Item -ItemType Directory -Path $buildRoot -Force | Out-Null
     Remove-Item -LiteralPath $childPidPath -Force -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $outputPath -Force -ErrorAction SilentlyContinue
