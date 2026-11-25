@@ -592,6 +592,33 @@ function Emit-StackArgumentRax {
     if ($Offset -lt 0x20 -or $Offset -gt 0x78 -or ($Offset % 8) -ne 0) { throw "Invalid Windows x64 stack argument offset: $Offset" }
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0x44, 0x24, [byte]$Offset))
 }
+function Emit-Win64CallIat {
+    param([UInt32] $TargetRva, [object[]] $StackArguments = @())
+    if ($StackArguments.Count -gt 12) { throw "Windows x64 IAT calls support at most 12 stack arguments; received $($StackArguments.Count)." }
+    # Reserve shadow space plus all stack arguments, rounded to 16 bytes.
+    $callFrameSize = Align-Up -Value (0x20 + ($StackArguments.Count * 8)) -Alignment 0x10
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x81, 0xEC))
+    Emit-I32 -Value $callFrameSize
+    for ($i = 0; $i -lt $StackArguments.Count; $i++) {
+        $argument = $StackArguments[$i]
+        switch ([string]$argument.Kind) {
+            'Immediate' {
+                Emit-Bytes -Bytes ([byte[]]@(0x48, 0xB8))
+                Emit-Bytes -Bytes ([BitConverter]::GetBytes([Int64]$argument.Value))
+            }
+            'FrameAddress' { Emit-LeaRaxFrame -SlotPosition ([int]$argument.SlotPosition) }
+            'FrameQword' { Emit-LoadRaxFrame -SlotPosition ([int]$argument.SlotPosition) }
+            'FrameDword' { Emit-LoadEaxFrame -SlotPosition ([int]$argument.SlotPosition) }
+            'DataAddress' { Emit-DataAddress -DataItem $argument.DataItem }
+            'CodeAddress' { Emit-LeaRaxCodeLabel -Label ([string]$argument.Label) }
+            default { throw "Unsupported Windows x64 stack-argument descriptor kind: '$($argument.Kind)'." }
+        }
+        Emit-StackArgumentRax -Offset (0x20 + ($i * 8))
+    }
+    Emit-CallIat -TargetRva $TargetRva
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x81, 0xC4))
+    Emit-I32 -Value $callFrameSize
+}
 function Emit-LoadRdiFrame { param([int] $SlotPosition) Emit-Bytes -Bytes ([byte[]]@(0x48, 0x8B, 0xBD)); Emit-I32 -Value (Get-FrameDisp -SlotPosition $SlotPosition) }
 function Emit-StoreRdiFrame { param([int] $SlotPosition) Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xBD)); Emit-I32 -Value (Get-FrameDisp -SlotPosition $SlotPosition) }
 function Emit-LoadRsiFrame { param([int] $SlotPosition) Emit-Bytes -Bytes ([byte[]]@(0x48, 0x8B, 0xB5)); Emit-I32 -Value (Get-FrameDisp -SlotPosition $SlotPosition) }
@@ -600,6 +627,13 @@ function Emit-LeaRaxFrame { param([int] $SlotPosition) Emit-Bytes -Bytes ([byte[
 function Emit-LeaR8CodeLabel {
     param([string] $Label)
     Emit-Bytes -Bytes ([byte[]]@(0x4C, 0x8D, 0x05)); $dispOffset = $script:Code.Count; Emit-I32 -Value 0
+    $script:CodeFixups.Add([pscustomobject]@{ Kind = 'Code'; DispOffset = $dispOffset; Target = $Label })
+}
+function Emit-LeaRaxCodeLabel {
+    param([string] $Label)
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x8D, 0x05))
+    $dispOffset = $script:Code.Count
+    Emit-I32 -Value 0
     $script:CodeFixups.Add([pscustomobject]@{ Kind = 'Code'; DispOffset = $dispOffset; Target = $Label })
 }
 function Emit-CallFunction {
@@ -666,12 +700,11 @@ function Emit-CreateFileForPath {
     Emit-Bytes -Bytes ([byte[]]@(0xBA, 0x00, 0x00, 0x00, 0x80)) # GENERIC_READ
     Emit-Bytes -Bytes ([byte[]]@(0x41, 0xB8, 0x01, 0x00, 0x00, 0x00)) # FILE_SHARE_READ
     Emit-Bytes -Bytes ([byte[]]@(0x45, 0x33, 0xC9)) # lpSecurityAttributes = NULL
-    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x83, 0xEC, 0x40))
-    Emit-StackArgumentImmediate -Offset 0x20 -Value 3 # OPEN_EXISTING
-    Emit-StackArgumentImmediate -Offset 0x28 -Value 0x80 # FILE_ATTRIBUTE_NORMAL
-    Emit-StackArgumentImmediate -Offset 0x30 -Value 0
-    Emit-CallIat -TargetRva ([UInt32]0x30A0) # CreateFileA
-    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x83, 0xC4, 0x40))
+    Emit-Win64CallIat -TargetRva ([UInt32]0x30A0) -StackArguments @(
+        @{ Kind = 'Immediate'; Value = 3 },
+        @{ Kind = 'Immediate'; Value = 0x80 },
+        @{ Kind = 'Immediate'; Value = 0 }
+    ) # CreateFileA
 }
 function Emit-BuiltinArguments {
     param([object] $Node, [int] $BaseDepth)
@@ -810,9 +843,9 @@ function Emit-BuiltinCall {
             Emit-LoadRcxFrame -SlotPosition $handleSlot; Emit-LeaRdxFrame -SlotPosition $script:ActiveContext.ScratchPosition
             Emit-LoadEaxFrame -SlotPosition $capacitySlot; Emit-Bytes -Bytes ([byte[]]@(0x41, 0x89, 0xC0))
             Emit-LeaRaxFrame -SlotPosition ($script:ActiveContext.ScratchPosition + 0x1000); Emit-Bytes -Bytes ([byte[]]@(0x49, 0x89, 0xC1))
-            Emit-Bytes -Bytes ([byte[]]@(0x48, 0x83, 0xEC, 0x30)); Emit-StackArgumentImmediate -Offset 0x20 -Value 0
-            Emit-CallIat -TargetRva ([UInt32]0x30B0) # ReadFile
-            Emit-Bytes -Bytes ([byte[]]@(0x48, 0x83, 0xC4, 0x30)); Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0)); Emit-JumpConditional -ConditionCode 0x84 -Label $failRead
+            Emit-Win64CallIat -TargetRva ([UInt32]0x30B0) -StackArguments @(
+                @{ Kind = 'Immediate'; Value = 0 }
+            ) # ReadFile; Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0)); Emit-JumpConditional -ConditionCode 0x84 -Label $failRead
             Emit-Bytes -Bytes ([byte[]]@(0x8B, 0x85)); Emit-I32 -Value (Get-FrameDisp -SlotPosition ($script:ActiveContext.ScratchPosition + 0x1000)); Emit-StoreEaxFrame -SlotPosition $countSlot
             Emit-LoadRcxFrame -SlotPosition $handleSlot; Emit-CallIat -TargetRva ([UInt32]0x30B8); Emit-LoadEaxFrame -SlotPosition $countSlot; Emit-Jump -Label $doneLabel
             Mark-CodeLabel -Label $failRead; Emit-LoadRcxFrame -SlotPosition $handleSlot; Emit-CallIat -TargetRva ([UInt32]0x30B8); Emit-Jump -Label $failOpen
@@ -862,13 +895,16 @@ function Emit-BuiltinCall {
             Emit-Bytes -Bytes ([byte[]]@(0x33, 0xC9)); Emit-DataAddress -DataItem (Register-DataConstant -Value 'STATIC'); Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC2)) # class name -> RDX
             Emit-LoadRaxFrame -SlotPosition $titleSlot; Emit-Bytes -Bytes ([byte[]]@(0x49, 0x89, 0xC0)) # title -> R8
             Emit-Bytes -Bytes ([byte[]]@(0x41, 0xB9, 0x00, 0x00, 0xCF, 0x00)) # hidden WS_OVERLAPPEDWINDOW
-            Emit-Bytes -Bytes ([byte[]]@(0x48, 0x83, 0xEC, 0x60))
-            Emit-StackArgumentImmediate -Offset 0x20 -Value -2147483648; Emit-StackArgumentImmediate -Offset 0x28 -Value -2147483648
-            Emit-StackArgumentImmediate -Offset 0x30 -Value 320; Emit-StackArgumentImmediate -Offset 0x38 -Value 240
-            Emit-StackArgumentImmediate -Offset 0x40 -Value 0; Emit-StackArgumentImmediate -Offset 0x48 -Value 0
-            Emit-LoadRaxFrame -SlotPosition $instanceSlot; Emit-StackArgumentRax -Offset 0x50; Emit-StackArgumentImmediate -Offset 0x58 -Value 0
-            Emit-CallIat -TargetRva ([UInt32]0x30F0) # CreateWindowExA
-            Emit-Bytes -Bytes ([byte[]]@(0x48, 0x83, 0xC4, 0x60)); Emit-Bytes -Bytes ([byte[]]@(0x48, 0x85, 0xC0)); Emit-JumpConditional -ConditionCode 0x84 -Label $failLabel
+            Emit-Win64CallIat -TargetRva ([UInt32]0x30F0) -StackArguments @(
+                @{ Kind = 'Immediate'; Value = -2147483648 },
+                @{ Kind = 'Immediate'; Value = -2147483648 },
+                @{ Kind = 'Immediate'; Value = 320 },
+                @{ Kind = 'Immediate'; Value = 240 },
+                @{ Kind = 'Immediate'; Value = 0 },
+                @{ Kind = 'Immediate'; Value = 0 },
+                @{ Kind = 'FrameQword'; SlotPosition = $instanceSlot },
+                @{ Kind = 'Immediate'; Value = 0 }
+            ) # CreateWindowExA; Emit-Bytes -Bytes ([byte[]]@(0x48, 0x85, 0xC0)); Emit-JumpConditional -ConditionCode 0x84 -Label $failLabel
             Emit-StoreRaxFrame -SlotPosition $windowSlot
             # Keep the test window hidden, update it, and non-blockingly dispatch one queued message.
             Emit-LoadRcxFrame -SlotPosition $windowSlot; Emit-Bytes -Bytes ([byte[]]@(0x33, 0xD2)); Emit-CallIat -TargetRva ([UInt32]0x30F8) # ShowWindow(SW_HIDE)
@@ -889,9 +925,9 @@ function Emit-WindowPumpCore {
     $noneLabel = New-UniqueLabel -Prefix 'window_pump_none'; $doneLabel = New-UniqueLabel -Prefix 'window_pump_done'
     Emit-LeaRaxFrame -SlotPosition $script:ActiveContext.ScratchPosition; Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1))
     Emit-Bytes -Bytes ([byte[]]@(0x33, 0xD2, 0x45, 0x33, 0xC0, 0x45, 0x33, 0xC9))
-    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x83, 0xEC, 0x30)); Emit-StackArgumentImmediate -Offset 0x20 -Value 1
-    Emit-CallIat -TargetRva ([UInt32]0x3108) # PeekMessageA
-    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x83, 0xC4, 0x30)); Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0)); Emit-JumpConditional -ConditionCode 0x84 -Label $noneLabel
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3108) -StackArguments @(
+        @{ Kind = 'Immediate'; Value = 1 }
+    ) # PeekMessageA; Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0)); Emit-JumpConditional -ConditionCode 0x84 -Label $noneLabel
     Emit-LeaRaxFrame -SlotPosition $script:ActiveContext.ScratchPosition; Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1)); Emit-CallIat -TargetRva ([UInt32]0x3110) # TranslateMessage
     Emit-LeaRaxFrame -SlotPosition $script:ActiveContext.ScratchPosition; Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1)); Emit-CallIat -TargetRva ([UInt32]0x3118) # DispatchMessageA
     Emit-Bytes -Bytes ([byte[]]@(0xB8, 0x01, 0x00, 0x00, 0x00)); Emit-Jump -Label $doneLabel
@@ -1133,10 +1169,10 @@ function Emit-ThreadSyncCore {
     $threadSlot = Get-TempSlotPosition -Depth $BaseDepth; $mutexSlot = Get-TempSlotPosition -Depth ($BaseDepth + 1)
     $threadFail = New-UniqueLabel -Prefix 'thread_sync_thread_fail'; $mutexFail = New-UniqueLabel -Prefix 'thread_sync_mutex_fail'; $mutexWaitFail = New-UniqueLabel -Prefix 'thread_sync_mutex_wait_fail'; $releaseFail = New-UniqueLabel -Prefix 'thread_sync_release_fail'; $done = New-UniqueLabel -Prefix 'thread_sync_done'
     Emit-Bytes -Bytes ([byte[]]@(0x33, 0xC9, 0x33, 0xD2)); Emit-LeaR8CodeLabel -Label '__sharnou_worker'; Emit-Bytes -Bytes ([byte[]]@(0x45, 0x33, 0xC9))
-    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x83, 0xEC, 0x30)); Emit-StackArgumentImmediate -Offset 0x20 -Value 0
-    Emit-LeaRaxFrame -SlotPosition $script:ActiveContext.ScratchPosition; Emit-StackArgumentRax -Offset 0x28
-    Emit-CallIat -TargetRva ([UInt32]0x30C8) # CreateThread
-    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x83, 0xC4, 0x30)); Emit-Bytes -Bytes ([byte[]]@(0x48, 0x85, 0xC0)); Emit-JumpConditional -ConditionCode 0x84 -Label $threadFail
+    Emit-Win64CallIat -TargetRva ([UInt32]0x30C8) -StackArguments @(
+        @{ Kind = 'Immediate'; Value = 0 },
+        @{ Kind = 'FrameAddress'; SlotPosition = $script:ActiveContext.ScratchPosition }
+    ) # CreateThread; Emit-Bytes -Bytes ([byte[]]@(0x48, 0x85, 0xC0)); Emit-JumpConditional -ConditionCode 0x84 -Label $threadFail
     Emit-StoreRaxFrame -SlotPosition $threadSlot; Emit-LoadRcxFrame -SlotPosition $threadSlot; Emit-Bytes -Bytes ([byte[]]@(0xBA, 0x88, 0x13, 0x00, 0x00)); Emit-CallIat -TargetRva ([UInt32]0x30D0) # WaitForSingleObject
     Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0)); Emit-JumpConditional -ConditionCode 0x85 -Label $threadFail
     Emit-LoadRcxFrame -SlotPosition $threadSlot; Emit-CallIat -TargetRva ([UInt32]0x30B8) # CloseHandle
