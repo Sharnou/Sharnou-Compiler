@@ -372,7 +372,7 @@ function Collect-FunctionHeaders {
                 }
             }
             if ($i -ge $tokens.Length -or $tokens[$i].Text -cne ')') { $script:SourceDisplay = $Module.Path; Throw-SourceError -Line $nameToken.Line -Column $nameToken.Column -Message "Expected ')' after function parameters." }; $i++
-            if ($params.Count -gt 4) { $script:SourceDisplay = $Module.Path; Throw-SourceError -Line $nameToken.Line -Column $nameToken.Column -Message 'Sharnou functions currently support at most four integer parameters (Windows x64 register arguments).'
+            if ($params.Count -gt 16) { $script:SourceDisplay = $Module.Path; Throw-SourceError -Line $nameToken.Line -Column $nameToken.Column -Message 'Sharnou functions support at most 16 integer parameters (four register arguments and twelve stack arguments under the Windows x64 ABI).'
             }
             if ($i -ge $tokens.Length -or $tokens[$i].Text -cne '{') { $script:SourceDisplay = $Module.Path; Throw-SourceError -Line $nameToken.Line -Column $nameToken.Column -Message "Expected '{' to start the function body." }
             $bodyOpen = $i; $i++; $braceDepth = 1
