@@ -131,6 +131,56 @@ try {
         [IO.File]::WriteAllBytes($successScriptPath, $successOriginalBytes)
     }
 
+    $brokerDirectory = Join-Path $repoRoot 'Tests\DevAgentBroker'
+    $brokerDirectoryBackup = Join-Path $buildRoot 'DevAgentBroker.original'
+    $junctionTarget = Join-Path $buildRoot 'JunctionTarget'
+    Remove-Item -LiteralPath $brokerDirectoryBackup -Recurse -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $junctionTarget -Recurse -Force -ErrorAction SilentlyContinue
+    New-Item -ItemType Directory -Path $junctionTarget -Force | Out-Null
+    Move-Item -LiteralPath $brokerDirectory -Destination $brokerDirectoryBackup
+    try {
+        New-Item -ItemType Junction -Path $brokerDirectory -Target $junctionTarget | Out-Null
+        Remove-Item -LiteralPath $childPidPath -Force -ErrorAction SilentlyContinue
+        $reparseLines = @(& $outputPath 2>&1)
+        $reparseExitCode = $LASTEXITCODE
+        $reparseNumericLines = @($reparseLines | ForEach-Object { [string]$_ } | Where-Object { $_ -match '^-?[0-9]+
+    Write-Host 'PASS: workspace directories and fixed tool paths reject missing/reparse-point entries' -ForegroundColor Green
+    Write-Host 'PASS: runtime SHA-256 mismatch rejected before modified tool execution' -ForegroundColor Green
+    Write-Host 'PASS: unknown tool IDs rejected before process creation' -ForegroundColor Green
+    Write-Host 'PASS: timeout values below policy minimum rejected' -ForegroundColor Green
+    Write-Host 'PASS: fixed allowlisted success tool launched by absolute System32 PowerShell path' -ForegroundColor Green
+    Write-Host 'PASS: child process exit code propagated' -ForegroundColor Green
+    Write-Host 'PASS: suspended process assigned to Job Object before resume' -ForegroundColor Green
+    Write-Host 'PASS: timeout terminated the child and its spawned descendant' -ForegroundColor Green
+    Write-Host 'DevAgent broker phase-1 result: PASS' -ForegroundColor Green
+}
+catch {
+    Write-Host "DevAgent broker phase-1 result: FAIL - $($_.Exception.Message)" -ForegroundColor Red
+    throw
+}
+finally {
+    Set-Location -LiteralPath $originalLocation
+}
+ })
+        $reparseActual = ($reparseNumericLines -join $nl).TrimEnd([char[]]@([char]13, [char]10))
+        $reparseExpected = @('-100', '-101', '-103', '-103') -join $nl
+        if ($reparseExitCode -ne 0 -or -not [string]::Equals($reparseActual, $reparseExpected, [StringComparison]::Ordinal)) {
+            throw "Workspace reparse-point rejection failed. Expected=[$reparseExpected] Actual=[$reparseActual] ExitCode=$reparseExitCode."
+        }
+        if (Test-Path -LiteralPath $childPidPath -PathType Leaf) {
+            throw 'Broker launched a child process despite the workspace reparse-point rejection.'
+        }
+    }
+    finally {
+        if (Test-Path -LiteralPath $brokerDirectory) {
+            Remove-Item -LiteralPath $brokerDirectory -Force -ErrorAction SilentlyContinue
+        }
+        if (Test-Path -LiteralPath $brokerDirectoryBackup -PathType Container) {
+            Move-Item -LiteralPath $brokerDirectoryBackup -Destination $brokerDirectory
+        }
+        Remove-Item -LiteralPath $junctionTarget -Recurse -Force -ErrorAction SilentlyContinue
+    }
+
     Write-Host 'PASS: compiler pins manifest SHA-256 and all six tool-script hashes' -ForegroundColor Green
     Write-Host 'PASS: workspace directories and fixed tool paths reject missing/reparse-point entries' -ForegroundColor Green
     Write-Host 'PASS: runtime SHA-256 mismatch rejected before modified tool execution' -ForegroundColor Green
