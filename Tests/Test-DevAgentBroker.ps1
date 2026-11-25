@@ -29,8 +29,8 @@ try {
     if (-not $compilerSource.Contains('bInheritHandles = FALSE') -or -not $compilerSource.Contains('CREATE_SUSPENDED')) {
         throw 'Broker must create suspended children without inherited handles.'
     }
-    if (-not $compilerSource.Contains('KILL_ON_JOB_CLOSE') -or -not $compilerSource.Contains('JOB_OBJECT_LIMIT_ACTIVE_PROCESS')) {
-        throw 'Job Object containment and active-process policy are missing.'
+    if (-not $compilerSource.Contains('KILL_ON_JOB_CLOSE') -or -not $compilerSource.Contains('ACTIVE_PROCESS') -or -not $compilerSource.Contains('0x2308')) {
+        throw 'Job Object kill-on-close, active-process and memory-limit flags are missing.'
     }
 
     New-Item -ItemType Directory -Path $buildRoot -Force | Out-Null
