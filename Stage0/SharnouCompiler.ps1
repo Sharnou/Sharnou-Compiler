@@ -739,23 +739,6 @@ function Emit-CopyDataConstantToFrame {
     Emit-I32 -Value $Length
     Emit-Bytes -Bytes ([byte[]]@(0xF3, 0xA4, 0xC6, 0x07, 0x00)) # REP MOVSB; append NUL
 }
-function Emit-DevBrokerDebugText {
-    param([string] $Text, [int] $WrittenSlot)
-    $item = Register-DataConstant -Value $Text
-    $length = [System.Text.Encoding]::ASCII.GetByteCount($Text)
-    Emit-Bytes -Bytes ([byte[]]@(0xB9, 0xF5, 0xFF, 0xFF, 0xFF)) # STD_OUTPUT_HANDLE
-    Emit-Win64CallIat -TargetRva ([UInt32]0x3070) -StackArguments @() # GetStdHandle
-    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1))
-    Emit-DataAddress -DataItem $item
-    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC2, 0xB8))
-    Emit-I32 -Value $length
-    Emit-Bytes -Bytes ([byte[]]@(0x41, 0x89, 0xC0))
-    Emit-LeaRaxFrame -SlotPosition $WrittenSlot
-    Emit-Bytes -Bytes ([byte[]]@(0x49, 0x89, 0xC1))
-    Emit-Win64CallIat -TargetRva ([UInt32]0x3078) -StackArguments @(
-        @{ Kind = 'Immediate'; Value = 0 }
-    ) # WriteFile
-}
 function Emit-NonvolatileRegisterProbe {
     param([object] $Node, [int] $BaseDepth)
     $targetName = 'abi_nonvolatile_target'
@@ -936,25 +919,23 @@ function Emit-DevRunTool {
     Emit-I32 -Value 220
     Emit-JumpConditional -ConditionCode 0x87 -Label $pathFail
     Emit-Bytes -Bytes ([byte[]]@(0x89, 0xC6)) # ESI = System32 path length
-    Emit-DevBrokerDebugText -Text 'DBG: system directory resolved' -WrittenSlot ($scratch + 0x600)
     Emit-LeaRaxFrame -SlotPosition $applicationSlot
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC7, 0x48, 0x01, 0xF7)) # RDI = end of System32 path
     Emit-DataAddress -DataItem $suffixItem
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC6, 0xB9))
     Emit-I32 -Value $suffixLength
     Emit-Bytes -Bytes ([byte[]]@(0xF3, 0xA4, 0xC6, 0x07, 0x00)) # append fixed PowerShell suffix and NUL
-    Emit-DevBrokerDebugText -Text 'DBG: executable path assembled`r`n' -WrittenSlot ($scratch + 0x600)
 
     # Capture the caller's current directory as the fixed working directory.
+    Emit-Bytes -Bytes ([byte[]]@(0xB9, 0x04, 0x01, 0x00, 0x00)) # RCX = nBufferLength (260)
     Emit-LeaRaxFrame -SlotPosition $workingDirectorySlot
-    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1, 0xBA, 0x04, 0x01, 0x00, 0x00))
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC2)) # RDX = lpBuffer
     Emit-Win64CallIat -TargetRva ([UInt32]0x3180) -StackArguments @() # GetCurrentDirectoryA
     Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
     Emit-JumpConditional -ConditionCode 0x84 -Label $directoryFail
     Emit-Bytes -Bytes ([byte[]]@(0x3D))
     Emit-I32 -Value 260
     Emit-JumpConditional -ConditionCode 0x87 -Label $directoryFail
-    Emit-DevBrokerDebugText -Text 'DBG: working directory resolved`r`n' -WrittenSlot ($scratch + 0x600)
 
     # Zero STARTUPINFOA, PROCESS_INFORMATION and JOBOBJECT_EXTENDED_LIMIT_INFORMATION.
     for ($i = 0; $i -lt 13; $i++) { Emit-StoreZero64Frame -SlotPosition ($startupSlot + ($i * 8)) }
@@ -973,7 +954,6 @@ function Emit-DevRunTool {
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x85, 0xC0))
     Emit-JumpConditional -ConditionCode 0x84 -Label $jobFail
     Emit-StoreRaxFrame -SlotPosition $jobHandleSlot
-    Emit-DevBrokerDebugText -Text 'DBG: job created`r`n' -WrittenSlot ($scratch + 0x600)
     Emit-LoadRcxFrame -SlotPosition $jobHandleSlot
     Emit-Bytes -Bytes ([byte[]]@(0xBA, 0x09, 0x00, 0x00, 0x00))
     Emit-LeaRaxFrame -SlotPosition $jobInfoSlot
@@ -981,10 +961,8 @@ function Emit-DevRunTool {
     Emit-Win64CallIat -TargetRva ([UInt32]0x3198) -StackArguments @() # SetInformationJobObject(JobObjectExtendedLimitInformation)
     Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
     Emit-JumpConditional -ConditionCode 0x84 -Label $jobConfigFail
-    Emit-DevBrokerDebugText -Text 'DBG: job configured`r`n' -WrittenSlot ($scratch + 0x600)
 
     # Create the exact allowlisted PowerShell tool suspended, with no inherited handles.
-    Emit-DevBrokerDebugText -Text 'DBG: before CreateProcess`r`n' -WrittenSlot ($scratch + 0x600)
     Emit-LeaRaxFrame -SlotPosition $applicationSlot
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1))
     Emit-LeaRaxFrame -SlotPosition $commandLineSlot
@@ -999,7 +977,6 @@ function Emit-DevRunTool {
     ) # CreateProcessA
     Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
     Emit-JumpConditional -ConditionCode 0x84 -Label $createFail
-    Emit-DevBrokerDebugText -Text 'DBG: CreateProcess succeeded`r`n' -WrittenSlot ($scratch + 0x600)
 
     # Assign the suspended process to its Job Object before allowing any user code to run.
     Emit-LoadRcxFrame -SlotPosition $jobHandleSlot
