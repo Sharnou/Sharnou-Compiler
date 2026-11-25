@@ -403,3 +403,12 @@ This entry supersedes earlier PR #11 ahead/behind counts in the historical entri
 - Next implementation must start from a fresh feature branch after those prerequisites, beginning with the typed allowlisted process broker and adversarial security/rollback tests. Research/download quarantine, PE/x64 analysis, local inference, planner/subagents, autonomous repair, and optional providers follow in the documented dependency order.
 
 Classification: REPOSITORY PRESENT / STATIC REVIEWED; historical PR #7 WINDOWS CI PASS for the test-orchestrator demo only; current-default DevAgent NOT PRESENT; autonomous AI NOT IMPLEMENTED / NOT RUN; safe implementation BLOCKED by issues #9 and #1.
+
+ 
+## Milestone 7A local regression repair - 2026-11-25
+
+- User-provided Windows log: Stage 5 24/25 because `Tests\\StdLib\\Collections.sharnou` is missing; Stage 7A 27/28 because the `BranchConditionCodes` case returned 6 of 13 expected output lines. Other displayed gates passed: Engine foundation 5/5, builds 22/22, runtime examples 15/15, Stage 2 25/25, Stage 4 20/20, PE verifier 4/4, Stage 6 9/9.
+- PR #15 restores the canonical M6 `StdLib/Collections.sharnou` module, provides a legacy `Tests/StdLib` import shim, and adds a native 13-line branch-boundary reproducer.
+- Windows Actions run 45696244484 on PR #15 head `01fd2d7b6bd6ab4d80a920449bc529fa865634e8`: 24/24 Stage 7A, 2/2 collection-import tests, source encoding PASS, Combined result PASS.
+- The original local `BranchConditionCodes.sharnou` and expanded local `Test.ps1` were not supplied. The equivalent new test passes; a compiler defect is therefore NOT established. Keep the original local result classified as user-reported failure until those exact files can be compared.
+- PR #15 remains open/unmerged. No default-branch source changes or baseline integration are claimed.
