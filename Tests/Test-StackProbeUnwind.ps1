@@ -155,12 +155,12 @@ try {
     $badDirectoryPath = Join-Path $buildRoot 'CorruptExceptionDirectory.exe'
     $badUnwindPath = Join-Path $buildRoot 'CorruptUnwindInfo.exe'
     try {
-        $badDirectory = [byte[]]$image.Clone()
+        $badDirectory = $image.Clone()
         [BitConverter]::GetBytes([UInt32]11).CopyTo($badDirectory, $optional + 140)
         [IO.File]::WriteAllBytes($badDirectoryPath, $badDirectory)
         Assert-VerifierRejects -Path $badDirectoryPath -Name 'truncated exception directory'
 
-        $badUnwind = [byte[]]$image.Clone()
+        $badUnwind = $image.Clone()
         $badUnwind[$unwindOffsets[0]] = 0x02
         [IO.File]::WriteAllBytes($badUnwindPath, $badUnwind)
         Assert-VerifierRejects -Path $badUnwindPath -Name 'unsupported unwind-info version'
