@@ -855,3 +855,11 @@ Normal human review of PR #11 remains the integration decision; do not auto-merg
 - No safe DevAgent implementation was available to execute on the default branch. The old PR #7 workflow was not rerun because doing so would execute its unbounded free-form process runner. No compiler, test, workflow, runtime, or Engine source was modified; no process was launched; no workflow was dispatched; no PR was edited, rebased, or merged.
 - Evidence classification: **REPOSITORY PRESENT / STATIC REVIEWED** for the current docs, issue/PR state, and PR #7 source; **WINDOWS CI PASS** for historical run 44758761226 on PR #7 only; **NOT RUN** for any current-default DevAgent, local model, source generation, autonomous repair, timeout/cancellation, sandbox, restart recovery, or PE reverse-engineering execution; **BLOCKED** for safe implementation pending issue #9 and issue #1 gates.
 - Next bounded dependency: complete normal human review/integration and provenance work for the frozen baseline, close the ABI gates with Windows runtime evidence, then start a fresh feature branch for the typed, allowlisted process broker and its adversarial tests. Only after those gates should research/knowledge, local inference, planning/subagents, bounded repair, and the optional reverse-engineering/provider phases proceed.
+
+
+### Automatic documentation-push CI follow-up - 2026-11-25
+
+- The two status-document commits above automatically triggered the existing default-branch Stage 7A workflow; this was not a manual workflow dispatch and did not run DevAgent.
+- [Run 45638617425](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45638617425), exact commit `fe368f37eb4204f8eb568f933a9c684a3b22e5f3`: Windows job succeeded; ASCII/no-BOM PASS; Stage 7A 23 passed, 0 failed, 23 total.
+- [Run 45638680338](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45638680338), exact commit `6899a086bb9b212a7a1e714d1e8fba375ae28fb6`: Windows job succeeded; ASCII/no-BOM PASS; Stage 7A 23 passed, 0 failed, 23 total; job exit was successful.
+- These were documentation-only follow-up runs. They do not rerun PR #7, do not build or launch SharnouDevAgent, and do not close issue #1, #9, #12, or #14. The historical DevAgent response remains the output recorded under run 44758761226.
