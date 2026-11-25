@@ -11,7 +11,7 @@ $fixturePath = Join-Path $PSScriptRoot 'RuntimeABI\RuntimeABICalls.sharnou'
 $buildRoot = Join-Path $repoRoot 'Build\RuntimeABI'
 $outputPath = Join-Path $buildRoot 'RuntimeABICalls.exe'
 $nl = [string][char]10
-$expected = @('204', '120', '54321', '654321', '10', '1', '0', '32', '65', '1', '1') -join $nl
+$expected = @('204', '120', '54321', '654321', '10', '1', '0', '32', '65', '1', '16', '102', '1', '1') -join $nl
 
 function Test-ByteSequence {
     param([byte[]] $Haystack, [byte[]] $Needle)
@@ -76,6 +76,8 @@ try {
 
     $checks = @(
         [pscustomobject]@{ Name = '64-byte aligned outgoing frame for 8-argument call'; Bytes = [byte[]]@(0x48, 0x81, 0xEC, 0x40, 0x00, 0x00, 0x00) },
+        [pscustomobject]@{ Name = '96-byte outgoing frame for 12-argument Windows API'; Bytes = [byte[]]@(0x48, 0x81, 0xEC, 0x60, 0x00, 0x00, 0x00) },
+        [pscustomobject]@{ Name = '96-byte Windows API call-frame restoration'; Bytes = [byte[]]@(0x48, 0x81, 0xC4, 0x60, 0x00, 0x00, 0x00) },
         [pscustomobject]@{ Name = '64-byte outgoing frame restoration'; Bytes = [byte[]]@(0x48, 0x81, 0xC4, 0x40, 0x00, 0x00, 0x00) },
         [pscustomobject]@{ Name = 'first incoming stack argument at RBP+0x30'; Bytes = [byte[]]@(0x8B, 0x85, 0x30, 0x00, 0x00, 0x00) },
         [pscustomobject]@{ Name = 'fourth incoming stack argument at RBP+0x48'; Bytes = [byte[]]@(0x8B, 0x85, 0x48, 0x00, 0x00, 0x00) },
