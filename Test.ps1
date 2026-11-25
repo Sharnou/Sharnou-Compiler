@@ -13,6 +13,9 @@ try {
     $abiTest = Join-Path $PSScriptRoot 'Tests\Test-StackProbeUnwind.ps1'
     if (-not (Test-Path -LiteralPath $abiTest -PathType Leaf)) { throw "Windows x64 stack-probe/unwind regression is missing: $abiTest" }
     & $abiTest
+    $baselineTest = Join-Path $PSScriptRoot 'Tests\BaselineM6\Test-Milestone6Baseline.ps1'
+    if (-not (Test-Path -LiteralPath $baselineTest -PathType Leaf)) { throw "Frozen M1-M6 baseline regression is missing: $baselineTest" }
+    & $baselineTest
     Write-Host 'Combined result: PASS' -ForegroundColor Green
 } catch {
     Write-Host "Combined result: FAIL - $($_.Exception.Message)" -ForegroundColor Red
