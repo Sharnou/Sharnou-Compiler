@@ -1310,10 +1310,42 @@ function Set-FrameSize {
     $Context.FrameSize = Align-Up -Value $required -Alignment 0x10
     if ($Context.FrameSize -gt 0x100000) { throw "Function or main frame is too large: $($Context.FrameSize) bytes." }
 }
+function Emit-StackProbe {
+    param([int] $FrameSize)
+    if ($FrameSize -le 0 -or ($FrameSize % 16) -ne 0) { throw "Invalid stack-probe frame size: $FrameSize" }
+    $loopLabel = New-UniqueLabel -Prefix 'stack_probe_loop'
+    $tailLabel = New-UniqueLabel -Prefix 'stack_probe_tail'
+    $doneLabel = New-UniqueLabel -Prefix 'stack_probe_done'
+    # Walk a volatile pointer down the future frame one 4 KiB page at a time.
+    # RSP is deliberately unchanged until every page has been touched, so the
+    # Windows unwinder can describe the entire probe loop with the final fixed
+    # allocation operation only.
+    Emit-Bytes -Bytes ([byte[]]@(0x49, 0x89, 0xE2)) # mov r10,rsp
+    Emit-Bytes -Bytes ([byte[]]@(0x49, 0xC7, 0xC3)); Emit-I32 -Value $FrameSize # mov r11,FrameSize
+    Mark-CodeLabel -Label $loopLabel
+    Emit-Bytes -Bytes ([byte[]]@(0x49, 0x81, 0xFB, 0x00, 0x10, 0x00, 0x00)) # cmp r11,1000h
+    Emit-JumpConditional -ConditionCode 0x82 -Label $tailLabel # jb tail
+    Emit-Bytes -Bytes ([byte[]]@(0x49, 0x81, 0xEA, 0x00, 0x10, 0x00, 0x00)) # sub r10,1000h
+    Emit-Bytes -Bytes ([byte[]]@(0x41, 0xF6, 0x02, 0x00)) # test byte ptr [r10],0
+    Emit-Bytes -Bytes ([byte[]]@(0x49, 0x81, 0xEB, 0x00, 0x10, 0x00, 0x00)) # sub r11,1000h
+    Emit-Jump -Label $loopLabel
+    Mark-CodeLabel -Label $tailLabel
+    Emit-Bytes -Bytes ([byte[]]@(0x4D, 0x85, 0xDB)) # test r11,r11
+    Emit-JumpConditional -ConditionCode 0x84 -Label $doneLabel
+    Emit-Bytes -Bytes ([byte[]]@(0x4D, 0x29, 0xDA)) # sub r10,r11
+    Emit-Bytes -Bytes ([byte[]]@(0x41, 0xF6, 0x02, 0x00)) # test byte ptr [r10],0
+    Mark-CodeLabel -Label $doneLabel
+}
 function Emit-Prologue {
     param([object] $Context, [object] $Function = $null)
     $script:ActiveContext = $Context; $script:TempDepth = 0
-    Emit-Bytes -Bytes ([byte[]]@(0x55, 0x48, 0x89, 0xE5, 0x48, 0x81, 0xEC)); Emit-I32 -Value $Context.FrameSize
+    $prologueStart = $script:Code.Count
+    Emit-Bytes -Bytes ([byte[]]@(0x55, 0x48, 0x89, 0xE5)) # push rbp; mov rbp,rsp
+    Emit-StackProbe -FrameSize ([int]$Context.FrameSize)
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x81, 0xEC)); Emit-I32 -Value $Context.FrameSize # sub rsp,imm32
+    $Context.PrologueSize = [int]($script:Code.Count - $prologueStart)
+    $Context.StackAllocCodeOffset = $Context.PrologueSize
+    if ($Context.PrologueSize -gt 255) { throw "Generated unwind prologue exceeds 255 bytes: $($Context.PrologueSize)." }
     if ($null -ne $Function) {
         for ($i = 0; $i -lt $Function.Parameters.Count; $i++) {
             $slotPosition = 0x80 + ($i * 16)
@@ -1329,6 +1361,30 @@ function Emit-Prologue {
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x85, 0xC0)); Emit-JumpConditional -ConditionCode 0x84 -Label '__runtime_fail'
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x83, 0xF8, 0xFF)); Emit-JumpConditional -ConditionCode 0x84 -Label '__runtime_fail'
     Emit-StoreRaxFrame -SlotPosition 0x78
+}
+function New-UnwindInfoBytes {
+    param([object] $Context)
+    $frameSize = [int]$Context.FrameSize
+    if ($frameSize -lt 0x1000 -or ($frameSize % 16) -ne 0) { throw "Unwind metadata received an invalid frame size: $frameSize." }
+    $allocInfo = if ($frameSize -le 0x7FFF8) { 0 } else { 1 }
+    $countOfCodes = if ($allocInfo -eq 0) { 4 } else { 5 }
+    $bytes = [System.Collections.Generic.List[byte]]::new()
+    $bytes.Add([byte]1) # version 1, flags 0
+    $bytes.Add([byte]$Context.PrologueSize)
+    $bytes.Add([byte]$countOfCodes)
+    $bytes.Add([byte]0x05) # frame register RBP, frame offset 0
+    $bytes.Add([byte]$Context.StackAllocCodeOffset)
+    $bytes.Add([byte](($allocInfo -shl 4) -bor 0x01)) # UWOP_ALLOC_LARGE
+    if ($allocInfo -eq 0) {
+        $scaledSize = [UInt16]($frameSize / 8)
+        $bytes.AddRange([BitConverter]::GetBytes($scaledSize))
+    } else {
+        $bytes.AddRange([BitConverter]::GetBytes([UInt32]$frameSize))
+    }
+    $bytes.Add([byte]4); $bytes.Add([byte]0x03) # UWOP_SET_FPREG
+    $bytes.Add([byte]1); $bytes.Add([byte]0x50) # UWOP_PUSH_NONVOL RBP
+    if (($countOfCodes % 2) -ne 0) { $bytes.Add([byte]0); $bytes.Add([byte]0) }
+    return $bytes.ToArray()
 }
 function Emit-Epilogue { Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xEC, 0x5D, 0xC3)) }
 function Test-ImageBasic {
