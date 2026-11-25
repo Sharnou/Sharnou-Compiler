@@ -72,6 +72,7 @@ try {
     & $compilerPath -Source $sourcePath -Output $outputPath
     if (-not (Test-Path -LiteralPath $outputPath -PathType Leaf)) { throw 'Compiler did not produce the multi-page stack-probe executable.' }
     & $verifierPath -Path $outputPath
+    Write-Host 'PASS: generated multi-page PE passed the strict structural verifier' -ForegroundColor Green
 
     $lines = @(& $outputPath 2>&1)
     $exitCode = $LASTEXITCODE
@@ -170,7 +171,7 @@ try {
         }
     }
 
-    Write-Host 'Stack probe and unwind tests: 5 passed, 0 failed, 5 total.' -ForegroundColor Green
+    Write-Host 'Stack probe and unwind tests: 6 passed, 0 failed, 6 total.' -ForegroundColor Green
     Write-Host 'Stack probe and unwind result: PASS' -ForegroundColor Green
 }
 catch {
