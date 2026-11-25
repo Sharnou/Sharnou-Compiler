@@ -9,6 +9,7 @@ $compilerPath = Join-Path $repoRoot 'Stage0\SharnouCompiler.ps1'
 $verifierPath = Join-Path $repoRoot 'Tools\SharnouPEVerify.ps1'
 $fixturePath = Join-Path $PSScriptRoot 'DevAgentBroker\DevAgentBroker.sharnou'
 $timeoutScriptPath = Join-Path $PSScriptRoot 'DevAgentBroker\TimeoutProbe.ps1'
+$toolManifestPath = Join-Path $PSScriptRoot 'DevAgentBroker\tool-manifest.json'
 $successScriptPath = Join-Path $PSScriptRoot 'DevAgentBroker\SuccessProbe.ps1'
 $disabledFixturePath = Join-Path $PSScriptRoot 'DevAgentBroker\Disabled.sharnou'
 $disabledOutputPath = Join-Path $repoRoot 'Build\DevAgentBroker\DevAgentBrokerDisabled.exe'
@@ -28,13 +29,23 @@ $toolHashInputs = @(
 )
 
 try {
+    $manifest = Get-Content -LiteralPath $toolManifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
+    if ([int]$manifest.version -ne 1 -or @($manifest.tools).Count -ne $toolHashInputs.Count) {
+        throw 'DevAgent tool manifest version or tool count is invalid.'
+    }
+    $manifestHash = (Get-FileHash -LiteralPath $toolManifestPath -Algorithm SHA256).Hash
+    Write-Host ("DEVAGENT_MANIFEST_SHA256|{0}" -f $manifestHash)
     foreach ($tool in $toolHashInputs) {
         $hashPath = Join-Path $repoRoot $tool.Path
         $toolHash = (Get-FileHash -LiteralPath $hashPath -Algorithm SHA256).Hash
+        $entry = @($manifest.tools | Where-Object { [int]$_.id -eq $tool.Id })
+        if ($entry.Count -ne 1 -or [string]$entry[0].path -cne $tool.Path -or [string]$entry[0].sha256 -cne $toolHash) {
+            throw "Pinned DevAgent tool hash/path mismatch for tool ID $($tool.Id)."
+        }
         Write-Host ("DEVAGENT_TOOL_SHA256|{0}|{1}|{2}" -f $tool.Id, $tool.Path, $toolHash)
     }
     Set-Location -LiteralPath $repoRoot
-    foreach ($required in @($compilerPath, $verifierPath, $fixturePath, $timeoutScriptPath, $successScriptPath, $disabledFixturePath)) {
+    foreach ($required in @($compilerPath, $verifierPath, $fixturePath, $timeoutScriptPath, $successScriptPath, $disabledFixturePath, $toolManifestPath)) {
         if (-not (Test-Path -LiteralPath $required -PathType Leaf)) { throw "Required broker test input is missing: $required" }
     }
     $compilerSource = [IO.File]::ReadAllText($compilerPath)
