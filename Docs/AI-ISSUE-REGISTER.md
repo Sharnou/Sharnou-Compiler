@@ -371,3 +371,35 @@ This entry supersedes earlier PR #11 ahead/behind counts in the historical entri
 - Issue #1 ABI gates remain open: stack probing, unwind metadata, nonvolatile-register/RSP/argument runtime probes, and generic checked Windows API marshalling. Issue #9 remains OPEN until baseline integration and the R25-R4 comparison are complete. Issue #10 remains OPEN because user-local Stage 7A acceptance has not been separately reported.
 - PR #7 remains a draft native regression orchestrator, not an AI source-generating agent. Run 44758761226 passed the native test utility with process exit code 0; the process interface still lacks a reviewed allowlist, structured arguments, sandbox/workspace boundary, timeout/cancellation, Job Object containment, and output bound.
 - No compiler/source/test/workflow implementation changed. The next dependency remains human review of PR #11, independent baseline provenance comparison, and ABI gate planning before any isolated 7B implementation.
+
+
+## Live SharnouDevAgent audit - 2026-11-25
+
+### Default-branch and PR inventory
+
+- Default branch starting HEAD: `2dfceaa72b609fd3b8f839605ee5582e7b686151`.
+- The default branch contains no DevAgent implementation source, no DevAgent example/test runner, and no process-launch intrinsic. Issue #14 remains the tracking request; issue #12 remains a proposed read-only Windows Binary Reverse Engineer capability.
+- PR #7 is the only native DevAgent prototype reviewed. It is OPEN / DRAFT / not mergeable, head `ac3849800412b1208acb540ef090ffb3ac0455ca`, 9 ahead / 50 behind default, and changes 9 files. It is stale and must not be merged or used as the current source base.
+- PR #13 is documentation-only and does not implement the reverse-engineering capability.
+
+### PR #7 source and execution audit
+
+- The PR #7 intrinsic `sh_dev_run_process(String)` forwards arbitrary command-line text to `CreateProcessA`, inherits standard handles, and waits with `WaitForSingleObject(INFINITE)`.
+- Missing mandatory process controls: registered executable/hash allowlist, structured argument arrays/schema, canonical workspace-root confinement, environment allowlist, output cap, timeout/cancellation, Job Object process-tree containment, and a reviewed restricted execution boundary. This process interface is UNSAFE FOR MODEL-CONTROLLED INPUT and must not be exposed to model output.
+- Historical Windows run [44758761226](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/44758761226) succeeded only as a fixed native regression orchestrator: it propagated child exit code 7, ran Stage 7A 23/23, exited 0, and uploaded artifact `14654214120`. The log explicitly prints `Self-hosted native SharnouCompiler.exe: NOT YET IMPLEMENTED` before `SharnouDevAgent result: PASS`. That PASS is not AI inference, source generation, autonomous repair, restart recovery, or a self-hosted compiler result.
+- The old PR #7 workflow was not rerun in this audit because its process runner still launches arbitrary command strings without the required controls.
+
+### Issue #12 and #14 disposition
+
+- Issue #12's PE/COFF parser, DLL/export catalogue, DXBC/HLSL analysis, and safe System32 capability probes are proposals only; no corresponding default-branch implementation or tests were found.
+- Issue #14's local inference runtime, task planner, durable evidence/restart journal, typed tool registry, declarative agent profiles, bounded patch/rollback engine, and autonomous repair loop are NOT IMPLEMENTED / NOT RUN.
+- Do not claim SharnouDevAgent is an autonomous AI development agent. The repository currently has a documented architecture plus a stale native test-orchestrator proposal.
+
+### Blocking prerequisites and next gate
+
+- Issue #9 remains open: the frozen 83-case M1-M6 baseline is still outside default in PR #11; human review/integration and original-manifest/R25-R4 provenance reconciliation remain outstanding.
+- Issue #1 remains open: large-frame stack probing, Windows x64 unwind metadata (`.pdata`/`.xdata`), runtime nonvolatile-register/RSP/stack-argument probes, and generic checked API-call marshalling remain unresolved.
+- The DevAgent architecture makes the baseline and ABI gates prerequisites to model-controlled compiler/process execution. Do not bypass them with PR #7.
+- Next implementation must start from a fresh feature branch after those prerequisites, beginning with the typed allowlisted process broker and adversarial security/rollback tests. Research/download quarantine, PE/x64 analysis, local inference, planner/subagents, autonomous repair, and optional providers follow in the documented dependency order.
+
+Classification: REPOSITORY PRESENT / STATIC REVIEWED; historical PR #7 WINDOWS CI PASS for the test-orchestrator demo only; current-default DevAgent NOT PRESENT; autonomous AI NOT IMPLEMENTED / NOT RUN; safe implementation BLOCKED by issues #9 and #1.
