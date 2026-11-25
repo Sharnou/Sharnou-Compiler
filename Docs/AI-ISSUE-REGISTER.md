@@ -439,3 +439,29 @@ Classification: REPOSITORY PRESENT / STATIC REVIEWED; historical PR #7 WINDOWS C
 - Windows Actions run [45705513598](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45705513598) on PR #16 head `b1365dc17bb5aeaad74462633fadfdc29b56fa3e` passed ASCII/no-BOM, Stage 7A 24/24, Stage 5 collection imports 2/2, stack-probe/unwind 6/6, and Combined result PASS. The 17,000-local native test executable ran with expected output and exit code 0.
 - This is **WINDOWS CI PASS**. User-local test evidence remains from the pre-ABI PR #15 snapshot; local retest of PR #16 has not yet been reported. PR #16 remains open/unmerged.
 - Issue #1 is partially resolved. Runtime nonvolatile-register sentinels, RSP/call-site alignment and argument-value probes, and a generic checked Windows API marshaller remain open. The 83-case M1-M6 baseline remains separately blocked under issue #9 / PR #11.
+
+ 
+## Runtime ABI gate completion - 2026-11-26
+
+The following ABI runtime tranche is implemented on the PR #17 integration branch. Code-bearing commit `8c14261c3b2154dc115f935271f93389637246e1` passed Windows CI:
+
+- Stage 7A: 24/24.
+- Stage 5 collection imports: 2/2.
+- Stack-probe/unwind: 6/6.
+- Runtime ABI suite: PASS, including runtime sentinels for RBX/RBP/RSI/RDI/R12-R15, live RSP alignment assertions, argument-value checks for 4/5/6/8 integer arguments, nested argument ordering, and higher-arity Win32 API calls.
+- Frozen M1-M6 baseline: 83/83 on the same PR head.
+- Combined result: PASS.
+
+Windows evidence:
+- Stage 7A / combined run: [45717111101](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45717111101).
+- Frozen M1-M6 run: [45717111040](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45717111040).
+
+The compiler now supports up to 16 integer arguments for generated Sharnou functions (four register arguments plus twelve stack arguments), reserves Windows x64 shadow space, and maintains 16-byte call-site alignment. The generic `Emit-Win64CallIat` stack marshaller is used for CreateFileA, ReadFile, CreateWindowExA, PeekMessageA, CreateThread, WriteFile, and both D3D11CreateDeviceAndSwapChain paths. Runtime file/window/thread probes exercise the relevant calls. The M1-M6 runner sets a process-scoped legacy arity compatibility flag only while replaying the historical suite; the normal compiler remains enabled for 16 arguments.
+
+PR #17 remains OPEN and UNMERGED. This is Windows CI evidence, not user-local Windows validation. Issue #1's requested runtime ABI tranche is complete in CI; R25-R4 archive equivalence and human review remain separate provenance/integration gates.
+
+### Next dependency: secure native process broker
+
+The broker security design is now recorded in `Docs/SHARNOU-DEVAGENT-PROCESS-BROKER-SECURITY-DESIGN.md`. It defines a typed `sh_dev_run_tool(tool_id, timeout_ms)` API, immutable tool descriptors, SHA-256 allowlisting, canonical workspace confinement, restricted execution, suspended process creation, Job Object containment, timeout/cancellation, bounded output, and adversarial tests.
+
+The historical PR #7 raw-command process intrinsic remains rejected and must not be reused. Native broker implementation has NOT started; model-controlled process execution remains DISABLED until all security gates pass.
