@@ -95,6 +95,27 @@ try {
     }
     Write-Host 'PASS: process broker capability is disabled by default and requires explicit compiler opt-in' -ForegroundColor Green
 
+    $manifestOriginalBytes = [IO.File]::ReadAllBytes($toolManifestPath)
+    $manifestTamperOutputPath = Join-Path $buildRoot 'DevAgentBrokerManifestTamper.exe'
+    Remove-Item -LiteralPath $manifestTamperOutputPath -Force -ErrorAction SilentlyContinue
+    try {
+        [IO.File]::AppendAllText($toolManifestPath, ' ', [Text.Encoding]::ASCII)
+        $manifestTamperRejected = $false
+        try {
+            & $compilerPath -Source $fixturePath -Output $manifestTamperOutputPath -EnableDevAgentTools
+        }
+        catch {
+            $manifestTamperRejected = $true
+        }
+        if (-not $manifestTamperRejected -or (Test-Path -LiteralPath $manifestTamperOutputPath -PathType Leaf)) {
+            throw 'Compiler accepted a modified DevAgent tool manifest.'
+        }
+    }
+    finally {
+        [IO.File]::WriteAllBytes($toolManifestPath, $manifestOriginalBytes)
+    }
+    Write-Host 'PASS: modified tool manifest rejected before native broker generation' -ForegroundColor Green
+
     & $compilerPath -Source $fixturePath -Output $outputPath -EnableDevAgentTools
     if (-not (Test-Path -LiteralPath $outputPath -PathType Leaf)) { throw 'Compiler did not produce the DevAgent broker fixture.' }
     & $verifierPath -Path $outputPath
