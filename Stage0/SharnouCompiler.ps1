@@ -935,8 +935,8 @@ function Emit-DevRunTool {
     Emit-Bytes -Bytes ([byte[]]@(0x3D))
     Emit-I32 -Value 220
     Emit-JumpConditional -ConditionCode 0x87 -Label $pathFail
-    Emit-DevBrokerDebugText -Text 'DBG: system directory resolved`r`n' -WrittenSlot ($scratch + 0x600)
     Emit-Bytes -Bytes ([byte[]]@(0x89, 0xC6)) # ESI = System32 path length
+    Emit-DevBrokerDebugText -Text 'DBG: system directory resolved' -WrittenSlot ($scratch + 0x600)
     Emit-LeaRaxFrame -SlotPosition $applicationSlot
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC7, 0x48, 0x01, 0xF7)) # RDI = end of System32 path
     Emit-DataAddress -DataItem $suffixItem
