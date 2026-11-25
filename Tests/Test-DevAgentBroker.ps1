@@ -15,8 +15,20 @@ $childPidPath = Join-Path $buildRoot 'child.pid'
 $nl = [string][char]10
 $expected = @('-100', '-101', '0', '-110') -join $nl
 $originalLocation = Get-Location
+$toolHashInputs = @(
+    [pscustomobject]@{ Id = 1; Path = 'Tests\Test-Stage7A.ps1' },
+    [pscustomobject]@{ Id = 2; Path = 'Tests\Test-RuntimeABI.ps1' },
+    [pscustomobject]@{ Id = 3; Path = 'Tests\BaselineM6\Test-Milestone6Baseline.ps1' },
+    [pscustomobject]@{ Id = 4; Path = 'Tests\Test-StackProbeUnwind.ps1' },
+    [pscustomobject]@{ Id = 5; Path = 'Tests\DevAgentBroker\TimeoutProbe.ps1' }
+)
 
 try {
+    foreach ($tool in $toolHashInputs) {
+        $hashPath = Join-Path $repoRoot $tool.Path
+        $toolHash = (Get-FileHash -LiteralPath $hashPath -Algorithm SHA256).Hash
+        Write-Host ("DEVAGENT_TOOL_SHA256|{0}|{1}|{2}" -f $tool.Id, $tool.Path, $toolHash)
+    }
     Set-Location -LiteralPath $repoRoot
     foreach ($required in @($compilerPath, $verifierPath, $fixturePath, $timeoutScriptPath)) {
         if (-not (Test-Path -LiteralPath $required -PathType Leaf)) { throw "Required broker test input is missing: $required" }
