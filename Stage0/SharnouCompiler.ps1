@@ -860,20 +860,43 @@ function Emit-DevRunTool {
     $suffix = '\WindowsPowerShell\v1.0\powershell.exe'
     $suffixItem = Register-DataConstant -Value $suffix
     $suffixLength = [System.Text.Encoding]::ASCII.GetByteCount($suffix)
-    $commands = @(
-        [pscustomobject]@{ Id = 1; Text = 'powershell.exe -NoLogo -NoProfile -NonInteractive -File "Tests\Test-Stage7A.ps1"' },
-        [pscustomobject]@{ Id = 2; Text = 'powershell.exe -NoLogo -NoProfile -NonInteractive -File "Tests\Test-RuntimeABI.ps1"' },
-        [pscustomobject]@{ Id = 3; Text = 'powershell.exe -NoLogo -NoProfile -NonInteractive -File "Tests\BaselineM6\Test-Milestone6Baseline.ps1"' },
-        [pscustomobject]@{ Id = 4; Text = 'powershell.exe -NoLogo -NoProfile -NonInteractive -File "Tests\Test-StackProbeUnwind.ps1"' },
-        [pscustomobject]@{ Id = 5; Text = 'powershell.exe -NoLogo -NoProfile -NonInteractive -File "Tests\DevAgentBroker\TimeoutProbe.ps1"' },
-        [pscustomobject]@{ Id = 6; Text = 'powershell.exe -NoLogo -NoProfile -NonInteractive -File "Tests\DevAgentBroker\SuccessProbe.ps1"' }
+    $manifestPath = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\Tests\DevAgentBroker\tool-manifest.json'))
+    $expectedManifestSha256 = '3615918F73C7733C2A6E472507E8CB50EB5DA709C59A0A11972B1B59A89B7574'
+    if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) { throw 'Pinned DevAgent tool manifest is missing.' }
+    $actualManifestSha256 = (Get-FileHash -LiteralPath $manifestPath -Algorithm SHA256).Hash
+    if ($actualManifestSha256 -cne $expectedManifestSha256) {
+        throw "Pinned DevAgent tool manifest SHA-256 mismatch: expected=$expectedManifestSha256 actual=$actualManifestSha256"
+    }
+    $manifest = Get-Content -LiteralPath $manifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
+    $fixedToolPaths = @(
+        [pscustomobject]@{ Id = 1; Path = 'Tests\Test-Stage7A.ps1' },
+        [pscustomobject]@{ Id = 2; Path = 'Tests\Test-RuntimeABI.ps1' },
+        [pscustomobject]@{ Id = 3; Path = 'Tests\BaselineM6\Test-Milestone6Baseline.ps1' },
+        [pscustomobject]@{ Id = 4; Path = 'Tests\Test-StackProbeUnwind.ps1' },
+        [pscustomobject]@{ Id = 5; Path = 'Tests\DevAgentBroker\TimeoutProbe.ps1' },
+        [pscustomobject]@{ Id = 6; Path = 'Tests\DevAgentBroker\SuccessProbe.ps1' }
     )
+    if ([int]$manifest.version -ne 1 -or @($manifest.tools).Count -ne $fixedToolPaths.Count) {
+        throw 'Pinned DevAgent tool manifest has an unsupported version or tool count.'
+    }
     $commandItems = @()
-    foreach ($command in $commands) {
+    foreach ($fixedTool in $fixedToolPaths) {
+        $entry = @($manifest.tools | Where-Object { [int]$_.id -eq $fixedTool.Id })
+        if ($entry.Count -ne 1 -or [string]$entry[0].path -cne $fixedTool.Path) {
+            throw "Pinned DevAgent tool manifest path/ID mismatch for tool ID $($fixedTool.Id)."
+        }
+        $expectedScriptSha256 = [string]$entry[0].sha256
+        if ($expectedScriptSha256 -notmatch '^[A-F0-9]{64}$') {
+            throw "Pinned DevAgent tool manifest contains an invalid SHA-256 for tool ID $($fixedTool.Id)."
+        }
+        $commandCode = '$ErrorActionPreference=''Stop'';$p=''{0}'';$h=(Get-FileHash -LiteralPath $p -Algorithm SHA256).Hash;if($h -cne ''{1}''){{exit 91}};try{{& $p;if(-not $?) {{exit 1}};exit 0}}catch{{exit 1}}' -f $fixedTool.Path, $expectedScriptSha256
+        $commandText = 'powershell.exe -NoLogo -NoProfile -NonInteractive -Command "' + $commandCode + '"'
+        $commandLength = [System.Text.Encoding]::ASCII.GetByteCount($commandText)
+        if ($commandLength -ge 0x220) { throw "Pinned DevAgent command for tool ID $($fixedTool.Id) exceeds its fixed buffer." }
         $commandItems += [pscustomobject]@{
-            Id = $command.Id
-            Item = (Register-DataConstant -Value $command.Text)
-            Length = [System.Text.Encoding]::ASCII.GetByteCount($command.Text)
+            Id = $fixedTool.Id
+            Item = (Register-DataConstant -Value $commandText)
+            Length = $commandLength
         }
     }
 
