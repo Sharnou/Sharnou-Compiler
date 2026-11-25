@@ -814,6 +814,35 @@ function Emit-NonvolatileRegisterProbe {
     Emit-Bytes -Bytes ([byte[]]@(0x4C, 0x8B, 0xB5)); Emit-I32 -Value (Get-FrameDisp -SlotPosition $slots[6])
     Emit-Bytes -Bytes ([byte[]]@(0x4C, 0x8B, 0xBD)); Emit-I32 -Value (Get-FrameDisp -SlotPosition $slots[7])
 }
+function Emit-DevBrokerPathCheck {
+    param(
+        [object] $DataItem = $null,
+        [int] $FrameSlot = -1,
+        [bool] $IsDirectory,
+        [string] $FailureLabel
+    )
+    if ($FrameSlot -ge 0) {
+        Emit-LeaRaxFrame -SlotPosition $FrameSlot
+    }
+    else {
+        if ($null -eq $DataItem) { throw 'DevAgent path check requires a fixed path.' }
+        Emit-DataAddress -DataItem $DataItem
+    }
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1))
+    Emit-Win64CallIat -TargetRva ([UInt32]0x31C8) -StackArguments @() # GetFileAttributesA
+    Emit-Bytes -Bytes ([byte[]]@(0x3D, 0xFF, 0xFF, 0xFF, 0xFF))
+    Emit-JumpConditional -ConditionCode 0x84 -Label $FailureLabel # INVALID_FILE_ATTRIBUTES
+    if ($IsDirectory) {
+        Emit-Bytes -Bytes ([byte[]]@(0xA9, 0x10, 0x00, 0x00, 0x00))
+        Emit-JumpConditional -ConditionCode 0x84 -Label $FailureLabel # must be a directory
+    }
+    else {
+        Emit-Bytes -Bytes ([byte[]]@(0xA9, 0x10, 0x00, 0x00, 0x00))
+        Emit-JumpConditional -ConditionCode 0x85 -Label $FailureLabel # must not be a directory
+    }
+    Emit-Bytes -Bytes ([byte[]]@(0xA9, 0x00, 0x04, 0x00, 0x00))
+    Emit-JumpConditional -ConditionCode 0x85 -Label $FailureLabel # reject FILE_ATTRIBUTE_REPARSE_POINT
+}
 function Emit-DevRunTool {
     param([int] $ToolSlot, [int] $TimeoutSlot, [int] $BaseDepth)
     $scratch = [int]$script:ActiveContext.ScratchPosition
@@ -961,7 +990,26 @@ function Emit-DevRunTool {
     Emit-JumpConditional -ConditionCode 0x84 -Label $directoryFail
     Emit-Bytes -Bytes ([byte[]]@(0x3D))
     Emit-I32 -Value 260
-    Emit-JumpConditional -ConditionCode 0x87 -Label $directoryFail
+    Emit-JumpConditional -ConditionCode 0x83 -Label $directoryFail
+
+    # Confine the broker to a recognizable workspace tree and reject reparse points.
+    Emit-DevBrokerPathCheck -FrameSlot $workingDirectorySlot -IsDirectory $true -FailureLabel $directoryFail
+    $workspaceDirectoryItem = Register-DataConstant -Value '.'
+    $stage0DirectoryItem = Register-DataConstant -Value 'Stage0'
+    $testsDirectoryItem = Register-DataConstant -Value 'Tests'
+    $brokerDirectoryItem = Register-DataConstant -Value 'Tests\DevAgentBroker'
+    $baselineDirectoryItem = Register-DataConstant -Value 'Tests\BaselineM6'
+    $compilerFileItem = Register-DataConstant -Value 'Stage0\SharnouCompiler.ps1'
+    Emit-DevBrokerPathCheck -DataItem $workspaceDirectoryItem -IsDirectory $true -FailureLabel $directoryFail
+    Emit-DevBrokerPathCheck -DataItem $stage0DirectoryItem -IsDirectory $true -FailureLabel $directoryFail
+    Emit-DevBrokerPathCheck -DataItem $testsDirectoryItem -IsDirectory $true -FailureLabel $directoryFail
+    Emit-DevBrokerPathCheck -DataItem $brokerDirectoryItem -IsDirectory $true -FailureLabel $directoryFail
+    Emit-DevBrokerPathCheck -DataItem $baselineDirectoryItem -IsDirectory $true -FailureLabel $directoryFail
+    Emit-DevBrokerPathCheck -DataItem $compilerFileItem -IsDirectory $false -FailureLabel $directoryFail
+    foreach ($fixedTool in $fixedToolPaths) {
+        $toolPathItem = Register-DataConstant -Value $fixedTool.Path
+        Emit-DevBrokerPathCheck -DataItem $toolPathItem -IsDirectory $false -FailureLabel $directoryFail
+    }
 
     # Zero STARTUPINFOA, PROCESS_INFORMATION and JOBOBJECT_EXTENDED_LIMIT_INFORMATION.
     for ($i = 0; $i -lt 13; $i++) { Emit-StoreZero64Frame -SlotPosition ($startupSlot + ($i * 8)) }
