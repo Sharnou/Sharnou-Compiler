@@ -969,7 +969,7 @@ function Emit-DevRunTool {
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC2, 0x45, 0x33, 0xC0, 0x45, 0x33, 0xC9))
     Emit-Win64CallIat -TargetRva ([UInt32]0x3188) -StackArguments @(
         @{ Kind = 'Immediate'; Value = 0 }, # bInheritHandles = FALSE
-        @{ Kind = 'Immediate'; Value = 0x08000004 }, # CREATE_SUSPENDED | CREATE_NO_WINDOW
+        @{ Kind = 'Immediate'; Value = 4 }, # CREATE_SUSPENDED
         @{ Kind = 'Immediate'; Value = 0 }, # inherited environment
         @{ Kind = 'FrameAddress'; SlotPosition = $workingDirectorySlot },
         @{ Kind = 'FrameAddress'; SlotPosition = $startupSlot },
