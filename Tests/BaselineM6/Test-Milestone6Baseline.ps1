@@ -165,6 +165,11 @@ try {
     }
 
     $caseTotal = 0
+    # Preserve the historical Stage 4 negative test for the old four-register-only
+    # function ABI. The normal compiler run is not restricted by this compatibility mode.
+    $previousLegacyArityMode = [Environment]::GetEnvironmentVariable('SHARNOU_BASELINE_M1_M6')
+    [Environment]::SetEnvironmentVariable('SHARNOU_BASELINE_M1_M6', '1', 'Process')
+    try {
     foreach ($suite in $manifest.suites) {
         $suitePath = Join-Path $workRoot ([string]$suite.path.Replace('/', [System.IO.Path]::DirectorySeparatorChar))
         if ([string]$suite.path -eq 'Tests/Test-Stage2.ps1') {
@@ -183,6 +188,10 @@ try {
             throw "Historical regression suite reported failure: $($suite.path)"
         }
         $caseTotal += [int]$suite.cases
+    }
+    }
+    finally {
+        [Environment]::SetEnvironmentVariable('SHARNOU_BASELINE_M1_M6', $previousLegacyArityMode, 'Process')
     }
 
     if ($caseTotal -ne 83) {
