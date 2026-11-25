@@ -828,6 +828,10 @@ function Emit-DevRunTool {
     $resultSlot = Get-TempSlotPosition -Depth ($BaseDepth + 5)
     $exitCodeSlot = Get-TempSlotPosition -Depth ($BaseDepth + 6)
 
+    # Initialize every handle slot before any validation branch can reach cleanup.
+    Emit-StoreZero64Frame -SlotPosition $jobHandleSlot
+    for ($i = 0; $i -lt 3; $i++) { Emit-StoreZero64Frame -SlotPosition ($processSlot + ($i * 8)) }
+
     $unknownTool = New-UniqueLabel -Prefix 'dev_tool_unknown'
     $invalidTimeout = New-UniqueLabel -Prefix 'dev_tool_timeout_invalid'
     $toolLabels = @(
