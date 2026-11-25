@@ -2050,13 +2050,13 @@ $descriptorBase = 0x700
 $importDirectorySize = 0xC8
 if (($descriptorBase + $importDirectorySize) -gt $idata.Length) { throw 'Import descriptor table exceeds .idata storage.' }
 $importSets = @(
-    [pscustomobject]@{ Descriptor = 0x00; Lookup = 0x500; Iat = 0x70; Dll = 'KERNEL32.dll'; Names = @('GetStdHandle', 'WriteFile', 'ExitProcess') },
-    [pscustomobject]@{ Descriptor = 0x14; Lookup = 0x520; Iat = 0x90; Dll = 'USER32.dll'; Names = @('wsprintfA') },
-    [pscustomobject]@{ Descriptor = 0x28; Lookup = 0x530; Iat = 0xA0; Dll = 'KERNEL32.dll'; Names = @('CreateFileA', 'GetFileSizeEx', 'ReadFile', 'CloseHandle', 'GetModuleHandleA', 'CreateThread', 'WaitForSingleObject', 'CreateMutexA', 'ReleaseMutex') },
-    [pscustomobject]@{ Descriptor = 0x3C; Lookup = 0x580; Iat = 0xF0; Dll = 'USER32.dll'; Names = @('CreateWindowExA', 'ShowWindow', 'UpdateWindow', 'PeekMessageA', 'TranslateMessage', 'DispatchMessageA', 'DestroyWindow') },
+    [pscustomobject]@{ Descriptor = 0x00; Lookup = 0x540; Iat = 0x70; Dll = 'KERNEL32.dll'; Names = @('GetStdHandle', 'WriteFile', 'ExitProcess') },
+    [pscustomobject]@{ Descriptor = 0x14; Lookup = 0x560; Iat = 0x90; Dll = 'USER32.dll'; Names = @('wsprintfA') },
+    [pscustomobject]@{ Descriptor = 0x28; Lookup = 0x570; Iat = 0xA0; Dll = 'KERNEL32.dll'; Names = @('CreateFileA', 'GetFileSizeEx', 'ReadFile', 'CloseHandle', 'GetModuleHandleA', 'CreateThread', 'WaitForSingleObject', 'CreateMutexA', 'ReleaseMutex') },
+    [pscustomobject]@{ Descriptor = 0x3C; Lookup = 0x640; Iat = 0xF0; Dll = 'USER32.dll'; Names = @('CreateWindowExA', 'ShowWindow', 'UpdateWindow', 'PeekMessageA', 'TranslateMessage', 'DispatchMessageA', 'DestroyWindow') },
     [pscustomobject]@{ Descriptor = 0x50; Lookup = 0x5C0; Iat = 0x130; Dll = 'D3D11.dll'; Names = @('D3D11CreateDeviceAndSwapChain') },
-    [pscustomobject]@{ Descriptor = 0x64; Lookup = 0x5D0; Iat = 0x140; Dll = 'DXGI.dll'; Names = @('CreateDXGIFactory') },
-    [pscustomobject]@{ Descriptor = 0x78; Lookup = 0x5E0; Iat = 0x150; Dll = 'KERNEL32.dll'; Names = @('QueryPerformanceCounter', 'QueryPerformanceFrequency') },
+    [pscustomobject]@{ Descriptor = 0x64; Lookup = 0x610; Iat = 0x140; Dll = 'DXGI.dll'; Names = @('CreateDXGIFactory') },
+    [pscustomobject]@{ Descriptor = 0x78; Lookup = 0x650; Iat = 0x150; Dll = 'KERNEL32.dll'; Names = @('QueryPerformanceCounter', 'QueryPerformanceFrequency') },
     [pscustomobject]@{ Descriptor = 0x8C; Lookup = 0x600; Iat = 0x168; Dll = 'USER32.dll'; Names = @('IsWindow') },
     [pscustomobject]@{ Descriptor = 0xA0; Lookup = 0x620; Iat = 0x178; Dll = 'KERNEL32.dll'; Names = @('GetSystemDirectoryA', 'GetCurrentDirectoryA', 'CreateProcessA', 'CreateJobObjectA', 'SetInformationJobObject', 'AssignProcessToJobObject', 'ResumeThread', 'TerminateJobObject', 'GetExitCodeProcess', 'TerminateProcess') }
 )
