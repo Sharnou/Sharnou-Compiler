@@ -759,14 +759,21 @@ function Emit-NonvolatileRegisterProbe {
         Emit-Bytes -Bytes $loadOpcodes[$i]
         Emit-Bytes -Bytes ([BitConverter]::GetBytes([UInt64]$sentinels[$i]))
     }
-    # Exercise a real generated Sharnou function containing RSI/RDI-using
-    # intrinsics. Reserve the mandatory Windows x64 shadow space.
-    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x83, 0xEC, 0x20))
-    Emit-CallFunction -Name $targetName
-    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x83, 0xC4, 0x20))
-
+    # Verify live RSP is 16-byte aligned before the call, after reserving
+    # shadow space, and after return. Exercise a generated function containing
+    # RSI/RDI-using intrinsics while all nonvolatile registers hold sentinels.
     $fail = New-UniqueLabel -Prefix 'abi_nonvolatile_fail'
     $done = New-UniqueLabel -Prefix 'abi_nonvolatile_done'
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xE0, 0x83, 0xE0, 0x0F, 0x85, 0xC0))
+    Emit-JumpConditional -ConditionCode 0x85 -Label $fail
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x83, 0xEC, 0x20))
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xE0, 0x83, 0xE0, 0x0F, 0x85, 0xC0))
+    Emit-JumpConditional -ConditionCode 0x85 -Label $fail
+    Emit-CallFunction -Name $targetName
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x83, 0xC4, 0x20))
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xE0, 0x83, 0xE0, 0x0F, 0x85, 0xC0))
+    Emit-JumpConditional -ConditionCode 0x85 -Label $fail
+
     $compareOpcodes = @(
         [byte[]]@(0x48, 0x81, 0xFB), [byte[]]@(0x48, 0x81, 0xFE), [byte[]]@(0x48, 0x81, 0xFF),
         [byte[]]@(0x49, 0x81, 0xFC), [byte[]]@(0x49, 0x81, 0xFD), [byte[]]@(0x49, 0x81, 0xFE), [byte[]]@(0x49, 0x81, 0xFF)
