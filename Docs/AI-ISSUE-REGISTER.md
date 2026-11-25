@@ -430,3 +430,12 @@ Classification: REPOSITORY PRESENT / STATIC REVIEWED; historical PR #7 WINDOWS C
 - Frozen M1-M6 83-case baseline was not run in this log; issue #9 / PR #11 remain separate and unmerged.
 - Issue #1 remains open: static review of this compiler snapshot still shows no large-frame stack probing and no PE x64 unwind metadata. Microsoft documents stack probing for fixed allocations at least one page and unwind tables for non-leaf functions. These are static ABI gaps, not failures reported by the current M7A run.
 - README and accepted-plan test counts are updated to 9 positive + 12 negative + 3 instruction checks = 24, plus the separate 2-case collection import regression.
+
+## Windows x64 stack-probe and unwind repair - 2026-11-25
+
+- PR [#16](https://github.com/Sharnou/Sharnou-Compiler/pull/16) implements the missing page-by-page stack probe and PE x64 unwind metadata.
+- Compiler now emits a private leaf page-probe helper called before fixed stack allocation; `.pdata` / `.xdata` and the exception directory describe the entry function and generated user functions; function epilogues use LEA / POP / RET.
+- PE verification now validates six sections, exception-directory coverage, runtime-function entries, both UWOP_ALLOC_LARGE forms, frame/prologue consistency, stack-probe helper bytes and relative branch targets.
+- Windows Actions run [45705513598](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45705513598) on PR #16 head `b1365dc17bb5aeaad74462633fadfdc29b56fa3e` passed ASCII/no-BOM, Stage 7A 24/24, Stage 5 collection imports 2/2, stack-probe/unwind 6/6, and Combined result PASS. The 17,000-local native test executable ran with expected output and exit code 0.
+- This is **WINDOWS CI PASS**. User-local test evidence remains from the pre-ABI PR #15 snapshot; local retest of PR #16 has not yet been reported. PR #16 remains open/unmerged.
+- Issue #1 is partially resolved. Runtime nonvolatile-register sentinels, RSP/call-site alignment and argument-value probes, and a generic checked Windows API marshaller remain open. The 83-case M1-M6 baseline remains separately blocked under issue #9 / PR #11.
