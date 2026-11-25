@@ -728,6 +728,17 @@ function Emit-BuiltinArguments {
         $script:TempDepth++
     }
 }
+function Emit-CopyDataConstantToFrame {
+    param([object] $DataItem, [int] $SlotPosition, [int] $Length)
+    if ($Length -lt 0 -or $Length -gt 1023) { throw "Invalid fixed command/data copy length: $Length" }
+    Emit-DataAddress -DataItem $DataItem
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC6)) # RSI = immutable source
+    Emit-LeaRaxFrame -SlotPosition $SlotPosition
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC7)) # RDI = mutable destination
+    Emit-Bytes -Bytes ([byte[]]@(0xB9))
+    Emit-I32 -Value $Length
+    Emit-Bytes -Bytes ([byte[]]@(0xF3, 0xA4, 0xC6, 0x07, 0x00)) # REP MOVSB; append NUL
+}
 function Emit-NonvolatileRegisterProbe {
     param([object] $Node, [int] $BaseDepth)
     $targetName = 'abi_nonvolatile_target'
@@ -801,6 +812,282 @@ function Emit-NonvolatileRegisterProbe {
     Emit-Bytes -Bytes ([byte[]]@(0x4C, 0x8B, 0xAD)); Emit-I32 -Value (Get-FrameDisp -SlotPosition $slots[5])
     Emit-Bytes -Bytes ([byte[]]@(0x4C, 0x8B, 0xB5)); Emit-I32 -Value (Get-FrameDisp -SlotPosition $slots[6])
     Emit-Bytes -Bytes ([byte[]]@(0x4C, 0x8B, 0xBD)); Emit-I32 -Value (Get-FrameDisp -SlotPosition $slots[7])
+}
+function Emit-DevRunTool {
+    param([int] $ToolSlot, [int] $TimeoutSlot, [int] $BaseDepth)
+    $scratch = [int]$script:ActiveContext.ScratchPosition
+    $applicationSlot = $scratch
+    $workingDirectorySlot = $scratch + 0x120
+    $commandLineSlot = $scratch + 0x240
+    $startupSlot = $scratch + 0x460
+    $processSlot = $scratch + 0x4D0
+    $jobInfoSlot = $scratch + 0x510
+    $jobHandleSlot = Get-TempSlotPosition -Depth ($BaseDepth + 2)
+    $saveRdiSlot = Get-TempSlotPosition -Depth ($BaseDepth + 3)
+    $saveRsiSlot = Get-TempSlotPosition -Depth ($BaseDepth + 4)
+    $resultSlot = Get-TempSlotPosition -Depth ($BaseDepth + 5)
+    $exitCodeSlot = Get-TempSlotPosition -Depth ($BaseDepth + 6)
+
+    $unknownTool = New-UniqueLabel -Prefix 'dev_tool_unknown'
+    $invalidTimeout = New-UniqueLabel -Prefix 'dev_tool_timeout_invalid'
+    $toolLabels = @(
+        (New-UniqueLabel -Prefix 'dev_tool_stage7a'),
+        (New-UniqueLabel -Prefix 'dev_tool_runtime_abi'),
+        (New-UniqueLabel -Prefix 'dev_tool_baseline_m1_m6'),
+        (New-UniqueLabel -Prefix 'dev_tool_stack_unwind'),
+        (New-UniqueLabel -Prefix 'dev_tool_timeout_probe')
+    )
+    $commandReady = New-UniqueLabel -Prefix 'dev_tool_command_ready'
+    $pathFail = New-UniqueLabel -Prefix 'dev_tool_path_fail'
+    $directoryFail = New-UniqueLabel -Prefix 'dev_tool_directory_fail'
+    $jobFail = New-UniqueLabel -Prefix 'dev_tool_job_fail'
+    $jobConfigFail = New-UniqueLabel -Prefix 'dev_tool_job_config_fail'
+    $createFail = New-UniqueLabel -Prefix 'dev_tool_create_fail'
+    $assignFail = New-UniqueLabel -Prefix 'dev_tool_assign_fail'
+    $resumeFail = New-UniqueLabel -Prefix 'dev_tool_resume_fail'
+    $waitFail = New-UniqueLabel -Prefix 'dev_tool_wait_fail'
+    $timeoutFail = New-UniqueLabel -Prefix 'dev_tool_timeout'
+    $success = New-UniqueLabel -Prefix 'dev_tool_success'
+    $cleanup = New-UniqueLabel -Prefix 'dev_tool_cleanup'
+    $done = New-UniqueLabel -Prefix 'dev_tool_done'
+
+    $suffix = '\WindowsPowerShell\v1.0\powershell.exe'
+    $suffixItem = Register-DataConstant -Value $suffix
+    $suffixLength = [System.Text.Encoding]::ASCII.GetByteCount($suffix)
+    $commands = @(
+        [pscustomobject]@{ Id = 1; Text = 'powershell.exe -NoLogo -NoProfile -NonInteractive -File "Tests\Test-Stage7A.ps1"' },
+        [pscustomobject]@{ Id = 2; Text = 'powershell.exe -NoLogo -NoProfile -NonInteractive -File "Tests\Test-RuntimeABI.ps1"' },
+        [pscustomobject]@{ Id = 3; Text = 'powershell.exe -NoLogo -NoProfile -NonInteractive -File "Tests\BaselineM6\Test-Milestone6Baseline.ps1"' },
+        [pscustomobject]@{ Id = 4; Text = 'powershell.exe -NoLogo -NoProfile -NonInteractive -File "Tests\Test-StackProbeUnwind.ps1"' },
+        [pscustomobject]@{ Id = 5; Text = 'powershell.exe -NoLogo -NoProfile -NonInteractive -File "Tests\DevAgentBroker\TimeoutProbe.ps1"' }
+    )
+    $commandItems = @()
+    foreach ($command in $commands) {
+        $commandItems += [pscustomobject]@{
+            Id = $command.Id
+            Item = (Register-DataConstant -Value $command.Text)
+            Length = [System.Text.Encoding]::ASCII.GetByteCount($command.Text)
+        }
+    }
+
+    # Preserve the two nonvolatile registers used by REP MOVSB.
+    Emit-StoreRdiFrame -SlotPosition $saveRdiSlot
+    Emit-StoreRsiFrame -SlotPosition $saveRsiSlot
+
+    # Reject all unknown tool IDs and out-of-policy timeouts before any process creation.
+    Emit-LoadEaxFrame -SlotPosition $ToolSlot
+    for ($i = 0; $i -lt $toolLabels.Count; $i++) {
+        Emit-Bytes -Bytes ([byte[]]@(0x3D))
+        Emit-I32 -Value ($i + 1)
+        Emit-JumpConditional -ConditionCode 0x84 -Label $toolLabels[$i]
+    }
+    Emit-Jump -Label $unknownTool
+    Emit-LoadEaxFrame -SlotPosition $TimeoutSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x3D))
+    Emit-I32 -Value 1000
+    Emit-JumpConditional -ConditionCode 0x82 -Label $invalidTimeout
+    Emit-Bytes -Bytes ([byte[]]@(0x3D))
+    Emit-I32 -Value 300000
+    Emit-JumpConditional -ConditionCode 0x87 -Label $invalidTimeout
+
+    for ($i = 0; $i -lt $commandItems.Count; $i++) {
+        Mark-CodeLabel -Label $toolLabels[$i]
+        Emit-CopyDataConstantToFrame -DataItem $commandItems[$i].Item -SlotPosition $commandLineSlot -Length $commandItems[$i].Length
+        Emit-Jump -Label $commandReady
+    }
+    Mark-CodeLabel -Label $unknownTool
+    Emit-Bytes -Bytes ([byte[]]@(0xB8, 0x9C, 0xFF, 0xFF, 0xFF)) # -100: unknown tool ID
+    Emit-StoreEaxFrame -SlotPosition $resultSlot
+    Emit-Jump -Label $cleanup
+    Mark-CodeLabel -Label $invalidTimeout
+    Emit-Bytes -Bytes ([byte[]]@(0xB8, 0x9B, 0xFF, 0xFF, 0xFF)) # -101: timeout outside [1000,300000]
+    Emit-StoreEaxFrame -SlotPosition $resultSlot
+    Emit-Jump -Label $cleanup
+    Mark-CodeLabel -Label $commandReady
+
+    # Resolve the PowerShell host from System32; never search PATH or accept a caller path.
+    Emit-LeaRaxFrame -SlotPosition $applicationSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1, 0xBA, 0x04, 0x01, 0x00, 0x00)) # RCX=buffer, EDX=260
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3178) -StackArguments @() # GetSystemDirectoryA
+    Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
+    Emit-JumpConditional -ConditionCode 0x84 -Label $pathFail
+    Emit-Bytes -Bytes ([byte[]]@(0x3D))
+    Emit-I32 -Value 220
+    Emit-JumpConditional -ConditionCode 0x87 -Label $pathFail
+    Emit-Bytes -Bytes ([byte[]]@(0x89, 0xC6)) # ESI = System32 path length
+    Emit-LeaRaxFrame -SlotPosition $applicationSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC7, 0x48, 0x01, 0xF7)) # RDI = end of System32 path
+    Emit-DataAddress -DataItem $suffixItem
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC6, 0xB9))
+    Emit-I32 -Value $suffixLength
+    Emit-Bytes -Bytes ([byte[]]@(0xF3, 0xA4, 0xC6, 0x07, 0x00)) # append fixed PowerShell suffix and NUL
+
+    # Capture the caller's current directory as the fixed working directory.
+    Emit-LeaRaxFrame -SlotPosition $workingDirectorySlot
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1, 0xBA, 0x04, 0x01, 0x00, 0x00))
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3180) -StackArguments @() # GetCurrentDirectoryA
+    Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
+    Emit-JumpConditional -ConditionCode 0x84 -Label $directoryFail
+
+    # Zero STARTUPINFOA, PROCESS_INFORMATION and JOBOBJECT_EXTENDED_LIMIT_INFORMATION.
+    for ($i = 0; $i -lt 13; $i++) { Emit-StoreZero64Frame -SlotPosition ($startupSlot + ($i * 8)) }
+    for ($i = 0; $i -lt 3; $i++) { Emit-StoreZero64Frame -SlotPosition ($processSlot + ($i * 8)) }
+    for ($i = 0; $i -lt 18; $i++) { Emit-StoreZero64Frame -SlotPosition ($jobInfoSlot + ($i * 8)) }
+    Emit-StoreBits32Frame -SlotPosition $startupSlot -Value ([UInt32]104)
+    # KILL_ON_JOB_CLOSE | ACTIVE_PROCESS | PROCESS_MEMORY | JOB_MEMORY.
+    Emit-StoreBits32Frame -SlotPosition ($jobInfoSlot + 16) -Value ([UInt32]0x2308)
+    Emit-StoreBits32Frame -SlotPosition ($jobInfoSlot + 40) -Value ([UInt32]4)
+    Emit-StoreBits32Frame -SlotPosition ($jobInfoSlot + 112) -Value ([UInt32](256 * 1024 * 1024))
+    Emit-StoreBits32Frame -SlotPosition ($jobInfoSlot + 120) -Value ([UInt32](512 * 1024 * 1024))
+
+    # Create and configure the job before creating any child.
+    Emit-Bytes -Bytes ([byte[]]@(0x33, 0xC9, 0x33, 0xD2))
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3190) -StackArguments @() # CreateJobObjectA
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x85, 0xC0))
+    Emit-JumpConditional -ConditionCode 0x84 -Label $jobFail
+    Emit-StoreRaxFrame -SlotPosition $jobHandleSlot
+    Emit-LoadRcxFrame -SlotPosition $jobHandleSlot
+    Emit-Bytes -Bytes ([byte[]]@(0xBA, 0x09, 0x00, 0x00, 0x00))
+    Emit-LeaRaxFrame -SlotPosition $jobInfoSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x49, 0x89, 0xC0, 0x41, 0xB9, 0x90, 0x00, 0x00, 0x00))
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3198) -StackArguments @() # SetInformationJobObject(JobObjectExtendedLimitInformation)
+    Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
+    Emit-JumpConditional -ConditionCode 0x84 -Label $jobConfigFail
+
+    # Create the exact allowlisted PowerShell tool suspended, with no inherited handles.
+    Emit-LeaRaxFrame -SlotPosition $applicationSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1))
+    Emit-LeaRaxFrame -SlotPosition $commandLineSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC2, 0x45, 0x33, 0xC0, 0x45, 0x33, 0xC9))
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3188) -StackArguments @(
+        @{ Kind = 'Immediate'; Value = 0 }, # bInheritHandles = FALSE
+        @{ Kind = 'Immediate'; Value = 4 }, # CREATE_SUSPENDED
+        @{ Kind = 'Immediate'; Value = 0 }, # inherited environment
+        @{ Kind = 'FrameAddress'; SlotPosition = $workingDirectorySlot },
+        @{ Kind = 'FrameAddress'; SlotPosition = $startupSlot },
+        @{ Kind = 'FrameAddress'; SlotPosition = $processSlot }
+    ) # CreateProcessA
+    Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
+    Emit-JumpConditional -ConditionCode 0x84 -Label $createFail
+
+    # Assign the suspended process to its Job Object before allowing any user code to run.
+    Emit-LoadRcxFrame -SlotPosition $jobHandleSlot
+    Emit-LoadRaxFrame -SlotPosition $processSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC2))
+    Emit-Win64CallIat -TargetRva ([UInt32]0x31A0) -StackArguments @() # AssignProcessToJobObject
+    Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
+    Emit-JumpConditional -ConditionCode 0x84 -Label $assignFail
+
+    Emit-LoadRaxFrame -SlotPosition ($processSlot + 8)
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1))
+    Emit-Win64CallIat -TargetRva ([UInt32]0x31A8) -StackArguments @() # ResumeThread
+    Emit-Bytes -Bytes ([byte[]]@(0x83, 0xF8, 0xFF))
+    Emit-JumpConditional -ConditionCode 0x84 -Label $resumeFail
+
+    # Wait only for the validated timeout; timeout and wait failures terminate the whole job.
+    Emit-LoadRaxFrame -SlotPosition $processSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1))
+    Emit-LoadEaxFrame -SlotPosition $TimeoutSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x89, 0xC2))
+    Emit-Win64CallIat -TargetRva ([UInt32]0x30D0) -StackArguments @() # WaitForSingleObject
+    Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
+    Emit-JumpConditional -ConditionCode 0x84 -Label $success
+    Emit-Bytes -Bytes ([byte[]]@(0x3D, 0x02, 0x01, 0x00, 0x00))
+    Emit-JumpConditional -ConditionCode 0x84 -Label $timeoutFail
+    Emit-Jump -Label $waitFail
+
+    Mark-CodeLabel -Label $success
+    Emit-LoadRcxFrame -SlotPosition $processSlot
+    Emit-LeaRaxFrame -SlotPosition $exitCodeSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC2))
+    Emit-Win64CallIat -TargetRva ([UInt32]0x31B8) -StackArguments @() # GetExitCodeProcess
+    Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
+    Emit-JumpConditional -ConditionCode 0x84 -Label $waitFail
+    Emit-LoadEaxFrame -SlotPosition $exitCodeSlot
+    Emit-StoreEaxFrame -SlotPosition $resultSlot
+    Emit-Jump -Label $cleanup
+
+    Mark-CodeLabel -Label $timeoutFail
+    Emit-LoadRcxFrame -SlotPosition $jobHandleSlot
+    Emit-Bytes -Bytes ([byte[]]@(0xBA, 0x01, 0x00, 0xAD, 0xDE))
+    Emit-Win64CallIat -TargetRva ([UInt32]0x31B0) -StackArguments @() # TerminateJobObject
+    Emit-Jump -Label $waitFail
+
+    Mark-CodeLabel -Label $assignFail
+    Emit-LoadRcxFrame -SlotPosition $processSlot
+    Emit-Bytes -Bytes ([byte[]]@(0xBA, 0x02, 0x00, 0xAD, 0xDE))
+    Emit-Win64CallIat -TargetRva ([UInt32]0x31C0) -StackArguments @() # TerminateProcess
+    Emit-Jump -Label $waitFail
+
+    Mark-CodeLabel -Label $resumeFail
+    Emit-LoadRcxFrame -SlotPosition $jobHandleSlot
+    Emit-Bytes -Bytes ([byte[]]@(0xBA, 0x03, 0x00, 0xAD, 0xDE))
+    Emit-Win64CallIat -TargetRva ([UInt32]0x31B0) -StackArguments @()
+    Emit-Jump -Label $waitFail
+
+    Mark-CodeLabel -Label $waitFail
+    Emit-LoadRcxFrame -SlotPosition $processSlot
+    Emit-Bytes -Bytes ([byte[]]@(0xBA, 0x04, 0x00, 0xAD, 0xDE))
+    Emit-Win64CallIat -TargetRva ([UInt32]0x31C0) -StackArguments @() # TerminateProcess
+    Emit-Bytes -Bytes ([byte[]]@(0xB8, 0x94, 0xFF, 0xFF, 0xFF)) # -108: wait/termination failure
+    Emit-StoreEaxFrame -SlotPosition $resultSlot
+    Emit-Jump -Label $cleanup
+
+    Mark-CodeLabel -Label $pathFail
+    Emit-Bytes -Bytes ([byte[]]@(0xB8, 0x9A, 0xFF, 0xFF, 0xFF)) # -102
+    Emit-StoreEaxFrame -SlotPosition $resultSlot
+    Emit-Jump -Label $cleanup
+    Mark-CodeLabel -Label $directoryFail
+    Emit-Bytes -Bytes ([byte[]]@(0xB8, 0x99, 0xFF, 0xFF, 0xFF)) # -103
+    Emit-StoreEaxFrame -SlotPosition $resultSlot
+    Emit-Jump -Label $cleanup
+    Mark-CodeLabel -Label $jobFail
+    Emit-Bytes -Bytes ([byte[]]@(0xB8, 0x98, 0xFF, 0xFF, 0xFF)) # -104
+    Emit-StoreEaxFrame -SlotPosition $resultSlot
+    Emit-Jump -Label $cleanup
+    Mark-CodeLabel -Label $jobConfigFail
+    Emit-Bytes -Bytes ([byte[]]@(0xB8, 0x97, 0xFF, 0xFF, 0xFF)) # -105
+    Emit-StoreEaxFrame -SlotPosition $resultSlot
+    Emit-Jump -Label $cleanup
+    Mark-CodeLabel -Label $createFail
+    Emit-Bytes -Bytes ([byte[]]@(0xB8, 0x96, 0xFF, 0xFF, 0xFF)) # -106
+    Emit-StoreEaxFrame -SlotPosition $resultSlot
+    Emit-Jump -Label $cleanup
+    Mark-CodeLabel -Label $assignFail
+    Emit-Bytes -Bytes ([byte[]]@(0xB8, 0x95, 0xFF, 0xFF, 0xFF)) # -107
+    Emit-StoreEaxFrame -SlotPosition $resultSlot
+    Emit-Jump -Label $cleanup
+    Mark-CodeLabel -Label $resumeFail
+    Emit-Bytes -Bytes ([byte[]]@(0xB8, 0x94, 0xFF, 0xFF, 0xFF)) # -108
+    Emit-StoreEaxFrame -SlotPosition $resultSlot
+    Emit-Jump -Label $cleanup
+
+    Mark-CodeLabel -Label $cleanup
+    # Close the primary thread, process and job handles. Closing the job also
+    # terminates any remaining descendants because KILL_ON_JOB_CLOSE is set.
+    Emit-LoadRcxFrame -SlotPosition ($processSlot + 8)
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x85, 0xC9))
+    $skipThread = New-UniqueLabel -Prefix 'dev_tool_skip_thread'
+    Emit-JumpConditional -ConditionCode 0x84 -Label $skipThread
+    Emit-Win64CallIat -TargetRva ([UInt32]0x30B8) -StackArguments @() # CloseHandle(thread)
+    Mark-CodeLabel -Label $skipThread
+    Emit-LoadRcxFrame -SlotPosition $processSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x85, 0xC9))
+    $skipProcess = New-UniqueLabel -Prefix 'dev_tool_skip_process'
+    Emit-JumpConditional -ConditionCode 0x84 -Label $skipProcess
+    Emit-Win64CallIat -TargetRva ([UInt32]0x30B8) -StackArguments @() # CloseHandle(process)
+    Mark-CodeLabel -Label $skipProcess
+    Emit-LoadRcxFrame -SlotPosition $jobHandleSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x85, 0xC9))
+    $skipJob = New-UniqueLabel -Prefix 'dev_tool_skip_job'
+    Emit-JumpConditional -ConditionCode 0x84 -Label $skipJob
+    Emit-Win64CallIat -TargetRva ([UInt32]0x30B8) -StackArguments @() # CloseHandle(job)
+    Mark-CodeLabel -Label $skipJob
+    Emit-LoadRdiFrame -SlotPosition $saveRdiSlot
+    Emit-LoadRsiFrame -SlotPosition $saveRsiSlot
+    Emit-LoadEaxFrame -SlotPosition $resultSlot
+    Emit-Jump -Label $done
+    Mark-CodeLabel -Label $done
 }
 function Emit-BuiltinCall {
     param([object] $Node)
@@ -972,6 +1259,7 @@ function Emit-BuiltinCall {
             Mark-CodeLabel -Label $doneLabel
         }
         'D3D11RenderDemo' { Emit-D3D11RenderDemo -BaseDepth $baseDepth -ArgumentSlots $argSlots }
+        'DevRunTool' { Emit-DevRunTool -ToolSlot $argSlots[0] -TimeoutSlot $argSlots[1] -BaseDepth $baseDepth }
         'WindowProbe' {
             $titleSlot = $argSlots[0]; $instanceSlot = Get-TempSlotPosition -Depth ($baseDepth + 1); $windowSlot = Get-TempSlotPosition -Depth ($baseDepth + 2)
             $failLabel = New-UniqueLabel -Prefix 'window_create_fail'; $doneLabel = New-UniqueLabel -Prefix 'window_create_done'
@@ -1577,7 +1865,8 @@ $builtinDefinitions = @(
     [pscustomobject]@{ Name = 'sh_window_probe'; Builtin = 'WindowProbe'; ParameterTypes = @('String'); ReturnType = 'Integer' },
     [pscustomobject]@{ Name = 'sh_window_pump_once'; Builtin = 'WindowPump'; ParameterTypes = @(); ReturnType = 'Integer' },
     [pscustomobject]@{ Name = 'sh_thread_sync_probe'; Builtin = 'ThreadSyncProbe'; ParameterTypes = @(); ReturnType = 'Integer' },
-    [pscustomobject]@{ Name = 'sh_d3d11_render_demo'; Builtin = 'D3D11RenderDemo'; ParameterTypes = @('String', 'Integer'); ReturnType = 'Integer' }
+    [pscustomobject]@{ Name = 'sh_d3d11_render_demo'; Builtin = 'D3D11RenderDemo'; ParameterTypes = @('String', 'Integer'); ReturnType = 'Integer' },
+    [pscustomobject]@{ Name = 'sh_dev_run_tool'; Builtin = 'DevRunTool'; ParameterTypes = @('Integer', 'Integer'); ReturnType = 'Integer' }
 )
 foreach ($definition in $builtinDefinitions) { $script:Builtins.Add($definition.Name, $definition) }
 $script:Modules = [System.Collections.Generic.List[object]]::new()
