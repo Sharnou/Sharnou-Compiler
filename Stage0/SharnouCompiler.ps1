@@ -840,7 +840,8 @@ function Emit-DevRunTool {
         (New-UniqueLabel -Prefix 'dev_tool_runtime_abi'),
         (New-UniqueLabel -Prefix 'dev_tool_baseline_m1_m6'),
         (New-UniqueLabel -Prefix 'dev_tool_stack_unwind'),
-        (New-UniqueLabel -Prefix 'dev_tool_timeout_probe')
+        (New-UniqueLabel -Prefix 'dev_tool_timeout_probe'),
+        (New-UniqueLabel -Prefix 'dev_tool_success_probe')
     )
     $commandReady = New-UniqueLabel -Prefix 'dev_tool_command_ready'
     $pathFail = New-UniqueLabel -Prefix 'dev_tool_path_fail'
@@ -864,7 +865,8 @@ function Emit-DevRunTool {
         [pscustomobject]@{ Id = 2; Text = 'powershell.exe -NoLogo -NoProfile -NonInteractive -File "Tests\Test-RuntimeABI.ps1"' },
         [pscustomobject]@{ Id = 3; Text = 'powershell.exe -NoLogo -NoProfile -NonInteractive -File "Tests\BaselineM6\Test-Milestone6Baseline.ps1"' },
         [pscustomobject]@{ Id = 4; Text = 'powershell.exe -NoLogo -NoProfile -NonInteractive -File "Tests\Test-StackProbeUnwind.ps1"' },
-        [pscustomobject]@{ Id = 5; Text = 'powershell.exe -NoLogo -NoProfile -NonInteractive -File "Tests\DevAgentBroker\TimeoutProbe.ps1"' }
+        [pscustomobject]@{ Id = 5; Text = 'powershell.exe -NoLogo -NoProfile -NonInteractive -File "Tests\DevAgentBroker\TimeoutProbe.ps1"' },
+        [pscustomobject]@{ Id = 6; Text = 'powershell.exe -NoLogo -NoProfile -NonInteractive -File "Tests\DevAgentBroker\SuccessProbe.ps1"' }
     )
     $commandItems = @()
     foreach ($command in $commands) {
