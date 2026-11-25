@@ -975,3 +975,29 @@ Classification: **WINDOWS CI PASS on PR #15; USER-REPORTED LOCAL FAILURE IDENTIF
 - Issue #1 is partially resolved but remains OPEN: stack probing and PE unwind metadata now have source, verifier and Windows CI coverage. Additional ABI acceptance remains: runtime nonvolatile-register sentinels, RSP/call-site alignment and argument-value probes, and generic checked marshalling for higher-arity Windows API calls. Do not claim complete ABI acceptance.
 - The frozen Milestone 1-6 83-case baseline was not run by this PR. Issue #9 / PR #11 remain separate and unmerged. Do not describe the current 24 + 2 + 6 result as 83/83.
 - The PowerShell `InputObjectNotBound` messages in the user's log remain explained by piping `Get-ChildItem` FileInfo objects into parameterless `Test.ps1`; those errors are not compiler failures. Invoke `Get-ChildItem ...` and ` .\Test.ps1` as separate commands.
+
+
+## DevAgent broker phase 1 - 2026-11-26
+
+Integrated candidate PR #18 head `2ee44cef7f3d67b4ccdc26aa391a9e789197197b` is draft and unmerged. Windows CI passed on the same PR merge-ref:
+
+- Stage 7A: 24/24.
+- Stage 5 collection imports: 2/2.
+- Stack-probe/unwind: 6/6.
+- Runtime ABI: PASS. Tests cover nonvolatile sentinels RBX/RBP/RSI/RDI/R12-R15, live RSP alignment, 4/5/6/8 integer argument values, nested argument order, 12-argument Windows API marshalling, and file/window/thread/synchronization probes.
+- Frozen M1-M6 baseline: 83/83 (Stage 2 25, Stage 4 20, PE verifier 4, Stage 5 25, Stage 6 9).
+- Combined result: PASS.
+
+Windows runs:
+- Stage 7A / combined: [45724983298](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45724983298).
+- Frozen baseline: [45724983299](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45724983299).
+
+DevAgent process broker phase 1 is implemented and tested:
+- `sh_dev_run_tool(Integer,Integer)` is available only with explicit `-EnableDevAgentTools`; disabled by default.
+- Six fixed tool IDs; no arbitrary command, executable path, script path, argument vector, or caller-supplied working directory.
+- Compiler-pinned SHA-256 tool manifest and per-script runtime SHA-256 verification. Manifest tampering is rejected before native generation; script tampering is rejected before execution.
+- Absolute System32 PowerShell path, fixed workspace layout and reparse-point rejection.
+- Suspended process creation, Job Object assignment before resume, kill-on-close, process/memory limits, timeout and descendant termination.
+- Windows tests cover invalid IDs/timeouts, explicit opt-in, exit-code propagation, manifest tamper, script tamper, junction/reparse rejection, timeout and descendant cleanup.
+
+Security acceptance is still incomplete. Native CNG hashing, full canonical root/ancestor validation, restricted token/AppContainer and workspace ACLs, clean environment, bounded output capture, cancellation, and durable evidence journaling remain outstanding. The broker remains opt-in for test builds only; model-generated process execution remains DISABLED. No merge or release was performed.
