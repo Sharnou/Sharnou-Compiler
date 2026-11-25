@@ -728,11 +728,83 @@ function Emit-BuiltinArguments {
         $script:TempDepth++
     }
 }
+function Emit-NonvolatileRegisterProbe {
+    param([object] $Node, [int] $BaseDepth)
+    $targetName = 'abi_nonvolatile_target'
+    if (-not $script:Functions.ContainsKey($targetName)) {
+        Throw-SourceError -Line $Node.Line -Column $Node.Column -Message "The ABI sentinel probe requires a zero-argument function named '$targetName'."
+    }
+    if ($script:Functions[$targetName].Parameters.Count -ne 0) {
+        Throw-SourceError -Line $Node.Line -Column $Node.Column -Message "The ABI sentinel target '$targetName' must not declare parameters."
+    }
+    $slots = @()
+    for ($i = 0; $i -lt 8; $i++) { $slots += (Get-TempSlotPosition -Depth ($BaseDepth + $i)) }
+    # Save the complete Windows x64 nonvolatile register set, including the
+    # active RBP frame pointer, into caller-owned frame slots.
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xAD)); Emit-I32 -Value (Get-FrameDisp -SlotPosition $slots[0]) # RBP
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0x9D)); Emit-I32 -Value (Get-FrameDisp -SlotPosition $slots[1]) # RBX
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xB5)); Emit-I32 -Value (Get-FrameDisp -SlotPosition $slots[2]) # RSI
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xBD)); Emit-I32 -Value (Get-FrameDisp -SlotPosition $slots[3]) # RDI
+    Emit-Bytes -Bytes ([byte[]]@(0x4C, 0x89, 0xA5)); Emit-I32 -Value (Get-FrameDisp -SlotPosition $slots[4]) # R12
+    Emit-Bytes -Bytes ([byte[]]@(0x4C, 0x89, 0xAD)); Emit-I32 -Value (Get-FrameDisp -SlotPosition $slots[5]) # R13
+    Emit-Bytes -Bytes ([byte[]]@(0x4C, 0x89, 0xB5)); Emit-I32 -Value (Get-FrameDisp -SlotPosition $slots[6]) # R14
+    Emit-Bytes -Bytes ([byte[]]@(0x4C, 0x89, 0xBD)); Emit-I32 -Value (Get-FrameDisp -SlotPosition $slots[7]) # R15
+
+    $sentinels = @([UInt32]0x11223344, [UInt32]0x22334455, [UInt32]0x33445566, [UInt32]0x44556677, [UInt32]0x55667788, [UInt32]0x66778899, [UInt32]0x778899AA)
+    $loadOpcodes = @(
+        [byte[]]@(0x48, 0xBB), [byte[]]@(0x48, 0xBE), [byte[]]@(0x48, 0xBF),
+        [byte[]]@(0x49, 0xBC), [byte[]]@(0x49, 0xBD), [byte[]]@(0x49, 0xBE), [byte[]]@(0x49, 0xBF)
+    )
+    for ($i = 0; $i -lt $sentinels.Count; $i++) {
+        Emit-Bytes -Bytes $loadOpcodes[$i]
+        Emit-Bytes -Bytes ([BitConverter]::GetBytes([UInt64]$sentinels[$i]))
+    }
+    # Exercise a real generated Sharnou function containing RSI/RDI-using
+    # intrinsics. Reserve the mandatory Windows x64 shadow space.
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x83, 0xEC, 0x20))
+    Emit-CallFunction -Name $targetName
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x83, 0xC4, 0x20))
+
+    $fail = New-UniqueLabel -Prefix 'abi_nonvolatile_fail'
+    $done = New-UniqueLabel -Prefix 'abi_nonvolatile_done'
+    $compareOpcodes = @(
+        [byte[]]@(0x48, 0x81, 0xFB), [byte[]]@(0x48, 0x81, 0xFE), [byte[]]@(0x48, 0x81, 0xFF),
+        [byte[]]@(0x49, 0x81, 0xFC), [byte[]]@(0x49, 0x81, 0xFD), [byte[]]@(0x49, 0x81, 0xFE), [byte[]]@(0x49, 0x81, 0xFF)
+    )
+    for ($i = 0; $i -lt $sentinels.Count; $i++) {
+        Emit-Bytes -Bytes $compareOpcodes[$i]
+        Emit-I32 -Value ([Int64]$sentinels[$i])
+        Emit-JumpConditional -ConditionCode 0x85 -Label $fail
+    }
+    # RBP is the live frame pointer: compare it to the saved caller value.
+    Emit-LoadRaxFrame -SlotPosition $slots[0]
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x39, 0xC5))
+    Emit-JumpConditional -ConditionCode 0x85 -Label $fail
+    Emit-Bytes -Bytes ([byte[]]@(0xB8, 0x01, 0x00, 0x00, 0x00))
+    Emit-Jump -Label $done
+    Mark-CodeLabel -Label $fail
+    Emit-Bytes -Bytes ([byte[]]@(0x31, 0xC0))
+    Mark-CodeLabel -Label $done
+
+    # Restore the caller's original nonvolatile values before returning.
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x8B, 0x9D)); Emit-I32 -Value (Get-FrameDisp -SlotPosition $slots[1])
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x8B, 0xB5)); Emit-I32 -Value (Get-FrameDisp -SlotPosition $slots[2])
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x8B, 0xBD)); Emit-I32 -Value (Get-FrameDisp -SlotPosition $slots[3])
+    Emit-Bytes -Bytes ([byte[]]@(0x4C, 0x8B, 0xA5)); Emit-I32 -Value (Get-FrameDisp -SlotPosition $slots[4])
+    Emit-Bytes -Bytes ([byte[]]@(0x4C, 0x8B, 0xAD)); Emit-I32 -Value (Get-FrameDisp -SlotPosition $slots[5])
+    Emit-Bytes -Bytes ([byte[]]@(0x4C, 0x8B, 0xB5)); Emit-I32 -Value (Get-FrameDisp -SlotPosition $slots[6])
+    Emit-Bytes -Bytes ([byte[]]@(0x4C, 0x8B, 0xBD)); Emit-I32 -Value (Get-FrameDisp -SlotPosition $slots[7])
+}
 function Emit-BuiltinCall {
     param([object] $Node)
     $baseDepth = [int]$script:TempDepth
     $argSlots = [System.Collections.Generic.List[int]]::new()
     switch ($Node.Builtin) {
+        'AbiNonvolatileProbe' {
+            Emit-NonvolatileRegisterProbe -Node $Node -BaseDepth $baseDepth
+            $script:TempDepth = $baseDepth
+            return
+        }
         'StringLength' {
             Emit-StringExpression -Node $Node.Arguments[0]
             Emit-Bytes -Bytes ([byte[]]@(0x89, 0xD0)) # EAX = EDX (UTF-8/ASCII byte length)
@@ -1485,6 +1557,7 @@ if (Test-Path -LiteralPath $outputFullPath) { Remove-Item -LiteralPath $outputFu
 $script:Functions = [System.Collections.Generic.Dictionary[string, object]]::new([System.StringComparer]::Ordinal)
 $script:Builtins = [System.Collections.Generic.Dictionary[string, object]]::new([System.StringComparer]::Ordinal)
 $builtinDefinitions = @(
+    [pscustomobject]@{ Name = 'sh_abi_nonvolatile_probe'; Builtin = 'AbiNonvolatileProbe'; ParameterTypes = @(); ReturnType = 'Integer' },
     [pscustomobject]@{ Name = 'sh_string_length'; Builtin = 'StringLength'; ParameterTypes = @('String'); ReturnType = 'Integer' },
     [pscustomobject]@{ Name = 'sh_string_equal'; Builtin = 'StringEqual'; ParameterTypes = @('String', 'String'); ReturnType = 'Integer' },
     [pscustomobject]@{ Name = 'sh_log'; Builtin = 'Log'; ParameterTypes = @('String'); ReturnType = 'Integer' },
