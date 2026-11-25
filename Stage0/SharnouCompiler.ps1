@@ -372,7 +372,13 @@ function Collect-FunctionHeaders {
                 }
             }
             if ($i -ge $tokens.Length -or $tokens[$i].Text -cne ')') { $script:SourceDisplay = $Module.Path; Throw-SourceError -Line $nameToken.Line -Column $nameToken.Column -Message "Expected ')' after function parameters." }; $i++
-            if ($params.Count -gt 4) { $script:SourceDisplay = $Module.Path; Throw-SourceError -Line $nameToken.Line -Column $nameToken.Column -Message 'Sharnou functions currently support at most four integer parameters (Windows x64 register arguments).'
+            $legacyBaselineMode = [string]::Equals([Environment]::GetEnvironmentVariable('SHARNOU_BASELINE_M1_M6'), '1', [StringComparison]::Ordinal)
+            if ($params.Count -gt 16 -or ($legacyBaselineMode -and $params.Count -gt 4)) {
+                $script:SourceDisplay = $Module.Path
+                if ($legacyBaselineMode) {
+                    Throw-SourceError -Line $nameToken.Line -Column $nameToken.Column -Message 'Historical M1-M6 compatibility mode permits at most four integer function parameters.'
+                }
+                Throw-SourceError -Line $nameToken.Line -Column $nameToken.Column -Message 'Sharnou functions support at most 16 integer parameters (four register arguments and twelve stack arguments under the Windows x64 ABI).'
             }
             if ($i -ge $tokens.Length -or $tokens[$i].Text -cne '{') { $script:SourceDisplay = $Module.Path; Throw-SourceError -Line $nameToken.Line -Column $nameToken.Column -Message "Expected '{' to start the function body." }
             $bodyOpen = $i; $i++; $braceDepth = 1
@@ -592,6 +598,33 @@ function Emit-StackArgumentRax {
     if ($Offset -lt 0x20 -or $Offset -gt 0x78 -or ($Offset % 8) -ne 0) { throw "Invalid Windows x64 stack argument offset: $Offset" }
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0x44, 0x24, [byte]$Offset))
 }
+function Emit-Win64CallIat {
+    param([UInt32] $TargetRva, [object[]] $StackArguments = @())
+    if ($StackArguments.Count -gt 12) { throw "Windows x64 IAT calls support at most 12 stack arguments; received $($StackArguments.Count)." }
+    # Reserve shadow space plus all stack arguments, rounded to 16 bytes.
+    $callFrameSize = Align-Up -Value (0x20 + ($StackArguments.Count * 8)) -Alignment 0x10
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x81, 0xEC))
+    Emit-I32 -Value $callFrameSize
+    for ($i = 0; $i -lt $StackArguments.Count; $i++) {
+        $argument = $StackArguments[$i]
+        switch ([string]$argument.Kind) {
+            'Immediate' {
+                Emit-Bytes -Bytes ([byte[]]@(0x48, 0xB8))
+                Emit-Bytes -Bytes ([BitConverter]::GetBytes([Int64]$argument.Value))
+            }
+            'FrameAddress' { Emit-LeaRaxFrame -SlotPosition ([int]$argument.SlotPosition) }
+            'FrameQword' { Emit-LoadRaxFrame -SlotPosition ([int]$argument.SlotPosition) }
+            'FrameDword' { Emit-LoadEaxFrame -SlotPosition ([int]$argument.SlotPosition) }
+            'DataAddress' { Emit-DataAddress -DataItem $argument.DataItem }
+            'CodeAddress' { Emit-LeaRaxCodeLabel -Label ([string]$argument.Label) }
+            default { throw "Unsupported Windows x64 stack-argument descriptor kind: '$($argument.Kind)'." }
+        }
+        Emit-StackArgumentRax -Offset (0x20 + ($i * 8))
+    }
+    Emit-CallIat -TargetRva $TargetRva
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x81, 0xC4))
+    Emit-I32 -Value $callFrameSize
+}
 function Emit-LoadRdiFrame { param([int] $SlotPosition) Emit-Bytes -Bytes ([byte[]]@(0x48, 0x8B, 0xBD)); Emit-I32 -Value (Get-FrameDisp -SlotPosition $SlotPosition) }
 function Emit-StoreRdiFrame { param([int] $SlotPosition) Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xBD)); Emit-I32 -Value (Get-FrameDisp -SlotPosition $SlotPosition) }
 function Emit-LoadRsiFrame { param([int] $SlotPosition) Emit-Bytes -Bytes ([byte[]]@(0x48, 0x8B, 0xB5)); Emit-I32 -Value (Get-FrameDisp -SlotPosition $SlotPosition) }
@@ -600,6 +633,13 @@ function Emit-LeaRaxFrame { param([int] $SlotPosition) Emit-Bytes -Bytes ([byte[
 function Emit-LeaR8CodeLabel {
     param([string] $Label)
     Emit-Bytes -Bytes ([byte[]]@(0x4C, 0x8D, 0x05)); $dispOffset = $script:Code.Count; Emit-I32 -Value 0
+    $script:CodeFixups.Add([pscustomobject]@{ Kind = 'Code'; DispOffset = $dispOffset; Target = $Label })
+}
+function Emit-LeaRaxCodeLabel {
+    param([string] $Label)
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x8D, 0x05))
+    $dispOffset = $script:Code.Count
+    Emit-I32 -Value 0
     $script:CodeFixups.Add([pscustomobject]@{ Kind = 'Code'; DispOffset = $dispOffset; Target = $Label })
 }
 function Emit-CallFunction {
@@ -666,12 +706,11 @@ function Emit-CreateFileForPath {
     Emit-Bytes -Bytes ([byte[]]@(0xBA, 0x00, 0x00, 0x00, 0x80)) # GENERIC_READ
     Emit-Bytes -Bytes ([byte[]]@(0x41, 0xB8, 0x01, 0x00, 0x00, 0x00)) # FILE_SHARE_READ
     Emit-Bytes -Bytes ([byte[]]@(0x45, 0x33, 0xC9)) # lpSecurityAttributes = NULL
-    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x83, 0xEC, 0x40))
-    Emit-StackArgumentImmediate -Offset 0x20 -Value 3 # OPEN_EXISTING
-    Emit-StackArgumentImmediate -Offset 0x28 -Value 0x80 # FILE_ATTRIBUTE_NORMAL
-    Emit-StackArgumentImmediate -Offset 0x30 -Value 0
-    Emit-CallIat -TargetRva ([UInt32]0x30A0) # CreateFileA
-    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x83, 0xC4, 0x40))
+    Emit-Win64CallIat -TargetRva ([UInt32]0x30A0) -StackArguments @(
+        @{ Kind = 'Immediate'; Value = 3 },
+        @{ Kind = 'Immediate'; Value = 0x80 },
+        @{ Kind = 'Immediate'; Value = 0 }
+    ) # CreateFileA
 }
 function Emit-BuiltinArguments {
     param([object] $Node, [int] $BaseDepth)
@@ -689,11 +728,90 @@ function Emit-BuiltinArguments {
         $script:TempDepth++
     }
 }
+function Emit-NonvolatileRegisterProbe {
+    param([object] $Node, [int] $BaseDepth)
+    $targetName = 'abi_nonvolatile_target'
+    if (-not $script:Functions.ContainsKey($targetName)) {
+        Throw-SourceError -Line $Node.Line -Column $Node.Column -Message "The ABI sentinel probe requires a zero-argument function named '$targetName'."
+    }
+    if ($script:Functions[$targetName].Parameters.Count -ne 0) {
+        Throw-SourceError -Line $Node.Line -Column $Node.Column -Message "The ABI sentinel target '$targetName' must not declare parameters."
+    }
+    $slots = @()
+    for ($i = 0; $i -lt 8; $i++) { $slots += (Get-TempSlotPosition -Depth ($BaseDepth + $i)) }
+    # Save the complete Windows x64 nonvolatile register set, including the
+    # active RBP frame pointer, into caller-owned frame slots.
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xAD)); Emit-I32 -Value (Get-FrameDisp -SlotPosition $slots[0]) # RBP
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0x9D)); Emit-I32 -Value (Get-FrameDisp -SlotPosition $slots[1]) # RBX
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xB5)); Emit-I32 -Value (Get-FrameDisp -SlotPosition $slots[2]) # RSI
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xBD)); Emit-I32 -Value (Get-FrameDisp -SlotPosition $slots[3]) # RDI
+    Emit-Bytes -Bytes ([byte[]]@(0x4C, 0x89, 0xA5)); Emit-I32 -Value (Get-FrameDisp -SlotPosition $slots[4]) # R12
+    Emit-Bytes -Bytes ([byte[]]@(0x4C, 0x89, 0xAD)); Emit-I32 -Value (Get-FrameDisp -SlotPosition $slots[5]) # R13
+    Emit-Bytes -Bytes ([byte[]]@(0x4C, 0x89, 0xB5)); Emit-I32 -Value (Get-FrameDisp -SlotPosition $slots[6]) # R14
+    Emit-Bytes -Bytes ([byte[]]@(0x4C, 0x89, 0xBD)); Emit-I32 -Value (Get-FrameDisp -SlotPosition $slots[7]) # R15
+
+    $sentinels = @([UInt32]0x11223344, [UInt32]0x22334455, [UInt32]0x33445566, [UInt32]0x44556677, [UInt32]0x55667788, [UInt32]0x66778899, [UInt32]0x778899AA)
+    $loadOpcodes = @(
+        [byte[]]@(0x48, 0xBB), [byte[]]@(0x48, 0xBE), [byte[]]@(0x48, 0xBF),
+        [byte[]]@(0x49, 0xBC), [byte[]]@(0x49, 0xBD), [byte[]]@(0x49, 0xBE), [byte[]]@(0x49, 0xBF)
+    )
+    for ($i = 0; $i -lt $sentinels.Count; $i++) {
+        Emit-Bytes -Bytes $loadOpcodes[$i]
+        Emit-Bytes -Bytes ([BitConverter]::GetBytes([UInt64]$sentinels[$i]))
+    }
+    # Verify live RSP is 16-byte aligned before the call, after reserving
+    # shadow space, and after return. Exercise a generated function containing
+    # RSI/RDI-using intrinsics while all nonvolatile registers hold sentinels.
+    $fail = New-UniqueLabel -Prefix 'abi_nonvolatile_fail'
+    $done = New-UniqueLabel -Prefix 'abi_nonvolatile_done'
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xE0, 0x83, 0xE0, 0x0F, 0x85, 0xC0))
+    Emit-JumpConditional -ConditionCode 0x85 -Label $fail
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x83, 0xEC, 0x20))
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xE0, 0x83, 0xE0, 0x0F, 0x85, 0xC0))
+    Emit-JumpConditional -ConditionCode 0x85 -Label $fail
+    Emit-CallFunction -Name $targetName
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x83, 0xC4, 0x20))
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xE0, 0x83, 0xE0, 0x0F, 0x85, 0xC0))
+    Emit-JumpConditional -ConditionCode 0x85 -Label $fail
+
+    $compareOpcodes = @(
+        [byte[]]@(0x48, 0x81, 0xFB), [byte[]]@(0x48, 0x81, 0xFE), [byte[]]@(0x48, 0x81, 0xFF),
+        [byte[]]@(0x49, 0x81, 0xFC), [byte[]]@(0x49, 0x81, 0xFD), [byte[]]@(0x49, 0x81, 0xFE), [byte[]]@(0x49, 0x81, 0xFF)
+    )
+    for ($i = 0; $i -lt $sentinels.Count; $i++) {
+        Emit-Bytes -Bytes $compareOpcodes[$i]
+        Emit-I32 -Value ([Int64]$sentinels[$i])
+        Emit-JumpConditional -ConditionCode 0x85 -Label $fail
+    }
+    # RBP is the live frame pointer: compare it to the saved caller value.
+    Emit-LoadRaxFrame -SlotPosition $slots[0]
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x39, 0xC5))
+    Emit-JumpConditional -ConditionCode 0x85 -Label $fail
+    Emit-Bytes -Bytes ([byte[]]@(0xB8, 0x01, 0x00, 0x00, 0x00))
+    Emit-Jump -Label $done
+    Mark-CodeLabel -Label $fail
+    Emit-Bytes -Bytes ([byte[]]@(0x31, 0xC0))
+    Mark-CodeLabel -Label $done
+
+    # Restore the caller's original nonvolatile values before returning.
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x8B, 0x9D)); Emit-I32 -Value (Get-FrameDisp -SlotPosition $slots[1])
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x8B, 0xB5)); Emit-I32 -Value (Get-FrameDisp -SlotPosition $slots[2])
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x8B, 0xBD)); Emit-I32 -Value (Get-FrameDisp -SlotPosition $slots[3])
+    Emit-Bytes -Bytes ([byte[]]@(0x4C, 0x8B, 0xA5)); Emit-I32 -Value (Get-FrameDisp -SlotPosition $slots[4])
+    Emit-Bytes -Bytes ([byte[]]@(0x4C, 0x8B, 0xAD)); Emit-I32 -Value (Get-FrameDisp -SlotPosition $slots[5])
+    Emit-Bytes -Bytes ([byte[]]@(0x4C, 0x8B, 0xB5)); Emit-I32 -Value (Get-FrameDisp -SlotPosition $slots[6])
+    Emit-Bytes -Bytes ([byte[]]@(0x4C, 0x8B, 0xBD)); Emit-I32 -Value (Get-FrameDisp -SlotPosition $slots[7])
+}
 function Emit-BuiltinCall {
     param([object] $Node)
     $baseDepth = [int]$script:TempDepth
     $argSlots = [System.Collections.Generic.List[int]]::new()
     switch ($Node.Builtin) {
+        'AbiNonvolatileProbe' {
+            Emit-NonvolatileRegisterProbe -Node $Node -BaseDepth $baseDepth
+            $script:TempDepth = $baseDepth
+            return
+        }
         'StringLength' {
             Emit-StringExpression -Node $Node.Arguments[0]
             Emit-Bytes -Bytes ([byte[]]@(0x89, 0xD0)) # EAX = EDX (UTF-8/ASCII byte length)
@@ -810,9 +928,9 @@ function Emit-BuiltinCall {
             Emit-LoadRcxFrame -SlotPosition $handleSlot; Emit-LeaRdxFrame -SlotPosition $script:ActiveContext.ScratchPosition
             Emit-LoadEaxFrame -SlotPosition $capacitySlot; Emit-Bytes -Bytes ([byte[]]@(0x41, 0x89, 0xC0))
             Emit-LeaRaxFrame -SlotPosition ($script:ActiveContext.ScratchPosition + 0x1000); Emit-Bytes -Bytes ([byte[]]@(0x49, 0x89, 0xC1))
-            Emit-Bytes -Bytes ([byte[]]@(0x48, 0x83, 0xEC, 0x30)); Emit-StackArgumentImmediate -Offset 0x20 -Value 0
-            Emit-CallIat -TargetRva ([UInt32]0x30B0) # ReadFile
-            Emit-Bytes -Bytes ([byte[]]@(0x48, 0x83, 0xC4, 0x30)); Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0)); Emit-JumpConditional -ConditionCode 0x84 -Label $failRead
+            Emit-Win64CallIat -TargetRva ([UInt32]0x30B0) -StackArguments @(
+                @{ Kind = 'Immediate'; Value = 0 }
+            ) # ReadFile; Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0)); Emit-JumpConditional -ConditionCode 0x84 -Label $failRead
             Emit-Bytes -Bytes ([byte[]]@(0x8B, 0x85)); Emit-I32 -Value (Get-FrameDisp -SlotPosition ($script:ActiveContext.ScratchPosition + 0x1000)); Emit-StoreEaxFrame -SlotPosition $countSlot
             Emit-LoadRcxFrame -SlotPosition $handleSlot; Emit-CallIat -TargetRva ([UInt32]0x30B8); Emit-LoadEaxFrame -SlotPosition $countSlot; Emit-Jump -Label $doneLabel
             Mark-CodeLabel -Label $failRead; Emit-LoadRcxFrame -SlotPosition $handleSlot; Emit-CallIat -TargetRva ([UInt32]0x30B8); Emit-Jump -Label $failOpen
@@ -838,9 +956,9 @@ function Emit-BuiltinCall {
             Emit-LoadRcxFrame -SlotPosition $handleSlot; Emit-LeaRdxFrame -SlotPosition $script:ActiveContext.ScratchPosition
             Emit-LoadEaxFrame -SlotPosition $indexSlot; Emit-Bytes -Bytes ([byte[]]@(0x83, 0xC0, 0x01, 0x41, 0x89, 0xC0)) # read index + 1 bytes
             Emit-LeaRaxFrame -SlotPosition ($script:ActiveContext.ScratchPosition + 0x1000); Emit-Bytes -Bytes ([byte[]]@(0x49, 0x89, 0xC1))
-            Emit-Bytes -Bytes ([byte[]]@(0x48, 0x83, 0xEC, 0x30)); Emit-StackArgumentImmediate -Offset 0x20 -Value 0
-            Emit-CallIat -TargetRva ([UInt32]0x30B0) # ReadFile
-            Emit-Bytes -Bytes ([byte[]]@(0x48, 0x83, 0xC4, 0x30)); Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0)); Emit-JumpConditional -ConditionCode 0x84 -Label $failRead
+            Emit-Win64CallIat -TargetRva ([UInt32]0x30B0) -StackArguments @(
+                @{ Kind = 'Immediate'; Value = 0 }
+            ) # ReadFile; Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0)); Emit-JumpConditional -ConditionCode 0x84 -Label $failRead
             Emit-LoadEaxFrame -SlotPosition ($script:ActiveContext.ScratchPosition + 0x1000)
             Emit-Bytes -Bytes ([byte[]]@(0x8B, 0x8D)); Emit-I32 -Value (Get-FrameDisp -SlotPosition $indexSlot); Emit-Bytes -Bytes ([byte[]]@(0x83, 0xC1, 0x01, 0x39, 0xC8)); Emit-JumpConditional -ConditionCode 0x82 -Label $failRead # fail if read count < index + 1
             Emit-LoadEaxFrame -SlotPosition $indexSlot
@@ -862,13 +980,16 @@ function Emit-BuiltinCall {
             Emit-Bytes -Bytes ([byte[]]@(0x33, 0xC9)); Emit-DataAddress -DataItem (Register-DataConstant -Value 'STATIC'); Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC2)) # class name -> RDX
             Emit-LoadRaxFrame -SlotPosition $titleSlot; Emit-Bytes -Bytes ([byte[]]@(0x49, 0x89, 0xC0)) # title -> R8
             Emit-Bytes -Bytes ([byte[]]@(0x41, 0xB9, 0x00, 0x00, 0xCF, 0x00)) # hidden WS_OVERLAPPEDWINDOW
-            Emit-Bytes -Bytes ([byte[]]@(0x48, 0x83, 0xEC, 0x60))
-            Emit-StackArgumentImmediate -Offset 0x20 -Value -2147483648; Emit-StackArgumentImmediate -Offset 0x28 -Value -2147483648
-            Emit-StackArgumentImmediate -Offset 0x30 -Value 320; Emit-StackArgumentImmediate -Offset 0x38 -Value 240
-            Emit-StackArgumentImmediate -Offset 0x40 -Value 0; Emit-StackArgumentImmediate -Offset 0x48 -Value 0
-            Emit-LoadRaxFrame -SlotPosition $instanceSlot; Emit-StackArgumentRax -Offset 0x50; Emit-StackArgumentImmediate -Offset 0x58 -Value 0
-            Emit-CallIat -TargetRva ([UInt32]0x30F0) # CreateWindowExA
-            Emit-Bytes -Bytes ([byte[]]@(0x48, 0x83, 0xC4, 0x60)); Emit-Bytes -Bytes ([byte[]]@(0x48, 0x85, 0xC0)); Emit-JumpConditional -ConditionCode 0x84 -Label $failLabel
+            Emit-Win64CallIat -TargetRva ([UInt32]0x30F0) -StackArguments @(
+                @{ Kind = 'Immediate'; Value = -2147483648 },
+                @{ Kind = 'Immediate'; Value = -2147483648 },
+                @{ Kind = 'Immediate'; Value = 320 },
+                @{ Kind = 'Immediate'; Value = 240 },
+                @{ Kind = 'Immediate'; Value = 0 },
+                @{ Kind = 'Immediate'; Value = 0 },
+                @{ Kind = 'FrameQword'; SlotPosition = $instanceSlot },
+                @{ Kind = 'Immediate'; Value = 0 }
+            ) # CreateWindowExA; Emit-Bytes -Bytes ([byte[]]@(0x48, 0x85, 0xC0)); Emit-JumpConditional -ConditionCode 0x84 -Label $failLabel
             Emit-StoreRaxFrame -SlotPosition $windowSlot
             # Keep the test window hidden, update it, and non-blockingly dispatch one queued message.
             Emit-LoadRcxFrame -SlotPosition $windowSlot; Emit-Bytes -Bytes ([byte[]]@(0x33, 0xD2)); Emit-CallIat -TargetRva ([UInt32]0x30F8) # ShowWindow(SW_HIDE)
@@ -889,9 +1010,9 @@ function Emit-WindowPumpCore {
     $noneLabel = New-UniqueLabel -Prefix 'window_pump_none'; $doneLabel = New-UniqueLabel -Prefix 'window_pump_done'
     Emit-LeaRaxFrame -SlotPosition $script:ActiveContext.ScratchPosition; Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1))
     Emit-Bytes -Bytes ([byte[]]@(0x33, 0xD2, 0x45, 0x33, 0xC0, 0x45, 0x33, 0xC9))
-    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x83, 0xEC, 0x30)); Emit-StackArgumentImmediate -Offset 0x20 -Value 1
-    Emit-CallIat -TargetRva ([UInt32]0x3108) # PeekMessageA
-    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x83, 0xC4, 0x30)); Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0)); Emit-JumpConditional -ConditionCode 0x84 -Label $noneLabel
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3108) -StackArguments @(
+        @{ Kind = 'Immediate'; Value = 1 }
+    ) # PeekMessageA; Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0)); Emit-JumpConditional -ConditionCode 0x84 -Label $noneLabel
     Emit-LeaRaxFrame -SlotPosition $script:ActiveContext.ScratchPosition; Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1)); Emit-CallIat -TargetRva ([UInt32]0x3110) # TranslateMessage
     Emit-LeaRaxFrame -SlotPosition $script:ActiveContext.ScratchPosition; Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1)); Emit-CallIat -TargetRva ([UInt32]0x3118) # DispatchMessageA
     Emit-Bytes -Bytes ([byte[]]@(0xB8, 0x01, 0x00, 0x00, 0x00)); Emit-Jump -Label $doneLabel
@@ -905,9 +1026,9 @@ function Emit-D3D11MessagePump {
     # PeekMessageA(&msg, NULL, 0, 0, PM_REMOVE)
     Emit-LeaRaxFrame -SlotPosition $MessageSlot; Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1))
     Emit-Bytes -Bytes ([byte[]]@(0x33, 0xD2, 0x45, 0x33, 0xC0, 0x45, 0x33, 0xC9))
-    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x83, 0xEC, 0x30)); Emit-StackArgumentImmediate -Offset 0x20 -Value 1
-    Emit-CallIat -TargetRva ([UInt32]0x3108)
-    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x83, 0xC4, 0x30)); Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0)); Emit-JumpConditional -ConditionCode 0x84 -Label $checkWindow
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3108) -StackArguments @(
+        @{ Kind = 'Immediate'; Value = 1 }
+    ) # PeekMessageA; Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0)); Emit-JumpConditional -ConditionCode 0x84 -Label $checkWindow
     # MSG.message is the DWORD at offset 8 on x64. WM_QUIT terminates the demo loop.
     Emit-Bytes -Bytes ([byte[]]@(0x81, 0xBD)); Emit-I32 -Value (Get-FrameDisp -SlotPosition ($MessageSlot + 8)); Emit-I32 -Value 0x12
     Emit-JumpConditional -ConditionCode 0x85 -Label $dispatch
@@ -992,17 +1113,16 @@ function Emit-D3D11RenderDemo {
     Emit-Bytes -Bytes ([byte[]]@(0x33, 0xC9)); Emit-DataAddress -DataItem (Register-DataConstant -Value 'STATIC'); Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC2))
     Emit-LoadRaxFrame -SlotPosition $titleSlot; Emit-Bytes -Bytes ([byte[]]@(0x49, 0x89, 0xC0))
     Emit-Bytes -Bytes ([byte[]]@(0x41, 0xB9, 0x00, 0x00, 0xCF, 0x10)) # WS_OVERLAPPEDWINDOW | WS_VISIBLE
-    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x83, 0xEC, 0x60))
-    Emit-StackArgumentImmediate -Offset 0x20 -Value -2147483648
-    Emit-StackArgumentImmediate -Offset 0x28 -Value -2147483648
-    Emit-StackArgumentImmediate -Offset 0x30 -Value 960
-    Emit-StackArgumentImmediate -Offset 0x38 -Value 540
-    Emit-StackArgumentImmediate -Offset 0x40 -Value 0
-    Emit-StackArgumentImmediate -Offset 0x48 -Value 0
-    Emit-LoadRaxFrame -SlotPosition ($scratch + 0xD0); Emit-StackArgumentRax -Offset 0x50
-    Emit-StackArgumentImmediate -Offset 0x58 -Value 0
-    Emit-CallIat -TargetRva ([UInt32]0x30F0)
-    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x83, 0xC4, 0x60)); Emit-Bytes -Bytes ([byte[]]@(0x48, 0x85, 0xC0)); Emit-JumpConditional -ConditionCode 0x84 -Label $failLabel
+    Emit-Win64CallIat -TargetRva ([UInt32]0x30F0) -StackArguments @(
+        @{ Kind = 'Immediate'; Value = -2147483648 },
+        @{ Kind = 'Immediate'; Value = -2147483648 },
+        @{ Kind = 'Immediate'; Value = 960 },
+        @{ Kind = 'Immediate'; Value = 540 },
+        @{ Kind = 'Immediate'; Value = 0 },
+        @{ Kind = 'Immediate'; Value = 0 },
+        @{ Kind = 'FrameQword'; SlotPosition = ($scratch + 0xD0) },
+        @{ Kind = 'Immediate'; Value = 0 }
+    ); Emit-Bytes -Bytes ([byte[]]@(0x48, 0x85, 0xC0)); Emit-JumpConditional -ConditionCode 0x84 -Label $failLabel
     Emit-StoreRaxFrame -SlotPosition $windowSlot
     Emit-LoadRaxFrame -SlotPosition $windowSlot; Emit-StoreRaxFrame -SlotPosition ($scratch + 48) # desc.OutputWindow
     Emit-LoadRcxFrame -SlotPosition $windowSlot; Emit-Bytes -Bytes ([byte[]]@(0xBA, 0x05, 0x00, 0x00, 0x00, 0x48, 0x83, 0xEC, 0x20)); Emit-CallIat -TargetRva ([UInt32]0x30F8); Emit-Bytes -Bytes ([byte[]]@(0x48, 0x83, 0xC4, 0x20)) # ShowWindow(SW_SHOW)
@@ -1020,32 +1140,30 @@ function Emit-D3D11RenderDemo {
     # Fill output slots with NULL before the device-and-swap-chain call.
     foreach ($slot in @($swapSlot, $deviceSlot, $contextSlot)) { Emit-StoreZero64Frame -SlotPosition $slot }
     Emit-Bytes -Bytes ([byte[]]@(0x33, 0xC9, 0xBA, 0x01, 0x00, 0x00, 0x00, 0x45, 0x33, 0xC0, 0x45, 0x33, 0xC9))
-    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x83, 0xEC, 0x60))
-    Emit-StackArgumentImmediate -Offset 0x20 -Value 0
-    Emit-StackArgumentImmediate -Offset 0x28 -Value 0
-    Emit-StackArgumentImmediate -Offset 0x30 -Value 7
-    Emit-LeaRaxFrame -SlotPosition $scratch; Emit-StackArgumentRax -Offset 0x38
-    Emit-LeaRaxFrame -SlotPosition $swapSlot; Emit-StackArgumentRax -Offset 0x40
-    Emit-LeaRaxFrame -SlotPosition $deviceSlot; Emit-StackArgumentRax -Offset 0x48
-    Emit-LeaRaxFrame -SlotPosition $featureSlot; Emit-StackArgumentRax -Offset 0x50
-    Emit-LeaRaxFrame -SlotPosition $contextSlot; Emit-StackArgumentRax -Offset 0x58
-    Emit-CallIat -TargetRva ([UInt32]0x3130)
-    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x83, 0xC4, 0x60)); Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0)); Emit-JumpConditional -ConditionCode 0x89 -Label $deviceCreated
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3130) -StackArguments @(
+        @{ Kind = 'Immediate'; Value = 0 },
+        @{ Kind = 'Immediate'; Value = 0 },
+        @{ Kind = 'Immediate'; Value = 7 },
+        @{ Kind = 'FrameAddress'; SlotPosition = $scratch },
+        @{ Kind = 'FrameAddress'; SlotPosition = $swapSlot },
+        @{ Kind = 'FrameAddress'; SlotPosition = $deviceSlot },
+        @{ Kind = 'FrameAddress'; SlotPosition = $featureSlot },
+        @{ Kind = 'FrameAddress'; SlotPosition = $contextSlot }
+    ); Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0)); Emit-JumpConditional -ConditionCode 0x89 -Label $deviceCreated
     Mark-CodeLabel -Label $hardwareFailed
     # Retry using the built-in WARP software rasterizer when hardware initialization fails.
     foreach ($slot in @($swapSlot, $deviceSlot, $contextSlot)) { Emit-StoreZero64Frame -SlotPosition $slot }
     Emit-Bytes -Bytes ([byte[]]@(0x33, 0xC9, 0xBA, 0x05, 0x00, 0x00, 0x00, 0x45, 0x33, 0xC0, 0x45, 0x33, 0xC9))
-    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x83, 0xEC, 0x60))
-    Emit-StackArgumentImmediate -Offset 0x20 -Value 0
-    Emit-StackArgumentImmediate -Offset 0x28 -Value 0
-    Emit-StackArgumentImmediate -Offset 0x30 -Value 7
-    Emit-LeaRaxFrame -SlotPosition $scratch; Emit-StackArgumentRax -Offset 0x38
-    Emit-LeaRaxFrame -SlotPosition $swapSlot; Emit-StackArgumentRax -Offset 0x40
-    Emit-LeaRaxFrame -SlotPosition $deviceSlot; Emit-StackArgumentRax -Offset 0x48
-    Emit-LeaRaxFrame -SlotPosition $featureSlot; Emit-StackArgumentRax -Offset 0x50
-    Emit-LeaRaxFrame -SlotPosition $contextSlot; Emit-StackArgumentRax -Offset 0x58
-    Emit-CallIat -TargetRva ([UInt32]0x3130)
-    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x83, 0xC4, 0x60)); Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0)); Emit-JumpConditional -ConditionCode 0x88 -Label $failLabel
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3130) -StackArguments @(
+        @{ Kind = 'Immediate'; Value = 0 },
+        @{ Kind = 'Immediate'; Value = 0 },
+        @{ Kind = 'Immediate'; Value = 7 },
+        @{ Kind = 'FrameAddress'; SlotPosition = $scratch },
+        @{ Kind = 'FrameAddress'; SlotPosition = $swapSlot },
+        @{ Kind = 'FrameAddress'; SlotPosition = $deviceSlot },
+        @{ Kind = 'FrameAddress'; SlotPosition = $featureSlot },
+        @{ Kind = 'FrameAddress'; SlotPosition = $contextSlot }
+    ); Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0)); Emit-JumpConditional -ConditionCode 0x88 -Label $failLabel
     Mark-CodeLabel -Label $deviceCreated
     foreach ($slot in @($swapSlot, $deviceSlot, $contextSlot)) { Emit-LoadRaxFrame -SlotPosition $slot; Emit-Bytes -Bytes ([byte[]]@(0x48, 0x85, 0xC0)); Emit-JumpConditional -ConditionCode 0x84 -Label $failLabel }
 
@@ -1122,8 +1240,9 @@ function Emit-D3D11RenderDemo {
     Emit-LeaRaxFrame -SlotPosition $formatBufferSlot; Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC2))
     Emit-LoadEaxFrame -SlotPosition $formatLengthSlot; Emit-Bytes -Bytes ([byte[]]@(0x41, 0x89, 0xC0))
     Emit-LeaRaxFrame -SlotPosition $bytesWrittenSlot; Emit-Bytes -Bytes ([byte[]]@(0x49, 0x89, 0xC1))
-    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x83, 0xEC, 0x30)); Emit-StackArgumentImmediate -Offset 0x20 -Value 0
-    Emit-CallIat -TargetRva ([UInt32]0x3078); Emit-Bytes -Bytes ([byte[]]@(0x48, 0x83, 0xC4, 0x30))
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3078) -StackArguments @(
+        @{ Kind = 'Immediate'; Value = 0 }
+    )
     Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0)); Emit-JumpConditional -ConditionCode 0x84 -Label $failLabel
     Emit-LoadEaxFrame -SlotPosition $bytesWrittenSlot; Emit-Bytes -Bytes ([byte[]]@(0x3B, 0x85)); Emit-I32 -Value (Get-FrameDisp -SlotPosition $formatLengthSlot); Emit-JumpConditional -ConditionCode 0x85 -Label $failLabel
     Emit-LoadEaxFrame -SlotPosition $frameCountSlot
@@ -1133,10 +1252,10 @@ function Emit-ThreadSyncCore {
     $threadSlot = Get-TempSlotPosition -Depth $BaseDepth; $mutexSlot = Get-TempSlotPosition -Depth ($BaseDepth + 1)
     $threadFail = New-UniqueLabel -Prefix 'thread_sync_thread_fail'; $mutexFail = New-UniqueLabel -Prefix 'thread_sync_mutex_fail'; $mutexWaitFail = New-UniqueLabel -Prefix 'thread_sync_mutex_wait_fail'; $releaseFail = New-UniqueLabel -Prefix 'thread_sync_release_fail'; $done = New-UniqueLabel -Prefix 'thread_sync_done'
     Emit-Bytes -Bytes ([byte[]]@(0x33, 0xC9, 0x33, 0xD2)); Emit-LeaR8CodeLabel -Label '__sharnou_worker'; Emit-Bytes -Bytes ([byte[]]@(0x45, 0x33, 0xC9))
-    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x83, 0xEC, 0x30)); Emit-StackArgumentImmediate -Offset 0x20 -Value 0
-    Emit-LeaRaxFrame -SlotPosition $script:ActiveContext.ScratchPosition; Emit-StackArgumentRax -Offset 0x28
-    Emit-CallIat -TargetRva ([UInt32]0x30C8) # CreateThread
-    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x83, 0xC4, 0x30)); Emit-Bytes -Bytes ([byte[]]@(0x48, 0x85, 0xC0)); Emit-JumpConditional -ConditionCode 0x84 -Label $threadFail
+    Emit-Win64CallIat -TargetRva ([UInt32]0x30C8) -StackArguments @(
+        @{ Kind = 'Immediate'; Value = 0 },
+        @{ Kind = 'FrameAddress'; SlotPosition = $script:ActiveContext.ScratchPosition }
+    ) # CreateThread; Emit-Bytes -Bytes ([byte[]]@(0x48, 0x85, 0xC0)); Emit-JumpConditional -ConditionCode 0x84 -Label $threadFail
     Emit-StoreRaxFrame -SlotPosition $threadSlot; Emit-LoadRcxFrame -SlotPosition $threadSlot; Emit-Bytes -Bytes ([byte[]]@(0xBA, 0x88, 0x13, 0x00, 0x00)); Emit-CallIat -TargetRva ([UInt32]0x30D0) # WaitForSingleObject
     Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0)); Emit-JumpConditional -ConditionCode 0x85 -Label $threadFail
     Emit-LoadRcxFrame -SlotPosition $threadSlot; Emit-CallIat -TargetRva ([UInt32]0x30B8) # CloseHandle
@@ -1207,12 +1326,24 @@ function Emit-IntegerExpression {
         'Call' {
             if (-not [string]::IsNullOrEmpty([string]$Node.Builtin)) { Emit-BuiltinCall -Node $Node; return }
             $baseDepth = [int]$script:TempDepth
-            for ($i = 0; $i -lt $Node.Arguments.Count; $i++) {
+            $argumentCount = [int]$Node.Arguments.Count
+            if ($argumentCount -gt 16) {
+                Throw-SourceError -Line $Node.Line -Column $Node.Column -Message "Function calls support at most 16 integer arguments under the current Windows x64 ABI subset."
+            }
+            # Evaluate every argument before touching ABI registers or outgoing stack slots.
+            for ($i = 0; $i -lt $argumentCount; $i++) {
                 Emit-IntegerExpression -Node $Node.Arguments[$i]
                 Emit-StoreEaxFrame -SlotPosition (Get-TempSlotPosition -Depth $script:TempDepth)
                 $script:TempDepth++
             }
-            for ($i = 0; $i -lt $Node.Arguments.Count; $i++) {
+            # Every Windows x64 call reserves 32 bytes of shadow space. Additional
+            # arguments occupy 8-byte slots beginning at [RSP+0x20]. The total is
+            # rounded to 16 bytes so RSP remains call-site aligned.
+            $stackArgumentCount = [Math]::Max(0, $argumentCount - 4)
+            $callFrameSize = Align-Up -Value (0x20 + ($stackArgumentCount * 8)) -Alignment 0x10
+            Emit-Bytes -Bytes ([byte[]]@(0x48, 0x81, 0xEC))
+            Emit-I32 -Value $callFrameSize
+            for ($i = 0; $i -lt [Math]::Min(4, $argumentCount); $i++) {
                 Emit-LoadEaxFrame -SlotPosition (Get-TempSlotPosition -Depth ($baseDepth + $i))
                 switch ($i) {
                     0 { Emit-Bytes -Bytes ([byte[]]@(0x89, 0xC1)) }
@@ -1221,8 +1352,14 @@ function Emit-IntegerExpression {
                     3 { Emit-Bytes -Bytes ([byte[]]@(0x41, 0x89, 0xC1)) }
                 }
             }
+            for ($i = 4; $i -lt $argumentCount; $i++) {
+                Emit-LoadEaxFrame -SlotPosition (Get-TempSlotPosition -Depth ($baseDepth + $i))
+                Emit-StackArgumentRax -Offset (0x20 + (($i - 4) * 8))
+            }
             Emit-CallFunction -Name $Node.Name
-            $script:TempDepth -= $Node.Arguments.Count
+            Emit-Bytes -Bytes ([byte[]]@(0x48, 0x81, 0xC4))
+            Emit-I32 -Value $callFrameSize
+            $script:TempDepth -= $argumentCount
             return
         }
         default { Throw-SourceError -Line $Node.Line -Column $Node.Column -Message 'Internal code-generation error: unsupported integer expression node.' }
@@ -1238,7 +1375,9 @@ function Emit-StringExpression {
 }
 function Emit-WriteCall {
     Emit-LoadRcxFrame -SlotPosition 0x78; Emit-LeaR9Frame -SlotPosition 0x70
-    Emit-Bytes -Bytes ([byte[]]@(0x48, 0xC7, 0x44, 0x24, 0x20, 0, 0, 0, 0)); Emit-CallIat -TargetRva ([UInt32]0x3078)
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3078) -StackArguments @(
+        @{ Kind = 'Immediate'; Value = 0 }
+    )
     Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0)); Emit-JumpConditional -ConditionCode 0x84 -Label '__runtime_fail'
 }
 function Emit-PrintString {
@@ -1251,7 +1390,9 @@ function Emit-PrintInteger {
     Emit-IntegerExpression -Node $Node; $formatItem = Register-DataConstant -Value '%d'; Emit-Bytes -Bytes ([byte[]]@(0x41, 0x89, 0xC0)); Emit-LeaRcxFrame -SlotPosition 0x30; Emit-DataAddress -DataItem $formatItem; Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC2)); Emit-CallIat -TargetRva ([UInt32]0x3090)
     Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0)); Emit-JumpConditional -ConditionCode 0x8E -Label '__runtime_fail'; Emit-StoreEaxFrame -SlotPosition 0x74
     Emit-LoadEaxFrame -SlotPosition 0x74; Emit-LeaRdxFrame -SlotPosition 0x30; Emit-Bytes -Bytes ([byte[]]@(0x48, 0x01, 0xC2)); Emit-Bytes -Bytes ([byte[]]@(0xC6, 0x02, 0x0D)); Emit-Bytes -Bytes ([byte[]]@(0xC6, 0x42, 0x01, 0x0A))
-    Emit-LoadRcxFrame -SlotPosition 0x78; Emit-LeaRdxFrame -SlotPosition 0x30; Emit-LoadEaxFrame -SlotPosition 0x74; Emit-Bytes -Bytes ([byte[]]@(0x83, 0xC0, 0x02)); Emit-Bytes -Bytes ([byte[]]@(0x41, 0x89, 0xC0)); Emit-LeaR9Frame -SlotPosition 0x70; Emit-Bytes -Bytes ([byte[]]@(0x48, 0xC7, 0x44, 0x24, 0x20, 0, 0, 0, 0)); Emit-CallIat -TargetRva ([UInt32]0x3078); Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0)); Emit-JumpConditional -ConditionCode 0x84 -Label '__runtime_fail'
+    Emit-LoadRcxFrame -SlotPosition 0x78; Emit-LeaRdxFrame -SlotPosition 0x30; Emit-LoadEaxFrame -SlotPosition 0x74; Emit-Bytes -Bytes ([byte[]]@(0x83, 0xC0, 0x02)); Emit-Bytes -Bytes ([byte[]]@(0x41, 0x89, 0xC0)); Emit-LeaR9Frame -SlotPosition 0x70; Emit-Win64CallIat -TargetRva ([UInt32]0x3078) -StackArguments @(
+        @{ Kind = 'Immediate'; Value = 0 }
+    ); Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0)); Emit-JumpConditional -ConditionCode 0x84 -Label '__runtime_fail'
 }
 function Emit-Statement {
     param([object] $Statement)
@@ -1310,12 +1451,36 @@ function Set-FrameSize {
     $Context.FrameSize = Align-Up -Value $required -Alignment 0x10
     if ($Context.FrameSize -gt 0x100000) { throw "Function or main frame is too large: $($Context.FrameSize) bytes." }
 }
+function Emit-StackProbe {
+    param([int] $FrameSize)
+    if ($FrameSize -le 0 -or ($FrameSize % 16) -ne 0) { throw "Invalid stack-probe frame size: $FrameSize" }
+    # Windows x64 uses a special stack-probe helper contract: RAX carries the
+    # allocation size; the helper preserves RAX and argument registers, and
+    # may clobber only R10, R11, and flags. RSP remains unchanged until it
+    # returns, after which the ordinary fixed SUB RSP is unwind-described.
+    Emit-Bytes -Bytes ([byte[]]@(0xB8)); Emit-I32 -Value $FrameSize # mov eax,FrameSize
+    Emit-Bytes -Bytes ([byte[]]@(0xE8))
+    $dispOffset = $script:Code.Count
+    Emit-I32 -Value 0
+    $script:CodeFixups.Add([pscustomobject]@{ Kind = 'Code'; DispOffset = $dispOffset; Target = '__sharnou_chkstk' })
+}
 function Emit-Prologue {
     param([object] $Context, [object] $Function = $null)
     $script:ActiveContext = $Context; $script:TempDepth = 0
-    Emit-Bytes -Bytes ([byte[]]@(0x55, 0x48, 0x89, 0xE5, 0x48, 0x81, 0xEC)); Emit-I32 -Value $Context.FrameSize
+    $Context | Add-Member -NotePropertyName PrologueSize -NotePropertyValue 0 -Force
+    $Context | Add-Member -NotePropertyName StackAllocCodeOffset -NotePropertyValue 0 -Force
+    $prologueStart = $script:Code.Count
+    Emit-Bytes -Bytes ([byte[]]@(0x55, 0x48, 0x89, 0xE5)) # push rbp; mov rbp,rsp
+    Emit-StackProbe -FrameSize ([int]$Context.FrameSize)
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x81, 0xEC)); Emit-I32 -Value $Context.FrameSize # sub rsp,imm32
+    $Context.PrologueSize = [int]($script:Code.Count - $prologueStart)
+    $Context.StackAllocCodeOffset = $Context.PrologueSize
+    if ($Context.PrologueSize -gt 255) { throw "Generated unwind prologue exceeds 255 bytes: $($Context.PrologueSize)." }
     if ($null -ne $Function) {
-        for ($i = 0; $i -lt $Function.Parameters.Count; $i++) {
+        if ($Function.Parameters.Count -gt 16) {
+            throw "Function '$($Function.Name)' exceeds the supported Windows x64 integer-argument limit of 16."
+        }
+        for ($i = 0; $i -lt [Math]::Min(4, $Function.Parameters.Count); $i++) {
             $slotPosition = 0x80 + ($i * 16)
             switch ($i) {
                 0 { Emit-StoreEcxFrame -SlotPosition $slotPosition }
@@ -1324,13 +1489,46 @@ function Emit-Prologue {
                 3 { Emit-StoreR9dFrame -SlotPosition $slotPosition }
             }
         }
+        # Windows x64 arguments 5..16 are passed in 8-byte stack slots.
+        # After PUSH RBP, the first stack argument is at [RBP+0x30].
+        for ($i = 4; $i -lt $Function.Parameters.Count; $i++) {
+            $slotPosition = 0x80 + ($i * 16)
+            $incomingOffset = 0x30 + (($i - 4) * 8)
+            Emit-Bytes -Bytes ([byte[]]@(0x8B, 0x85)) # mov eax,dword ptr [rbp+disp32]
+            Emit-I32 -Value $incomingOffset
+            Emit-StoreEaxFrame -SlotPosition $slotPosition
+        }
     }
     Emit-Bytes -Bytes ([byte[]]@(0xB9, 0xF5, 0xFF, 0xFF, 0xFF, 0x48, 0x83, 0xEC, 0x20)); Emit-CallIat -TargetRva ([UInt32]0x3070); Emit-Bytes -Bytes ([byte[]]@(0x48, 0x83, 0xC4, 0x20))
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x85, 0xC0)); Emit-JumpConditional -ConditionCode 0x84 -Label '__runtime_fail'
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x83, 0xF8, 0xFF)); Emit-JumpConditional -ConditionCode 0x84 -Label '__runtime_fail'
     Emit-StoreRaxFrame -SlotPosition 0x78
 }
-function Emit-Epilogue { Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xEC, 0x5D, 0xC3)) }
+function New-UnwindInfoBytes {
+    param([object] $Context)
+    $frameSize = [int]$Context.FrameSize
+    if ($frameSize -lt 0x1000 -or ($frameSize % 16) -ne 0) { throw "Unwind metadata received an invalid frame size: $frameSize." }
+    $allocInfo = if ($frameSize -le 0x7FFF8) { 0 } else { 1 }
+    $countOfCodes = if ($allocInfo -eq 0) { 4 } else { 5 }
+    $bytes = [System.Collections.Generic.List[byte]]::new()
+    $bytes.Add([byte]1) # version 1, flags 0
+    $bytes.Add([byte]$Context.PrologueSize)
+    $bytes.Add([byte]$countOfCodes)
+    $bytes.Add([byte]0x05) # frame register RBP, frame offset 0
+    $bytes.Add([byte]$Context.StackAllocCodeOffset)
+    $bytes.Add([byte](($allocInfo -shl 4) -bor 0x01)) # UWOP_ALLOC_LARGE
+    if ($allocInfo -eq 0) {
+        $scaledSize = [UInt16]($frameSize / 8)
+        $bytes.AddRange([BitConverter]::GetBytes($scaledSize))
+    } else {
+        $bytes.AddRange([BitConverter]::GetBytes([UInt32]$frameSize))
+    }
+    $bytes.Add([byte]4); $bytes.Add([byte]0x03) # UWOP_SET_FPREG
+    $bytes.Add([byte]1); $bytes.Add([byte]0x50) # UWOP_PUSH_NONVOL RBP
+    if (($countOfCodes % 2) -ne 0) { $bytes.Add([byte]0); $bytes.Add([byte]0) }
+    return ,$bytes.ToArray()
+}
+function Emit-Epilogue { Emit-Bytes -Bytes ([byte[]]@(0x48, 0x8D, 0x65, 0x00, 0x5D, 0xC3)) } # lea rsp,[rbp+0]; pop rbp; ret (legal x64 epilogue)
 function Test-ImageBasic {
     param([byte[]] $Image)
     if ($Image.Length -lt 0x400 -or $Image[0] -ne 0x4D -or $Image[1] -ne 0x5A) { throw 'Internal linker validation: invalid DOS header.' }
@@ -1338,7 +1536,7 @@ function Test-ImageBasic {
     if ($pe -lt 0 -or ($pe + 24) -gt $Image.Length -or $Image[$pe] -ne 0x50 -or $Image[$pe + 1] -ne 0x45) { throw 'Internal linker validation: invalid PE header/signature.' }
     if ([BitConverter]::ToUInt16($Image, $pe + 4) -ne 0x8664) { throw 'Internal linker validation: target machine is not AMD64.' }
     if ([BitConverter]::ToUInt16($Image, $pe + 24) -ne 0x020B) { throw 'Internal linker validation: optional header is not PE32+.' }
-    $count = [BitConverter]::ToUInt16($Image, $pe + 6); if ($count -ne 4) { throw "Internal linker validation: expected four sections, found $count." }
+    $count = [BitConverter]::ToUInt16($Image, $pe + 6); if ($count -ne 6) { throw "Internal linker validation: expected six sections, found $count." }
     $table = $pe + 24 + [BitConverter]::ToUInt16($Image, $pe + 20)
     if (($table + ($count * 40)) -gt [BitConverter]::ToUInt32($Image, $pe + 24 + 60)) { throw 'Internal linker validation: section headers exceed SizeOfHeaders.' }
     $optional = $pe + 24
@@ -1352,6 +1550,8 @@ function Test-ImageBasic {
     }
     $relocRva = [BitConverter]::ToUInt32($Image, $optional + 152); $relocSize = [BitConverter]::ToUInt32($Image, $optional + 156)
     if ($relocSectionRva -eq 0 -or $relocRva -ne $relocSectionRva -or $relocSize -ne 12) { throw 'Internal linker validation: base relocation directory is missing or malformed.' }
+    $exceptionRva = [BitConverter]::ToUInt32($Image, $optional + 136); $exceptionSize = [BitConverter]::ToUInt32($Image, $optional + 140)
+    if ($exceptionRva -eq 0 -or $exceptionSize -lt 12 -or ($exceptionSize % 12) -ne 0) { throw 'Internal linker validation: x64 exception/unwind directory is missing or malformed.' }
 }
 
 if (-not [Environment]::Is64BitOperatingSystem) { throw 'The Sharnou compiler emits x64 PE32+ executables and requires 64-bit Windows.' }
@@ -1364,6 +1564,7 @@ if (Test-Path -LiteralPath $outputFullPath) { Remove-Item -LiteralPath $outputFu
 $script:Functions = [System.Collections.Generic.Dictionary[string, object]]::new([System.StringComparer]::Ordinal)
 $script:Builtins = [System.Collections.Generic.Dictionary[string, object]]::new([System.StringComparer]::Ordinal)
 $builtinDefinitions = @(
+    [pscustomobject]@{ Name = 'sh_abi_nonvolatile_probe'; Builtin = 'AbiNonvolatileProbe'; ParameterTypes = @(); ReturnType = 'Integer' },
     [pscustomobject]@{ Name = 'sh_string_length'; Builtin = 'StringLength'; ParameterTypes = @('String'); ReturnType = 'Integer' },
     [pscustomobject]@{ Name = 'sh_string_equal'; Builtin = 'StringEqual'; ParameterTypes = @('String', 'String'); ReturnType = 'Integer' },
     [pscustomobject]@{ Name = 'sh_log'; Builtin = 'Log'; ParameterTypes = @('String'); ReturnType = 'Integer' },
@@ -1422,9 +1623,62 @@ foreach ($functionObject in ($script:Functions.Values | Sort-Object Index)) {
     Emit-IntegerExpression -Node $functionObject.ReturnExpression
     Emit-Epilogue
 }
+# Windows x64 stack-probe helper. This is a leaf routine using only R10/R11
+# and flags; RAX (the requested allocation size), argument registers, RSP, and
+# all nonvolatile registers are preserved. Leaf routines require no .pdata row.
+$stackProbeOffset = [int]$script:Code.Count
+Mark-CodeLabel -Label '__sharnou_chkstk'
+Emit-Bytes -Bytes ([byte[]]@(0x49, 0x89, 0xE2)) # mov r10,rsp (includes the call return address)
+Emit-Bytes -Bytes ([byte[]]@(0x49, 0x89, 0xC3)) # mov r11,rax
+Emit-Bytes -Bytes ([byte[]]@(0x49, 0x83, 0xEB, 0x08)) # sub r11,8 (adjust for the call return address)
+$probeLoopLabel = New-UniqueLabel -Prefix 'chkstk_loop'
+$probeTailLabel = New-UniqueLabel -Prefix 'chkstk_tail'
+$probeDoneLabel = New-UniqueLabel -Prefix 'chkstk_done'
+Mark-CodeLabel -Label $probeLoopLabel
+Emit-Bytes -Bytes ([byte[]]@(0x49, 0x81, 0xFB, 0x00, 0x10, 0x00, 0x00)) # cmp r11,1000h
+Emit-JumpConditional -ConditionCode 0x82 -Label $probeTailLabel
+Emit-Bytes -Bytes ([byte[]]@(0x49, 0x81, 0xEA, 0x00, 0x10, 0x00, 0x00)) # sub r10,1000h
+Emit-Bytes -Bytes ([byte[]]@(0x41, 0xF6, 0x02, 0x00)) # test byte ptr [r10],0
+Emit-Bytes -Bytes ([byte[]]@(0x49, 0x81, 0xEB, 0x00, 0x10, 0x00, 0x00)) # sub r11,1000h
+Emit-Jump -Label $probeLoopLabel
+Mark-CodeLabel -Label $probeTailLabel
+Emit-Bytes -Bytes ([byte[]]@(0x4D, 0x85, 0xDB)) # test r11,r11
+Emit-JumpConditional -ConditionCode 0x84 -Label $probeDoneLabel
+Emit-Bytes -Bytes ([byte[]]@(0x4D, 0x29, 0xDA)) # sub r10,r11
+Emit-Bytes -Bytes ([byte[]]@(0x41, 0xF6, 0x02, 0x00)) # test byte ptr [r10],0
+Mark-CodeLabel -Label $probeDoneLabel
+Emit-Bytes -Bytes ([byte[]]@(0xC3)) # ret; RAX is deliberately unchanged
+
 # WINAPI thread callback used by the thread/synchronization smoke-test intrinsic.
+$workerOffset = [int]$script:Code.Count
 Mark-CodeLabel -Label '__sharnou_worker'
 Emit-Bytes -Bytes ([byte[]]@(0x31, 0xC0, 0xC3)) # return DWORD 0
+
+# The stack-probe helper and worker callback are true leaf routines and need
+# no RUNTIME_FUNCTION entries. Every frame-owning function gets x64 unwind data.
+$orderedFunctions = @($script:Functions.Values | Sort-Object Index)
+$runtimeFunctionSpecs = [System.Collections.Generic.List[object]]::new()
+$entryEndOffset = if ($orderedFunctions.Count -gt 0) { [int]$script:CodeLabels[$orderedFunctions[0].Label] } else { $stackProbeOffset }
+$runtimeFunctionSpecs.Add([pscustomobject]@{ StartOffset = [int]$script:CodeLabels['__entry']; EndOffset = $entryEndOffset; Context = $script:MainContext; UnwindBytes = $null; UnwindOffset = 0 })
+for ($functionIndex = 0; $functionIndex -lt $orderedFunctions.Count; $functionIndex++) {
+    $functionObject = $orderedFunctions[$functionIndex]
+    $startOffset = [int]$script:CodeLabels[$functionObject.Label]
+    $endOffset = if (($functionIndex + 1) -lt $orderedFunctions.Count) { [int]$script:CodeLabels[$orderedFunctions[$functionIndex + 1].Label] } else { $stackProbeOffset }
+    if ($endOffset -le $startOffset) { throw "Invalid generated function range for '$($functionObject.Name)'." }
+    $runtimeFunctionSpecs.Add([pscustomobject]@{ StartOffset = $startOffset; EndOffset = $endOffset; Context = $functionObject.Context; UnwindBytes = $null; UnwindOffset = 0 })
+}
+foreach ($runtimeFunction in $runtimeFunctionSpecs) {
+    $runtimeFunction.UnwindBytes = New-UnwindInfoBytes -Context $runtimeFunction.Context
+}
+$xdataLength = 0
+foreach ($runtimeFunction in $runtimeFunctionSpecs) {
+    $xdataLength = Align-Up -Value $xdataLength -Alignment 4
+    $runtimeFunction.UnwindOffset = $xdataLength
+    $xdataLength += $runtimeFunction.UnwindBytes.Length
+}
+$pdataLength = $runtimeFunctionSpecs.Count * 12
+if ($pdataLength -le 0 -or $xdataLength -le 0) { throw 'Generated PE unwind tables cannot be empty.' }
+
 $codeBytes = $script:Code.ToArray()
 if ($codeBytes.Length -le 0) { throw 'Generated .text section is empty.' }
 if ($codeBytes.Length -gt 0x01000000) { throw "Generated .text section is too large: $($codeBytes.Length) bytes; maximum is 16777216." }
@@ -1437,11 +1691,27 @@ if ($script:DataLength -gt 0x1000) { throw "Generated .rdata section is too larg
 $dataVirtualSpan = Align-Up -Value ([Math]::Max(8, $script:DataLength)) -Alignment 0x1000
 $idataVirtualSpan = Align-Up -Value 0x800 -Alignment 0x1000
 $relocVirtualSpan = Align-Up -Value 12 -Alignment 0x1000
+$pdataVirtualSpan = Align-Up -Value $pdataLength -Alignment 0x1000
+$xdataVirtualSpan = Align-Up -Value $xdataLength -Alignment 0x1000
 $dataRva = [UInt32]([long]$textRva + [long]$textVirtualSpan)
 $idataRva = [UInt32]([long]$dataRva + [long]$dataVirtualSpan)
 $relocRva = [UInt32]([long]$idataRva + [long]$idataVirtualSpan)
-$sizeOfImage = [UInt32]([long]$relocRva + [long]$relocVirtualSpan)
+$pdataRva = [UInt32]([long]$relocRva + [long]$relocVirtualSpan)
+$xdataRva = [UInt32]([long]$pdataRva + [long]$pdataVirtualSpan)
+$sizeOfImage = [UInt32]([long]$xdataRva + [long]$xdataVirtualSpan)
 if ([UInt64]$sizeOfImage -gt [UInt32]::MaxValue) { throw 'Linked image exceeds the PE32+ 32-bit RVA address space.' }
+
+# Build sorted x64 RUNTIME_FUNCTION entries and their 4-byte-aligned UNWIND_INFO records.
+$pdataBytes = [byte[]]::new($pdataLength)
+$xdataBytes = [byte[]]::new($xdataLength)
+for ($runtimeIndex = 0; $runtimeIndex -lt $runtimeFunctionSpecs.Count; $runtimeIndex++) {
+    $runtimeFunction = $runtimeFunctionSpecs[$runtimeIndex]
+    $recordOffset = $runtimeIndex * 12
+    Set-U32 -Buffer $pdataBytes -Offset $recordOffset -Value ([UInt32]([long]$textRva + [long]$runtimeFunction.StartOffset))
+    Set-U32 -Buffer $pdataBytes -Offset ($recordOffset + 4) -Value ([UInt32]([long]$textRva + [long]$runtimeFunction.EndOffset))
+    Set-U32 -Buffer $pdataBytes -Offset ($recordOffset + 8) -Value ([UInt32]([long]$xdataRva + [long]$runtimeFunction.UnwindOffset))
+    [System.Buffer]::BlockCopy($runtimeFunction.UnwindBytes, 0, $xdataBytes, $runtimeFunction.UnwindOffset, $runtimeFunction.UnwindBytes.Length)
+}
 
 # Patch RIP-relative data references, IAT calls, conditional branches, and internal rel32 calls.
 foreach ($fixup in $script:CodeFixups) {
@@ -1536,17 +1806,29 @@ $reloc = [byte[]]::new(0x200)
 Set-U32 -Buffer $reloc -Offset 0 -Value $dataRva; Set-U32 -Buffer $reloc -Offset 4 -Value 12; Set-U16 -Buffer $reloc -Offset 8 -Value 0xA000; Set-U16 -Buffer $reloc -Offset 10 -Value 0
 if ($idata.Length -gt $idataVirtualSpan) { throw 'Generated .idata section exceeds its reserved virtual span.' }
 $headersSize = 0x400
-$textRawPointer = $headersSize; $dataRawPointer = $textRawPointer + $textRawSize; $idataRawPointer = $dataRawPointer + $dataRawSize; $relocRawPointer = $idataRawPointer + $idata.Length
-$totalSize = $relocRawPointer + $reloc.Length
+$pdataRawSize = Align-Up -Value $pdataBytes.Length -Alignment 0x200
+$xdataRawSize = Align-Up -Value $xdataBytes.Length -Alignment 0x200
+$textRawPointer = $headersSize
+$dataRawPointer = $textRawPointer + $textRawSize
+$idataRawPointer = $dataRawPointer + $dataRawSize
+$relocRawPointer = $idataRawPointer + $idata.Length
+$pdataRawPointer = $relocRawPointer + $reloc.Length
+$xdataRawPointer = $pdataRawPointer + $pdataRawSize
+$totalSize = $xdataRawPointer + $xdataRawSize
 $image = [byte[]]::new($totalSize)
-Set-Bytes -Buffer $image -Offset $textRawPointer -Bytes $codeBytes; Set-Bytes -Buffer $image -Offset $dataRawPointer -Bytes $dataBytes; Set-Bytes -Buffer $image -Offset $idataRawPointer -Bytes $idata; Set-Bytes -Buffer $image -Offset $relocRawPointer -Bytes $reloc
+Set-Bytes -Buffer $image -Offset $textRawPointer -Bytes $codeBytes
+Set-Bytes -Buffer $image -Offset $dataRawPointer -Bytes $dataBytes
+Set-Bytes -Buffer $image -Offset $idataRawPointer -Bytes $idata
+Set-Bytes -Buffer $image -Offset $relocRawPointer -Bytes $reloc
+Set-Bytes -Buffer $image -Offset $pdataRawPointer -Bytes $pdataBytes
+Set-Bytes -Buffer $image -Offset $xdataRawPointer -Bytes $xdataBytes
 
 # DOS and PE headers.
 $image[0] = 0x4D; $image[1] = 0x5A; Set-U32 -Buffer $image -Offset 0x3C -Value 0x80; Set-Ascii -Buffer $image -Offset 0x80 -Value "PE`0`0"
-Set-U16 -Buffer $image -Offset 0x84 -Value 0x8664; Set-U16 -Buffer $image -Offset 0x86 -Value 4; Set-U32 -Buffer $image -Offset 0x88 -Value 0; Set-U32 -Buffer $image -Offset 0x8C -Value 0; Set-U32 -Buffer $image -Offset 0x90 -Value 0; Set-U16 -Buffer $image -Offset 0x94 -Value 240; Set-U16 -Buffer $image -Offset 0x96 -Value 0x0022
+Set-U16 -Buffer $image -Offset 0x84 -Value 0x8664; Set-U16 -Buffer $image -Offset 0x86 -Value 6; Set-U32 -Buffer $image -Offset 0x88 -Value 0; Set-U32 -Buffer $image -Offset 0x8C -Value 0; Set-U32 -Buffer $image -Offset 0x90 -Value 0; Set-U16 -Buffer $image -Offset 0x94 -Value 240; Set-U16 -Buffer $image -Offset 0x96 -Value 0x0022
 $opt = 0x98
 Set-U16 -Buffer $image -Offset ($opt + 0) -Value 0x020B; $image[$opt + 2] = 1; $image[$opt + 3] = 0
-Set-U32 -Buffer $image -Offset ($opt + 4) -Value $textRawSize; Set-U32 -Buffer $image -Offset ($opt + 8) -Value ($dataRawSize + $idata.Length + $reloc.Length); Set-U32 -Buffer $image -Offset ($opt + 12) -Value 0
+Set-U32 -Buffer $image -Offset ($opt + 4) -Value $textRawSize; Set-U32 -Buffer $image -Offset ($opt + 8) -Value ($dataRawSize + $idata.Length + $reloc.Length + $pdataRawSize + $xdataRawSize); Set-U32 -Buffer $image -Offset ($opt + 12) -Value 0
 Set-U32 -Buffer $image -Offset ($opt + 16) -Value $textRva; Set-U32 -Buffer $image -Offset ($opt + 20) -Value $textRva; Set-U64 -Buffer $image -Offset ($opt + 24) -Value ([UInt64]([Int64]0x140000000))
 Set-U32 -Buffer $image -Offset ($opt + 32) -Value 0x1000; Set-U32 -Buffer $image -Offset ($opt + 36) -Value 0x200
 Set-U16 -Buffer $image -Offset ($opt + 40) -Value 6; Set-U16 -Buffer $image -Offset ($opt + 42) -Value 0; Set-U16 -Buffer $image -Offset ($opt + 44) -Value 0; Set-U16 -Buffer $image -Offset ($opt + 46) -Value 0; Set-U16 -Buffer $image -Offset ($opt + 48) -Value 6; Set-U16 -Buffer $image -Offset ($opt + 50) -Value 0
@@ -1555,6 +1837,7 @@ Set-U16 -Buffer $image -Offset ($opt + 68) -Value 3; Set-U16 -Buffer $image -Off
 Set-U64 -Buffer $image -Offset ($opt + 72) -Value ([UInt64]0x100000); Set-U64 -Buffer $image -Offset ($opt + 80) -Value ([UInt64]0x1000); Set-U64 -Buffer $image -Offset ($opt + 88) -Value ([UInt64]0x100000); Set-U64 -Buffer $image -Offset ($opt + 96) -Value ([UInt64]0x1000)
 Set-U32 -Buffer $image -Offset ($opt + 104) -Value 0; Set-U32 -Buffer $image -Offset ($opt + 108) -Value 16
 Set-U32 -Buffer $image -Offset ($opt + 120) -Value ([UInt32]([long]$idataRva + [long]$descriptorBase)); Set-U32 -Buffer $image -Offset ($opt + 124) -Value $importDirectorySize
+Set-U32 -Buffer $image -Offset ($opt + 136) -Value $pdataRva; Set-U32 -Buffer $image -Offset ($opt + 140) -Value $pdataBytes.Length
 Set-U32 -Buffer $image -Offset ($opt + 152) -Value $relocRva; Set-U32 -Buffer $image -Offset ($opt + 156) -Value 12
 Set-U32 -Buffer $image -Offset ($opt + 208) -Value ([UInt32]([long]$idataRva + 0x70)); Set-U32 -Buffer $image -Offset ($opt + 212) -Value 0x108
 $sectionText = 0x188
@@ -1565,6 +1848,10 @@ $sectionImport = 0x1D8
 Set-Ascii -Buffer $image -Offset $sectionImport -Value '.idata'; Set-U32 -Buffer $image -Offset ($sectionImport + 8) -Value $idata.Length; Set-U32 -Buffer $image -Offset ($sectionImport + 12) -Value $idataRva; Set-U32 -Buffer $image -Offset ($sectionImport + 16) -Value $idata.Length; Set-U32 -Buffer $image -Offset ($sectionImport + 20) -Value $idataRawPointer; Set-U32 -Buffer $image -Offset ($sectionImport + 36) -Value ([UInt32]([Int64]3221225536))
 $sectionReloc = 0x200
 Set-Ascii -Buffer $image -Offset $sectionReloc -Value '.reloc'; Set-U32 -Buffer $image -Offset ($sectionReloc + 8) -Value 12; Set-U32 -Buffer $image -Offset ($sectionReloc + 12) -Value $relocRva; Set-U32 -Buffer $image -Offset ($sectionReloc + 16) -Value $reloc.Length; Set-U32 -Buffer $image -Offset ($sectionReloc + 20) -Value $relocRawPointer; Set-U32 -Buffer $image -Offset ($sectionReloc + 36) -Value 0x42000040
+$sectionPdata = 0x228
+Set-Ascii -Buffer $image -Offset $sectionPdata -Value '.pdata'; Set-U32 -Buffer $image -Offset ($sectionPdata + 8) -Value $pdataBytes.Length; Set-U32 -Buffer $image -Offset ($sectionPdata + 12) -Value $pdataRva; Set-U32 -Buffer $image -Offset ($sectionPdata + 16) -Value $pdataRawSize; Set-U32 -Buffer $image -Offset ($sectionPdata + 20) -Value $pdataRawPointer; Set-U32 -Buffer $image -Offset ($sectionPdata + 36) -Value 0x40000040
+$sectionXdata = 0x250
+Set-Ascii -Buffer $image -Offset $sectionXdata -Value '.xdata'; Set-U32 -Buffer $image -Offset ($sectionXdata + 8) -Value $xdataBytes.Length; Set-U32 -Buffer $image -Offset ($sectionXdata + 12) -Value $xdataRva; Set-U32 -Buffer $image -Offset ($sectionXdata + 16) -Value $xdataRawSize; Set-U32 -Buffer $image -Offset ($sectionXdata + 20) -Value $xdataRawPointer; Set-U32 -Buffer $image -Offset ($sectionXdata + 36) -Value 0x40000040
 Test-ImageBasic -Image $image
 
 $outputDirectory = [System.IO.Path]::GetDirectoryName($outputFullPath)
@@ -1581,6 +1868,6 @@ try {
 $sha256 = (Get-FileHash -LiteralPath $outputFullPath -Algorithm SHA256).Hash
 Write-Host "Created native x64 PE32+ executable: $outputFullPath"
 Write-Host ("Link result: modules={0}, functions={1}, codeBytes={2}, dataBytes={3}" -f $script:Modules.Count, $script:Functions.Count, $codeBytes.Length, $dataBytes.Length)
-Write-Host 'Sections: .text, .rdata, .idata, .reloc; imports: KERNEL32.dll, USER32.dll, D3D11.dll, and DXGI.dll'
+Write-Host 'Sections: .text, .rdata, .idata, .reloc, .pdata, .xdata; imports: KERNEL32.dll, USER32.dll, D3D11.dll, and DXGI.dll'
 Write-Host "SHA-256: $sha256"
 Write-Warning 'Milestone 6 adds a native D3D11/DXGI solid-clear demo and runtime frame timing. Native rendering must be validated on an interactive Windows desktop. Shader/geometry rendering, device-loss recovery, resize handling, and persistent window/event loops remain unsupported.' 

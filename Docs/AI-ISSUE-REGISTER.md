@@ -403,3 +403,65 @@ This entry supersedes earlier PR #11 ahead/behind counts in the historical entri
 - Next implementation must start from a fresh feature branch after those prerequisites, beginning with the typed allowlisted process broker and adversarial security/rollback tests. Research/download quarantine, PE/x64 analysis, local inference, planner/subagents, autonomous repair, and optional providers follow in the documented dependency order.
 
 Classification: REPOSITORY PRESENT / STATIC REVIEWED; historical PR #7 WINDOWS CI PASS for the test-orchestrator demo only; current-default DevAgent NOT PRESENT; autonomous AI NOT IMPLEMENTED / NOT RUN; safe implementation BLOCKED by issues #9 and #1.
+
+ 
+## Milestone 7A local regression repair - 2026-11-25
+
+- User-provided Windows log: Stage 5 24/25 because `Tests\\StdLib\\Collections.sharnou` is missing; Stage 7A 27/28 because the `BranchConditionCodes` case returned 6 of 13 expected output lines. Other displayed gates passed: Engine foundation 5/5, builds 22/22, runtime examples 15/15, Stage 2 25/25, Stage 4 20/20, PE verifier 4/4, Stage 6 9/9.
+- PR #15 restores the canonical M6 `StdLib/Collections.sharnou` module, provides a legacy `Tests/StdLib` import shim, and adds a native 13-line branch-boundary reproducer.
+- Windows Actions run 45696244484 on PR #15 head `01fd2d7b6bd6ab4d80a920449bc529fa865634e8`: 24/24 Stage 7A, 2/2 collection-import tests, source encoding PASS, Combined result PASS.
+- The original local `BranchConditionCodes.sharnou` and expanded local `Test.ps1` were not supplied. The equivalent new test passes; a compiler defect is therefore NOT established. Keep the original local result classified as user-reported failure until those exact files can be compared.
+- PR #15 remains open/unmerged. No default-branch source changes or baseline integration are claimed.
+
+ 
+### BranchConditionCodes failure follow-up - 2026-11-25
+
+- Local failing executable link record: 1 module, 0 functions, 1,171 code bytes, 57 data bytes; local output shows only six labels.
+- PR #15's independent 13-output equivalent generated 3,573 code bytes and 275 data bytes; Windows runtime output matched all 13 expected labels.
+- Distinct output strings are stored in the generated data section, so the local 57-byte data section strongly suggests the local binary did not contain the seven additional labels. This makes an incomplete/stale test fixture or an untested local syntax path more likely than a general signed-Jcc lowering defect. The exact local source remains required for final root-cause attribution.
+
+
+## 2026-11-25 user-local Milestone 7A validation
+
+- Source snapshot: PR #15 head `de4e64e3f45bc142391886033c33a825722a6eca`.
+- User-reported Windows run: Stage 7A 24/24 (9 positive, 12 negative, 3 native instruction/branch checks); Stage 5 collection-import regression 2/2; Combined result PASS.
+- Native build/run: 9/9 control-flow executables built and PE-verified; 9/9 returned exit code 0 with expected output. BranchConditionCodes emitted all 13 expected lines; canonical and legacy collection imports both passed.
+- The eight PowerShell `InputObjectNotBound` errors came from piping `Get-ChildItem` results into the parameterless `Test.ps1`; they are not compiler/test-case failures. Run `Get-ChildItem ...` and ` .\Test.ps1` separately.
+- Frozen M1-M6 83-case baseline was not run in this log; issue #9 / PR #11 remain separate and unmerged.
+- Issue #1 remains open: static review of this compiler snapshot still shows no large-frame stack probing and no PE x64 unwind metadata. Microsoft documents stack probing for fixed allocations at least one page and unwind tables for non-leaf functions. These are static ABI gaps, not failures reported by the current M7A run.
+- README and accepted-plan test counts are updated to 9 positive + 12 negative + 3 instruction checks = 24, plus the separate 2-case collection import regression.
+
+## Windows x64 stack-probe and unwind repair - 2026-11-25
+
+- PR [#16](https://github.com/Sharnou/Sharnou-Compiler/pull/16) implements the missing page-by-page stack probe and PE x64 unwind metadata.
+- Compiler now emits a private leaf page-probe helper called before fixed stack allocation; `.pdata` / `.xdata` and the exception directory describe the entry function and generated user functions; function epilogues use LEA / POP / RET.
+- PE verification now validates six sections, exception-directory coverage, runtime-function entries, both UWOP_ALLOC_LARGE forms, frame/prologue consistency, stack-probe helper bytes and relative branch targets.
+- Windows Actions run [45705513598](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45705513598) on PR #16 head `b1365dc17bb5aeaad74462633fadfdc29b56fa3e` passed ASCII/no-BOM, Stage 7A 24/24, Stage 5 collection imports 2/2, stack-probe/unwind 6/6, and Combined result PASS. The 17,000-local native test executable ran with expected output and exit code 0.
+- This is **WINDOWS CI PASS**. User-local test evidence remains from the pre-ABI PR #15 snapshot; local retest of PR #16 has not yet been reported. PR #16 remains open/unmerged.
+- Issue #1 is partially resolved. Runtime nonvolatile-register sentinels, RSP/call-site alignment and argument-value probes, and a generic checked Windows API marshaller remain open. The 83-case M1-M6 baseline remains separately blocked under issue #9 / PR #11.
+
+ 
+## Runtime ABI gate completion - 2026-11-26
+
+The following ABI runtime tranche is implemented on the PR #17 integration branch. Code-bearing commit `8c14261c3b2154dc115f935271f93389637246e1` passed Windows CI:
+
+- Stage 7A: 24/24.
+- Stage 5 collection imports: 2/2.
+- Stack-probe/unwind: 6/6.
+- Runtime ABI suite: PASS, including runtime sentinels for RBX/RBP/RSI/RDI/R12-R15, live RSP alignment assertions, argument-value checks for 4/5/6/8 integer arguments, nested argument ordering, and higher-arity Win32 API calls.
+- Frozen M1-M6 baseline: 83/83 on the same PR head.
+- Combined result: PASS.
+
+Windows evidence:
+- Stage 7A / combined run: [45717111101](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45717111101).
+- Frozen M1-M6 run: [45717111040](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45717111040).
+
+The compiler now supports up to 16 integer arguments for generated Sharnou functions (four register arguments plus twelve stack arguments), reserves Windows x64 shadow space, and maintains 16-byte call-site alignment. The generic `Emit-Win64CallIat` stack marshaller is used for CreateFileA, ReadFile, CreateWindowExA, PeekMessageA, CreateThread, WriteFile, and both D3D11CreateDeviceAndSwapChain paths. Runtime file/window/thread probes exercise the relevant calls. The M1-M6 runner sets a process-scoped legacy arity compatibility flag only while replaying the historical suite; the normal compiler remains enabled for 16 arguments.
+
+PR #17 remains OPEN and UNMERGED. This is Windows CI evidence, not user-local Windows validation. Issue #1's requested runtime ABI tranche is complete in CI; R25-R4 archive equivalence and human review remain separate provenance/integration gates.
+
+### Next dependency: secure native process broker
+
+The broker security design is now recorded in `Docs/SHARNOU-DEVAGENT-PROCESS-BROKER-SECURITY-DESIGN.md`. It defines a typed `sh_dev_run_tool(tool_id, timeout_ms)` API, immutable tool descriptors, SHA-256 allowlisting, canonical workspace confinement, restricted execution, suspended process creation, Job Object containment, timeout/cancellation, bounded output, and adversarial tests.
+
+The historical PR #7 raw-command process intrinsic remains rejected and must not be reused. Native broker implementation has NOT started; model-controlled process execution remains DISABLED until all security gates pass.

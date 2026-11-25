@@ -77,10 +77,17 @@ Run from the repository root in 64-bit Windows PowerShell 5.1:
     .\Test.ps1
     .\Dev.ps1
 
-Test.ps1 executes Tests\Test-Stage7A.ps1, which compiles and runs eight positive programs, checks twelve invalid programs for line/column diagnostics and absence of output executables, and inspects generated code for all six SETcc forms and the branch/loop instructions.
+Test.ps1 executes Tests\Test-Stage7A.ps1, which compiles and runs nine positive programs, checks twelve invalid programs for line/column diagnostics and absence of output executables, and inspects generated code for all six SETcc forms and the branch/loop instructions (24 Stage 7A checks total). It then runs two Stage 5 collection-import regression cases and six Windows x64 stack-probe/unwind checks, including a multi-page native frame and malformed-unwind rejection. Invoke .\Test.ps1 directly; do not pipe Get-ChildItem output into the test script.
 
-The PE verifier is Tools\SharnouPEVerify.ps1. It checks the AMD64 PE32+ headers, four-section layout, import descriptors, required system imports, relocation block, and dynamic .text section size.
+The PE verifier is Tools\SharnouPEVerify.ps1. It checks the AMD64 PE32+ headers, six-section layout (.text, .rdata, .idata, .reloc, .pdata, .xdata), import descriptors, required system imports, relocation block, exception directory, runtime-function ranges, x64 UNWIND_INFO records, generated prologues, and the private stack-probe helper.
 
+## Windows x64 stack safety and unwinding
+
+Every generated entry/function frame is allocated with a stack-probe call before the fixed RSP subtraction. The private leaf helper probes the requested range downward in 4 KiB steps, preserves RAX and the Windows x64 argument registers, and uses only volatile R10/R11 plus flags. Stack frames are bounded by the compiler's existing 1 MiB limit.
+
+The PE linker emits a sorted RUNTIME_FUNCTION table in .pdata and version-1 UNWIND_INFO records in .xdata for the entry point and each generated Sharnou function. The records describe RBP establishment, the fixed stack allocation (UWOP_ALLOC_LARGE), and the saved RBP. Function epilogues use LEA RSP,[RBP+0], POP RBP, RET. The PE verifier checks the exception directory, section layout, unwind-code encodings, prologue allocation sizes, stack-probe helper bytes and branch destinations.
+
+Tests/Test-StackProbeUnwind.ps1 is included in Test.ps1. It creates and executes a multi-page frame, exercises both UWOP_ALLOC_LARGE encodings, and confirms the verifier rejects corrupt exception/unwind metadata. This verifies the stack probe and PE unwind structures on Windows; it does not yet constitute the separate nonvolatile-register sentinel, runtime RSP/alignment, arbitrary argument-marshalling, or complete ABI acceptance gates tracked in issue #1.
 ## Baseline regression note
 
 The Milestone 6 branch imported for this work did not contain the 83-case regression-suite sources or their fixture directories. The previously reported local Milestone 6 pass is retained as project history, but this branch must not claim those 83 cases were rerun until that suite is checked into the repository and executed. The Stage 7A workflow runs the new control-flow suite on a Windows runner.

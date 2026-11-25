@@ -1,0 +1,35 @@
+fn abi_nonvolatile_target() {
+    let equal = sh_string_equal("register-sentinel", "register-sentinel");
+    let filled = sh_memory_fill(8, 90);
+    return equal + filled;
+}
+fn weighted8(a, b, c, d, e, f, g, h) {
+    return a + b * 2 + c * 3 + d * 4 + e * 5 + f * 6 + g * 7 + h * 8;
+}
+fn reverse8(a, b, c, d, e, f, g, h) {
+    return weighted8(h, g, f, e, d, c, b, a);
+}
+fn sum5(a, b, c, d, e) {
+    return a + b * 10 + c * 100 + d * 1000 + e * 10000;
+}
+fn sum6(a, b, c, d, e, f) {
+    return a + b * 10 + c * 100 + d * 1000 + e * 10000 + f * 100000;
+}
+fn sum4(a, b, c, d) {
+    return a + b + c + d;
+}
+print(weighted8(1, 2, 3, 4, 5, 6, 7, 8));
+print(reverse8(1, 2, 3, 4, 5, 6, 7, 8));
+print(sum5(1, 2, 3, 4, 5));
+print(sum6(1, 2, 3, 4, 5, 6));
+print(sum4(1, 2, 3, 4));
+print(sh_string_equal("abi-sentinel", "abi-sentinel"));
+print(sh_string_equal("abi-sentinel", "abi-sentinEL"));
+print(sh_memory_fill(32, 65));
+print(sh_memory_byte_at(0));
+print(sh_file_exists("Tests\\RuntimeABI\\RuntimeABICalls.sharnou"));
+print(sh_asset_read_count("Tests\\RuntimeABI\\RuntimeABICalls.sharnou", 16));
+print(sh_asset_read_byte("Tests\\RuntimeABI\\RuntimeABICalls.sharnou", 0));
+print(sh_window_probe("Sharnou ABI Probe"));
+print(sh_thread_sync_probe());
+print(sh_abi_nonvolatile_probe());
