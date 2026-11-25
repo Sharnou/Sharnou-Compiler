@@ -1714,6 +1714,6 @@ try {
 $sha256 = (Get-FileHash -LiteralPath $outputFullPath -Algorithm SHA256).Hash
 Write-Host "Created native x64 PE32+ executable: $outputFullPath"
 Write-Host ("Link result: modules={0}, functions={1}, codeBytes={2}, dataBytes={3}" -f $script:Modules.Count, $script:Functions.Count, $codeBytes.Length, $dataBytes.Length)
-Write-Host 'Sections: .text, .rdata, .idata, .reloc; imports: KERNEL32.dll, USER32.dll, D3D11.dll, and DXGI.dll'
+Write-Host 'Sections: .text, .rdata, .idata, .reloc, .pdata, .xdata; imports: KERNEL32.dll, USER32.dll, D3D11.dll, and DXGI.dll'
 Write-Host "SHA-256: $sha256"
 Write-Warning 'Milestone 6 adds a native D3D11/DXGI solid-clear demo and runtime frame timing. Native rendering must be validated on an interactive Windows desktop. Shader/geometry rendering, device-loss recovery, resize handling, and persistent window/event loops remain unsupported.' 
