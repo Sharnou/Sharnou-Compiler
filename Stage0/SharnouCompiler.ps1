@@ -871,9 +871,9 @@ function Emit-BuiltinCall {
             Emit-LoadRcxFrame -SlotPosition $handleSlot; Emit-LeaRdxFrame -SlotPosition $script:ActiveContext.ScratchPosition
             Emit-LoadEaxFrame -SlotPosition $indexSlot; Emit-Bytes -Bytes ([byte[]]@(0x83, 0xC0, 0x01, 0x41, 0x89, 0xC0)) # read index + 1 bytes
             Emit-LeaRaxFrame -SlotPosition ($script:ActiveContext.ScratchPosition + 0x1000); Emit-Bytes -Bytes ([byte[]]@(0x49, 0x89, 0xC1))
-            Emit-Bytes -Bytes ([byte[]]@(0x48, 0x83, 0xEC, 0x30)); Emit-StackArgumentImmediate -Offset 0x20 -Value 0
-            Emit-CallIat -TargetRva ([UInt32]0x30B0) # ReadFile
-            Emit-Bytes -Bytes ([byte[]]@(0x48, 0x83, 0xC4, 0x30)); Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0)); Emit-JumpConditional -ConditionCode 0x84 -Label $failRead
+            Emit-Win64CallIat -TargetRva ([UInt32]0x30B0) -StackArguments @(
+                @{ Kind = 'Immediate'; Value = 0 }
+            ) # ReadFile; Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0)); Emit-JumpConditional -ConditionCode 0x84 -Label $failRead
             Emit-LoadEaxFrame -SlotPosition ($script:ActiveContext.ScratchPosition + 0x1000)
             Emit-Bytes -Bytes ([byte[]]@(0x8B, 0x8D)); Emit-I32 -Value (Get-FrameDisp -SlotPosition $indexSlot); Emit-Bytes -Bytes ([byte[]]@(0x83, 0xC1, 0x01, 0x39, 0xC8)); Emit-JumpConditional -ConditionCode 0x82 -Label $failRead # fail if read count < index + 1
             Emit-LoadEaxFrame -SlotPosition $indexSlot
@@ -941,9 +941,9 @@ function Emit-D3D11MessagePump {
     # PeekMessageA(&msg, NULL, 0, 0, PM_REMOVE)
     Emit-LeaRaxFrame -SlotPosition $MessageSlot; Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1))
     Emit-Bytes -Bytes ([byte[]]@(0x33, 0xD2, 0x45, 0x33, 0xC0, 0x45, 0x33, 0xC9))
-    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x83, 0xEC, 0x30)); Emit-StackArgumentImmediate -Offset 0x20 -Value 1
-    Emit-CallIat -TargetRva ([UInt32]0x3108)
-    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x83, 0xC4, 0x30)); Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0)); Emit-JumpConditional -ConditionCode 0x84 -Label $checkWindow
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3108) -StackArguments @(
+        @{ Kind = 'Immediate'; Value = 1 }
+    ) # PeekMessageA; Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0)); Emit-JumpConditional -ConditionCode 0x84 -Label $checkWindow
     # MSG.message is the DWORD at offset 8 on x64. WM_QUIT terminates the demo loop.
     Emit-Bytes -Bytes ([byte[]]@(0x81, 0xBD)); Emit-I32 -Value (Get-FrameDisp -SlotPosition ($MessageSlot + 8)); Emit-I32 -Value 0x12
     Emit-JumpConditional -ConditionCode 0x85 -Label $dispatch
@@ -1028,17 +1028,16 @@ function Emit-D3D11RenderDemo {
     Emit-Bytes -Bytes ([byte[]]@(0x33, 0xC9)); Emit-DataAddress -DataItem (Register-DataConstant -Value 'STATIC'); Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC2))
     Emit-LoadRaxFrame -SlotPosition $titleSlot; Emit-Bytes -Bytes ([byte[]]@(0x49, 0x89, 0xC0))
     Emit-Bytes -Bytes ([byte[]]@(0x41, 0xB9, 0x00, 0x00, 0xCF, 0x10)) # WS_OVERLAPPEDWINDOW | WS_VISIBLE
-    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x83, 0xEC, 0x60))
-    Emit-StackArgumentImmediate -Offset 0x20 -Value -2147483648
-    Emit-StackArgumentImmediate -Offset 0x28 -Value -2147483648
-    Emit-StackArgumentImmediate -Offset 0x30 -Value 960
-    Emit-StackArgumentImmediate -Offset 0x38 -Value 540
-    Emit-StackArgumentImmediate -Offset 0x40 -Value 0
-    Emit-StackArgumentImmediate -Offset 0x48 -Value 0
-    Emit-LoadRaxFrame -SlotPosition ($scratch + 0xD0); Emit-StackArgumentRax -Offset 0x50
-    Emit-StackArgumentImmediate -Offset 0x58 -Value 0
-    Emit-CallIat -TargetRva ([UInt32]0x30F0)
-    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x83, 0xC4, 0x60)); Emit-Bytes -Bytes ([byte[]]@(0x48, 0x85, 0xC0)); Emit-JumpConditional -ConditionCode 0x84 -Label $failLabel
+    Emit-Win64CallIat -TargetRva ([UInt32]0x30F0) -StackArguments @(
+        @{ Kind = 'Immediate'; Value = -2147483648 },
+        @{ Kind = 'Immediate'; Value = -2147483648 },
+        @{ Kind = 'Immediate'; Value = 960 },
+        @{ Kind = 'Immediate'; Value = 540 },
+        @{ Kind = 'Immediate'; Value = 0 },
+        @{ Kind = 'Immediate'; Value = 0 },
+        @{ Kind = 'FrameQword'; SlotPosition = ($scratch + 0xD0) },
+        @{ Kind = 'Immediate'; Value = 0 }
+    ); Emit-Bytes -Bytes ([byte[]]@(0x48, 0x85, 0xC0)); Emit-JumpConditional -ConditionCode 0x84 -Label $failLabel
     Emit-StoreRaxFrame -SlotPosition $windowSlot
     Emit-LoadRaxFrame -SlotPosition $windowSlot; Emit-StoreRaxFrame -SlotPosition ($scratch + 48) # desc.OutputWindow
     Emit-LoadRcxFrame -SlotPosition $windowSlot; Emit-Bytes -Bytes ([byte[]]@(0xBA, 0x05, 0x00, 0x00, 0x00, 0x48, 0x83, 0xEC, 0x20)); Emit-CallIat -TargetRva ([UInt32]0x30F8); Emit-Bytes -Bytes ([byte[]]@(0x48, 0x83, 0xC4, 0x20)) # ShowWindow(SW_SHOW)
@@ -1056,32 +1055,30 @@ function Emit-D3D11RenderDemo {
     # Fill output slots with NULL before the device-and-swap-chain call.
     foreach ($slot in @($swapSlot, $deviceSlot, $contextSlot)) { Emit-StoreZero64Frame -SlotPosition $slot }
     Emit-Bytes -Bytes ([byte[]]@(0x33, 0xC9, 0xBA, 0x01, 0x00, 0x00, 0x00, 0x45, 0x33, 0xC0, 0x45, 0x33, 0xC9))
-    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x83, 0xEC, 0x60))
-    Emit-StackArgumentImmediate -Offset 0x20 -Value 0
-    Emit-StackArgumentImmediate -Offset 0x28 -Value 0
-    Emit-StackArgumentImmediate -Offset 0x30 -Value 7
-    Emit-LeaRaxFrame -SlotPosition $scratch; Emit-StackArgumentRax -Offset 0x38
-    Emit-LeaRaxFrame -SlotPosition $swapSlot; Emit-StackArgumentRax -Offset 0x40
-    Emit-LeaRaxFrame -SlotPosition $deviceSlot; Emit-StackArgumentRax -Offset 0x48
-    Emit-LeaRaxFrame -SlotPosition $featureSlot; Emit-StackArgumentRax -Offset 0x50
-    Emit-LeaRaxFrame -SlotPosition $contextSlot; Emit-StackArgumentRax -Offset 0x58
-    Emit-CallIat -TargetRva ([UInt32]0x3130)
-    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x83, 0xC4, 0x60)); Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0)); Emit-JumpConditional -ConditionCode 0x89 -Label $deviceCreated
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3130) -StackArguments @(
+        @{ Kind = 'Immediate'; Value = 0 },
+        @{ Kind = 'Immediate'; Value = 0 },
+        @{ Kind = 'Immediate'; Value = 7 },
+        @{ Kind = 'FrameAddress'; SlotPosition = $scratch },
+        @{ Kind = 'FrameAddress'; SlotPosition = $swapSlot },
+        @{ Kind = 'FrameAddress'; SlotPosition = $deviceSlot },
+        @{ Kind = 'FrameAddress'; SlotPosition = $featureSlot },
+        @{ Kind = 'FrameAddress'; SlotPosition = $contextSlot }
+    ); Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0)); Emit-JumpConditional -ConditionCode 0x89 -Label $deviceCreated
     Mark-CodeLabel -Label $hardwareFailed
     # Retry using the built-in WARP software rasterizer when hardware initialization fails.
     foreach ($slot in @($swapSlot, $deviceSlot, $contextSlot)) { Emit-StoreZero64Frame -SlotPosition $slot }
     Emit-Bytes -Bytes ([byte[]]@(0x33, 0xC9, 0xBA, 0x05, 0x00, 0x00, 0x00, 0x45, 0x33, 0xC0, 0x45, 0x33, 0xC9))
-    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x83, 0xEC, 0x60))
-    Emit-StackArgumentImmediate -Offset 0x20 -Value 0
-    Emit-StackArgumentImmediate -Offset 0x28 -Value 0
-    Emit-StackArgumentImmediate -Offset 0x30 -Value 7
-    Emit-LeaRaxFrame -SlotPosition $scratch; Emit-StackArgumentRax -Offset 0x38
-    Emit-LeaRaxFrame -SlotPosition $swapSlot; Emit-StackArgumentRax -Offset 0x40
-    Emit-LeaRaxFrame -SlotPosition $deviceSlot; Emit-StackArgumentRax -Offset 0x48
-    Emit-LeaRaxFrame -SlotPosition $featureSlot; Emit-StackArgumentRax -Offset 0x50
-    Emit-LeaRaxFrame -SlotPosition $contextSlot; Emit-StackArgumentRax -Offset 0x58
-    Emit-CallIat -TargetRva ([UInt32]0x3130)
-    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x83, 0xC4, 0x60)); Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0)); Emit-JumpConditional -ConditionCode 0x88 -Label $failLabel
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3130) -StackArguments @(
+        @{ Kind = 'Immediate'; Value = 0 },
+        @{ Kind = 'Immediate'; Value = 0 },
+        @{ Kind = 'Immediate'; Value = 7 },
+        @{ Kind = 'FrameAddress'; SlotPosition = $scratch },
+        @{ Kind = 'FrameAddress'; SlotPosition = $swapSlot },
+        @{ Kind = 'FrameAddress'; SlotPosition = $deviceSlot },
+        @{ Kind = 'FrameAddress'; SlotPosition = $featureSlot },
+        @{ Kind = 'FrameAddress'; SlotPosition = $contextSlot }
+    ); Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0)); Emit-JumpConditional -ConditionCode 0x88 -Label $failLabel
     Mark-CodeLabel -Label $deviceCreated
     foreach ($slot in @($swapSlot, $deviceSlot, $contextSlot)) { Emit-LoadRaxFrame -SlotPosition $slot; Emit-Bytes -Bytes ([byte[]]@(0x48, 0x85, 0xC0)); Emit-JumpConditional -ConditionCode 0x84 -Label $failLabel }
 
