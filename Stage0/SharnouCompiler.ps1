@@ -1481,6 +1481,34 @@ foreach ($functionObject in ($script:Functions.Values | Sort-Object Index)) {
 # WINAPI thread callback used by the thread/synchronization smoke-test intrinsic.
 Mark-CodeLabel -Label '__sharnou_worker'
 Emit-Bytes -Bytes ([byte[]]@(0x31, 0xC0, 0xC3)) # return DWORD 0
+
+# The worker callback is a true leaf (no stack adjustment or nonvolatile saves),
+# so it needs no RUNTIME_FUNCTION entry. Every other emitted function has a
+# fixed stack frame and receives an x64 UNWIND_INFO record.
+$orderedFunctions = @($script:Functions.Values | Sort-Object Index)
+$workerOffset = [int]$script:CodeLabels['__sharnou_worker']
+$runtimeFunctionSpecs = [System.Collections.Generic.List[object]]::new()
+$entryEndOffset = if ($orderedFunctions.Count -gt 0) { [int]$script:CodeLabels[$orderedFunctions[0].Label] } else { $workerOffset }
+$runtimeFunctionSpecs.Add([pscustomobject]@{ StartOffset = [int]$script:CodeLabels['__entry']; EndOffset = $entryEndOffset; Context = $script:MainContext; UnwindBytes = $null; UnwindOffset = 0 })
+for ($functionIndex = 0; $functionIndex -lt $orderedFunctions.Count; $functionIndex++) {
+    $functionObject = $orderedFunctions[$functionIndex]
+    $startOffset = [int]$script:CodeLabels[$functionObject.Label]
+    $endOffset = if (($functionIndex + 1) -lt $orderedFunctions.Count) { [int]$script:CodeLabels[$orderedFunctions[$functionIndex + 1].Label] } else { $workerOffset }
+    if ($endOffset -le $startOffset) { throw "Invalid generated function range for '$($functionObject.Name)'." }
+    $runtimeFunctionSpecs.Add([pscustomobject]@{ StartOffset = $startOffset; EndOffset = $endOffset; Context = $functionObject.Context; UnwindBytes = $null; UnwindOffset = 0 })
+}
+foreach ($runtimeFunction in $runtimeFunctionSpecs) {
+    $runtimeFunction.UnwindBytes = New-UnwindInfoBytes -Context $runtimeFunction.Context
+}
+$xdataLength = 0
+foreach ($runtimeFunction in $runtimeFunctionSpecs) {
+    $xdataLength = Align-Up -Value $xdataLength -Alignment 4
+    $runtimeFunction.UnwindOffset = $xdataLength
+    $xdataLength += $runtimeFunction.UnwindBytes.Length
+}
+$pdataLength = $runtimeFunctionSpecs.Count * 12
+if ($pdataLength -le 0 -or $xdataLength -le 0) { throw 'Generated PE unwind tables cannot be empty.' }
+
 $codeBytes = $script:Code.ToArray()
 if ($codeBytes.Length -le 0) { throw 'Generated .text section is empty.' }
 if ($codeBytes.Length -gt 0x01000000) { throw "Generated .text section is too large: $($codeBytes.Length) bytes; maximum is 16777216." }
@@ -1493,11 +1521,27 @@ if ($script:DataLength -gt 0x1000) { throw "Generated .rdata section is too larg
 $dataVirtualSpan = Align-Up -Value ([Math]::Max(8, $script:DataLength)) -Alignment 0x1000
 $idataVirtualSpan = Align-Up -Value 0x800 -Alignment 0x1000
 $relocVirtualSpan = Align-Up -Value 12 -Alignment 0x1000
+$pdataVirtualSpan = Align-Up -Value $pdataLength -Alignment 0x1000
+$xdataVirtualSpan = Align-Up -Value $xdataLength -Alignment 0x1000
 $dataRva = [UInt32]([long]$textRva + [long]$textVirtualSpan)
 $idataRva = [UInt32]([long]$dataRva + [long]$dataVirtualSpan)
 $relocRva = [UInt32]([long]$idataRva + [long]$idataVirtualSpan)
-$sizeOfImage = [UInt32]([long]$relocRva + [long]$relocVirtualSpan)
+$pdataRva = [UInt32]([long]$relocRva + [long]$relocVirtualSpan)
+$xdataRva = [UInt32]([long]$pdataRva + [long]$pdataVirtualSpan)
+$sizeOfImage = [UInt32]([long]$xdataRva + [long]$xdataVirtualSpan)
 if ([UInt64]$sizeOfImage -gt [UInt32]::MaxValue) { throw 'Linked image exceeds the PE32+ 32-bit RVA address space.' }
+
+# Build sorted x64 RUNTIME_FUNCTION entries and their 4-byte-aligned UNWIND_INFO records.
+$pdataBytes = [byte[]]::new($pdataLength)
+$xdataBytes = [byte[]]::new($xdataLength)
+for ($runtimeIndex = 0; $runtimeIndex -lt $runtimeFunctionSpecs.Count; $runtimeIndex++) {
+    $runtimeFunction = $runtimeFunctionSpecs[$runtimeIndex]
+    $recordOffset = $runtimeIndex * 12
+    Set-U32 -Buffer $pdataBytes -Offset $recordOffset -Value ([UInt32]([long]$textRva + [long]$runtimeFunction.StartOffset))
+    Set-U32 -Buffer $pdataBytes -Offset ($recordOffset + 4) -Value ([UInt32]([long]$textRva + [long]$runtimeFunction.EndOffset))
+    Set-U32 -Buffer $pdataBytes -Offset ($recordOffset + 8) -Value ([UInt32]([long]$xdataRva + [long]$runtimeFunction.UnwindOffset))
+    [System.Buffer]::BlockCopy($runtimeFunction.UnwindBytes, 0, $xdataBytes, $runtimeFunction.UnwindOffset, $runtimeFunction.UnwindBytes.Length)
+}
 
 # Patch RIP-relative data references, IAT calls, conditional branches, and internal rel32 calls.
 foreach ($fixup in $script:CodeFixups) {
