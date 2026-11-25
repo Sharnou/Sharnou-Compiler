@@ -14,8 +14,10 @@ $outputPath = Join-Path $buildRoot 'DevAgentBroker.exe'
 $childPidPath = Join-Path $buildRoot 'child.pid'
 $nl = [string][char]10
 $expected = @('-100', '-101', '0', '-110') -join $nl
+$originalLocation = Get-Location
 
 try {
+    Set-Location -LiteralPath $repoRoot
     foreach ($required in @($compilerPath, $verifierPath, $fixturePath, $timeoutScriptPath)) {
         if (-not (Test-Path -LiteralPath $required -PathType Leaf)) { throw "Required broker test input is missing: $required" }
     }
@@ -55,4 +57,7 @@ try {
 catch {
     Write-Host "DevAgent broker phase-1 result: FAIL - $($_.Exception.Message)" -ForegroundColor Red
     throw
+}
+finally {
+    Set-Location -LiteralPath $originalLocation
 }
