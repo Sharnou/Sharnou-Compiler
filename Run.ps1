@@ -13,6 +13,7 @@ $cases = @(
     [pscustomobject]@{ Name = 'NestedControlFlow'; Expected = ('15' + $nl + 'bounded') },
     [pscustomobject]@{ Name = 'FunctionControlFlow'; Expected = ('10' + $nl + '7') },
     [pscustomobject]@{ Name = 'SignedComparisonEdges'; Expected = ('signed less' + $nl + 'minimum inclusive' + $nl + 'signed greater' + $nl + 'maximum inclusive' + $nl + 'not equal') },
+    [pscustomobject]@{ Name = 'BranchConditionCodes'; Expected = ('lt' + $nl + 'gt-false' + $nl + 'le' + $nl + 'ge' + $nl + 'eq' + $nl + 'ne-false' + $nl + 'lt-false-edge' + $nl + 'gt-false-edge' + $nl + 'le-false-edge' + $nl + 'ge-false-edge' + $nl + 'eq-false-edge' + $nl + 'ne-true-edge' + $nl + 'gt-true-edge') },
     [pscustomobject]@{ Name = 'WhileFalse'; Expected = 'zero iterations' },
     [pscustomobject]@{ Name = 'ComparisonPrecedence'; Expected = 'arithmetic before comparison' }
 )
