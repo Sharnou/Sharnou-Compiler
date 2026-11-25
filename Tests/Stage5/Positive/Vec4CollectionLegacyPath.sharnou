@@ -1,0 +1,4 @@
+import "../../StdLib/Collections.sharnou";
+
+print(sh_std_vec4_sum4(1, 2, 3, 4));
+print(sh_std_vec4_weighted_sum4(1, 2, 3, 4));

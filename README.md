@@ -77,7 +77,7 @@ Run from the repository root in 64-bit Windows PowerShell 5.1:
     .\Test.ps1
     .\Dev.ps1
 
-Test.ps1 executes Tests\Test-Stage7A.ps1, which compiles and runs eight positive programs, checks twelve invalid programs for line/column diagnostics and absence of output executables, and inspects generated code for all six SETcc forms and the branch/loop instructions.
+Test.ps1 executes Tests\Test-Stage7A.ps1, which compiles and runs nine positive programs, checks twelve invalid programs for line/column diagnostics and absence of output executables, and inspects generated code for all six SETcc forms and the branch/loop instructions (24 Stage 7A checks total). It then runs two Stage 5 collection-import regression cases. Invoke .\Test.ps1 directly; do not pipe Get-ChildItem output into the test script.
 
 The PE verifier is Tools\SharnouPEVerify.ps1. It checks the AMD64 PE32+ headers, four-section layout, import descriptors, required system imports, relocation block, and dynamic .text section size.
 
