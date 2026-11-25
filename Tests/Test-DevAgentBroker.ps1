@@ -4,6 +4,17 @@ param()
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+function Get-BrokerNumericLines {
+    param([object[]] $Lines)
+    $numeric = New-Object 'System.Collections.Generic.List[string]'
+    foreach ($line in $Lines) {
+        $parsed = 0
+        $value = [string]$line
+        if ([int]::TryParse($value, [ref]$parsed)) { $numeric.Add($value) }
+    }
+    return $numeric.ToArray()
+}
+
 $repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $compilerPath = Join-Path $repoRoot 'Stage0\SharnouCompiler.ps1'
 $verifierPath = Join-Path $repoRoot 'Tools\SharnouPEVerify.ps1'
@@ -93,7 +104,7 @@ try {
         $lines = @(& $outputPath 2>&1)
         $exitCode = $LASTEXITCODE
         # Child console diagnostics may be visible; compare only broker numeric return records.
-        $numericLines = @($lines | ForEach-Object { [string]$_ } | Where-Object { $_ -match '^-?[0-9]+$' })
+        $numericLines = @(Get-BrokerNumericLines -Lines $lines)
         $actual = ($numericLines -join $nl).TrimEnd([char[]]@([char]13, [char]10))
         if ($exitCode -ne 0) { throw "Broker fixture process exited with code $exitCode. Output=[$actual]." }
         if (-not [string]::Equals($actual, $expected, [StringComparison]::Ordinal)) {
@@ -114,7 +125,7 @@ try {
         Remove-Item -LiteralPath $childPidPath -Force -ErrorAction SilentlyContinue
         $tamperedLines = @(& $outputPath 2>&1)
         $tamperedExitCode = $LASTEXITCODE
-        $tamperedNumericLines = @($tamperedLines | ForEach-Object { [string]$_ } | Where-Object { $_ -match '^-?[0-9]+$' })
+        $tamperedNumericLines = @(Get-BrokerNumericLines -Lines $tamperedLines)
         $tamperedActual = ($tamperedNumericLines -join $nl).TrimEnd([char[]]@([char]13, [char]10))
         $tamperedExpected = @('-100', '-101', '91', '-110') -join $nl
         if ($tamperedExitCode -ne 0 -or -not [string]::Equals($tamperedActual, $tamperedExpected, [StringComparison]::Ordinal)) {
@@ -144,25 +155,7 @@ try {
         Remove-Item -LiteralPath $childPidPath -Force -ErrorAction SilentlyContinue
         $reparseLines = @(& $outputPath 2>&1)
         $reparseExitCode = $LASTEXITCODE
-        $reparseNumericLines = @($reparseLines | ForEach-Object { [string]$_ } | Where-Object { $_ -match '^-?[0-9]+
-    Write-Host 'PASS: workspace directories and fixed tool paths reject missing/reparse-point entries' -ForegroundColor Green
-    Write-Host 'PASS: runtime SHA-256 mismatch rejected before modified tool execution' -ForegroundColor Green
-    Write-Host 'PASS: unknown tool IDs rejected before process creation' -ForegroundColor Green
-    Write-Host 'PASS: timeout values below policy minimum rejected' -ForegroundColor Green
-    Write-Host 'PASS: fixed allowlisted success tool launched by absolute System32 PowerShell path' -ForegroundColor Green
-    Write-Host 'PASS: child process exit code propagated' -ForegroundColor Green
-    Write-Host 'PASS: suspended process assigned to Job Object before resume' -ForegroundColor Green
-    Write-Host 'PASS: timeout terminated the child and its spawned descendant' -ForegroundColor Green
-    Write-Host 'DevAgent broker phase-1 result: PASS' -ForegroundColor Green
-}
-catch {
-    Write-Host "DevAgent broker phase-1 result: FAIL - $($_.Exception.Message)" -ForegroundColor Red
-    throw
-}
-finally {
-    Set-Location -LiteralPath $originalLocation
-}
- })
+        $reparseNumericLines = @(Get-BrokerNumericLines -Lines $reparseLines)
         $reparseActual = ($reparseNumericLines -join $nl).TrimEnd([char[]]@([char]13, [char]10))
         $reparseExpected = @('-100', '-101', '-103', '-103') -join $nl
         if ($reparseExitCode -ne 0 -or -not [string]::Equals($reparseActual, $reparseExpected, [StringComparison]::Ordinal)) {
