@@ -9,6 +9,8 @@ $compilerPath = Join-Path $repoRoot 'Stage0\SharnouCompiler.ps1'
 $verifierPath = Join-Path $repoRoot 'Tools\SharnouPEVerify.ps1'
 $fixturePath = Join-Path $PSScriptRoot 'DevAgentBroker\DevAgentBroker.sharnou'
 $timeoutScriptPath = Join-Path $PSScriptRoot 'DevAgentBroker\TimeoutProbe.ps1'
+$disabledFixturePath = Join-Path $PSScriptRoot 'DevAgentBroker\Disabled.sharnou'
+$disabledOutputPath = Join-Path $repoRoot 'Build\DevAgentBroker\DevAgentBrokerDisabled.exe'
 $buildRoot = Join-Path $repoRoot 'Build\DevAgentBroker'
 $outputPath = Join-Path $buildRoot 'DevAgentBroker.exe'
 $childPidPath = Join-Path $buildRoot 'child.pid'
@@ -30,12 +32,12 @@ try {
         Write-Host ("DEVAGENT_TOOL_SHA256|{0}|{1}|{2}" -f $tool.Id, $tool.Path, $toolHash)
     }
     Set-Location -LiteralPath $repoRoot
-    foreach ($required in @($compilerPath, $verifierPath, $fixturePath, $timeoutScriptPath)) {
+    foreach ($required in @($compilerPath, $verifierPath, $fixturePath, $timeoutScriptPath, $disabledFixturePath)) {
         if (-not (Test-Path -LiteralPath $required -PathType Leaf)) { throw "Required broker test input is missing: $required" }
     }
     $compilerSource = [IO.File]::ReadAllText($compilerPath)
     if ($compilerSource.Contains('sh_dev_run_process')) { throw 'Unsafe raw-command process API must not be present.' }
-    if (-not $compilerSource.Contains("Name = 'sh_dev_run_tool'; Builtin = 'DevRunTool'; ParameterTypes = @('Integer', 'Integer')")) {
+    if (-not $compilerSource.Contains('[switch] $EnableDevAgentTools') -or -not $compilerSource.Contains("Name = 'sh_dev_run_tool'; Builtin = 'DevRunTool'; ParameterTypes = @('Integer', 'Integer')")) {
         throw 'Typed integer-only process broker API is missing.'
     }
     if (-not $compilerSource.Contains('bInheritHandles = FALSE') -or -not $compilerSource.Contains('CREATE_SUSPENDED')) {
@@ -49,7 +51,19 @@ try {
     Remove-Item -LiteralPath $childPidPath -Force -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $outputPath -Force -ErrorAction SilentlyContinue
 
-    & $compilerPath -Source $fixturePath -Output $outputPath
+    Remove-Item -LiteralPath $disabledOutputPath -Force -ErrorAction SilentlyContinue
+    $disabledRejected = $false
+    try {
+        & $compilerPath -Source $disabledFixturePath -Output $disabledOutputPath
+    }
+    catch {
+        $disabledRejected = $true
+    }
+    if (-not $disabledRejected -or (Test-Path -LiteralPath $disabledOutputPath -PathType Leaf)) {
+        throw 'The broker capability must be unavailable unless -EnableDevAgentTools is explicitly supplied.'
+    }
+
+    & $compilerPath -Source $fixturePath -Output $outputPath -EnableDevAgentTools
     if (-not (Test-Path -LiteralPath $outputPath -PathType Leaf)) { throw 'Compiler did not produce the DevAgent broker fixture.' }
     & $verifierPath -Path $outputPath
 
