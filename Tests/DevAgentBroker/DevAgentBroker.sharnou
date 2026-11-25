@@ -1,4 +1,4 @@
 print(sh_dev_run_tool(99, 5000));
 print(sh_dev_run_tool(1, 0));
-print(sh_dev_run_tool(1, 120000));
+print(sh_dev_run_tool(6, 30000));
 print(sh_dev_run_tool(5, 3000));
