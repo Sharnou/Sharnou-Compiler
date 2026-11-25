@@ -2,4 +2,4 @@
 param()
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
-exit 37
+$global:SHARNOU_TOOL_EXIT_CODE = 37
