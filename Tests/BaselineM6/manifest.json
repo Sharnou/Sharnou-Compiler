@@ -25,5 +25,5 @@
     { "path": "Tests/Test-Stage6.ps1", "cases": 9 }
   ],
   "total_cases": 83,
-  "members_verified_against_original_sha256_manifest": true
+  "members_verified_against_original_sha256_manifest": false
 }
