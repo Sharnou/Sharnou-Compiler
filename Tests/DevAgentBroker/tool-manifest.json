@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "tools": [
+    {
+      "id": 1,
+      "path": "Tests\\Test-Stage7A.ps1",
+      "sha256": "4C932F94258022D85E88A43D15420066BF7E5C8FE5D6BC108A7058CA4F4D81C4"
+    },
+    {
+      "id": 2,
+      "path": "Tests\\Test-RuntimeABI.ps1",
+      "sha256": "11E0E6F77A432C2990AFEB15C3C2F8C3DEA0AF1F2226776B2BFE6B2BD96A7CE1"
+    },
+    {
+      "id": 3,
+      "path": "Tests\\BaselineM6\\Test-Milestone6Baseline.ps1",
+      "sha256": "D4BBCDF81BF684E5FE6D457F0DB59B92F28C59FD79C56CE1C06CACC92947D600"
+    },
+    {
+      "id": 4,
+      "path": "Tests\\Test-StackProbeUnwind.ps1",
+      "sha256": "C377CBBB7AA0F3BBF359E9AA63689C798872E57DD066E7D32F291CD068D544BC"
+    },
+    {
+      "id": 5,
+      "path": "Tests\\DevAgentBroker\\TimeoutProbe.ps1",
+      "sha256": "A5A021C8F49C43A4F8A418C8491E54512380439EA2A28DEF0583D713DCFBE721"
+    },
+    {
+      "id": 6,
+      "path": "Tests\\DevAgentBroker\\SuccessProbe.ps1",
+      "sha256": "E7FB4B7F24FEBB900367B78575A33EDF44B2A00B1DE4B8CDF1BDF6135A1B9D4B"
+    }
+  ]
+}
