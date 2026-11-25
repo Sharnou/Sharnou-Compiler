@@ -1326,6 +1326,8 @@ function Emit-StackProbe {
 function Emit-Prologue {
     param([object] $Context, [object] $Function = $null)
     $script:ActiveContext = $Context; $script:TempDepth = 0
+    $Context | Add-Member -NotePropertyName PrologueSize -NotePropertyValue 0 -Force
+    $Context | Add-Member -NotePropertyName StackAllocCodeOffset -NotePropertyValue 0 -Force
     $prologueStart = $script:Code.Count
     Emit-Bytes -Bytes ([byte[]]@(0x55, 0x48, 0x89, 0xE5)) # push rbp; mov rbp,rsp
     Emit-StackProbe -FrameSize ([int]$Context.FrameSize)
@@ -1371,7 +1373,7 @@ function New-UnwindInfoBytes {
     $bytes.Add([byte]4); $bytes.Add([byte]0x03) # UWOP_SET_FPREG
     $bytes.Add([byte]1); $bytes.Add([byte]0x50) # UWOP_PUSH_NONVOL RBP
     if (($countOfCodes % 2) -ne 0) { $bytes.Add([byte]0); $bytes.Add([byte]0) }
-    return $bytes.ToArray()
+    return ,$bytes.ToArray()
 }
 function Emit-Epilogue { Emit-Bytes -Bytes ([byte[]]@(0x48, 0x8D, 0x65, 0x00, 0x5D, 0xC3)) } # lea rsp,[rbp+0]; pop rbp; ret (legal x64 epilogue)
 function Test-ImageBasic {
