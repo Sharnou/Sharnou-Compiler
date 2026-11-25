@@ -57,7 +57,8 @@ try {
     $exitCode = $LASTEXITCODE
     # The allowlisted child shares the Windows console, so its Stage 7A
     # PASS lines are visible too. Compare only the broker's numeric return records.
-    $numericLines = @($lines | ForEach-Object { [string]$_ } | Where-Object { $_ -match '^-?[0-9]+
+    $numericLines = @($lines | ForEach-Object { [string]$_ } | Where-Object { $_ -match '^-?[0-9]+$' })
+    $actual = ($numericLines -join $nl).TrimEnd([char[]]@([char]13, [char]10))
     if ($exitCode -ne 0) { throw "Broker fixture process exited with code $exitCode. Output=[$actual]." }
     if (-not [string]::Equals($actual, $expected, [StringComparison]::Ordinal)) {
         throw "Broker fixture output mismatch. Expected=[$expected] Actual=[$actual]."
