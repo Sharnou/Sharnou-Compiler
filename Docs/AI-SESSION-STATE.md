@@ -941,3 +941,11 @@ The 13-line branch test passing means the current compiler implementation did no
 The full 83-case M1-M6 baseline is still tracked separately by issue #9 / PR #11. This PR run does not claim 83/83 or the full Stage 5 25-case suite.
 
 Classification: **WINDOWS CI PASS on PR #15; USER-REPORTED LOCAL FAILURE IDENTIFIED; EXACT LOCAL TEST SOURCE NOT AVAILABLE; DEFAULT BRANCH NOT MODIFIED; PR NOT MERGED.**
+
+ 
+### Branch fixture size cross-check - 2026-11-25
+
+- Uploaded local `BranchConditionCodes.exe`: `codeBytes=1171`, `dataBytes=57` (the user log lines 853-856); its runtime output contains only six labels.
+- The PR #15 equivalent 13-output fixture: `codeBytes=3573`, `dataBytes=275`; its Windows run prints the exact 13-line expected output and passes.
+- Because each output label is a distinct string constant retained in the generated data section, the much smaller local image strongly suggests the local executable did not contain the seven additional output-label constants. Leading explanation: the local fixture or expected-output list is stale/truncated, or the local fixture uses a construct not represented by the current reproducer. This size evidence does not conclusively distinguish an incomplete source file from a parser-path defect.
+- Do not change signed-comparison machine code based on this log alone. Obtain the exact local `BranchConditionCodes.sharnou` to close the remaining ambiguity.
