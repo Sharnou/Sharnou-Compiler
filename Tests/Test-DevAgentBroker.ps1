@@ -75,6 +75,7 @@ try {
     if (-not $disabledRejected -or (Test-Path -LiteralPath $disabledOutputPath -PathType Leaf)) {
         throw 'The broker capability must be unavailable unless -EnableDevAgentTools is explicitly supplied.'
     }
+    Write-Host 'PASS: process broker capability is disabled by default and requires explicit compiler opt-in' -ForegroundColor Green
 
     & $compilerPath -Source $fixturePath -Output $outputPath -EnableDevAgentTools
     if (-not (Test-Path -LiteralPath $outputPath -PathType Leaf)) { throw 'Compiler did not produce the DevAgent broker fixture.' }
