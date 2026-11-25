@@ -895,3 +895,49 @@ Normal human review of PR #11 remains the integration decision; do not auto-merg
 - Disposition: REPOSITORY PRESENT / STATIC REVIEWED for the current compiler/repository/PR audit; WINDOWS CI PASS only for the historical Stage 7A and orchestrator runs described above; NOT IMPLEMENTED / NOT RUN for the current DevAgent and Reverse Engineering Agent; BLOCKED for safe model-controlled execution by issues #1 and #9.
 - No compiler, verifier, agent, Engine, IDE, example, fixture, test, or workflow source was changed. No PR was rebased, merged or edited; no workflow was dispatched; no external compiler/toolchain was used.
 - Next dependency-ordered work: (1) complete normal human review/integration and provenance work for the frozen baseline; (2) close the ABI runtime gates; (3) build and adversarially test a typed, allowlisted process broker with workspace confinement, bounded output, timeout/cancellation, Job Object containment and rollback; (4) implement the read-only PE/DLL/export/relocation/unwind analyzer and separate D3DCompiler shader adapter; (5) integrate local inference/planning and bounded source repair only after the tool and recovery/security gates pass. Keep issues #12 and #14 open.
+ 
+## Milestone 7A local regression repair - 2026-11-25
+
+### User-provided Windows validation log
+
+The uploaded `Pasted text(7).txt` is an execution log, not the source package. It reports:
+
+- Engine foundation preflight: 5/5.
+- Milestone 7A example build: 22/22.
+- Example runtime: 15/15.
+- Stage 2: 25/25.
+- Stage 4: 20/20.
+- PE verifier: 4/4.
+- Stage 5: 24/25. The only failure is the absent imported module `Tests\\StdLib\\Collections.sharnou`.
+- Stage 6: 9/9.
+- Stage 7A: 27/28. The failing `BranchConditionCodes` case expected 13 output lines but received the first 6.
+
+### Repair PR #15
+
+PR [#15 - Repair Stage 5 collection imports and add full Stage 7A branch regression](https://github.com/Sharnou/Sharnou-Compiler/pull/15) is based on default HEAD `f80dae6fc6efccce84bc733a7529664085b3250e` and remains OPEN / UNMERGED.
+
+Changes:
+- Restores canonical `StdLib/Collections.sharnou` from the pinned M1-M6 payload. Its original member SHA-256 is `46140cdd516f2d96fb93675af1bbacab79db4daf5e711881103ee27b2cd730e3`.
+- Adds `Tests/StdLib/Collections.sharnou` as a compatibility import shim to the canonical module.
+- Adds two native compile / PE-verify / runtime tests for the canonical and legacy import paths.
+- Adds `Examples/ControlFlow/BranchConditionCodes.sharnou` with all six comparison operators, true/false paths, variable operands and INT32_MIN/INT32_MAX boundaries. Its expected 13-line output matches the output expected by the uploaded log.
+- Integrates that fixture into Build.ps1, Run.ps1 and Tests/Test-Stage7A.ps1.
+
+### Windows CI result
+
+Windows Actions run [45696244484](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45696244484) completed SUCCESS on PR #15 head `01fd2d7b6bd6ab4d80a920449bc529fa865634e8`.
+
+Exact job log:
+- Source encoding check: PASS (ASCII / UTF-8 without BOM).
+- Stage 7A: 24 passed, 0 failed, 24 total.
+- The new 13-line signed branch-boundary regression: PASS.
+- Canonical `StdLib` import: PASS.
+- Legacy `Tests/StdLib` import: PASS.
+- Stage 5 collection import tests: 2 passed, 0 failed, 2 total.
+- Combined result: PASS.
+
+The 13-line branch test passing means the current compiler implementation did not reproduce the user's truncated-output failure with an independently maintained equivalent fixture. No Stage0 compiler change is justified by the available evidence. The exact local `BranchConditionCodes.sharnou` and expanded local `Test.ps1` were not uploaded, so the original local failure is not yet conclusively reconciled against the new fixture.
+
+The full 83-case M1-M6 baseline is still tracked separately by issue #9 / PR #11. This PR run does not claim 83/83 or the full Stage 5 25-case suite.
+
+Classification: **WINDOWS CI PASS on PR #15; USER-REPORTED LOCAL FAILURE IDENTIFIED; EXACT LOCAL TEST SOURCE NOT AVAILABLE; DEFAULT BRANCH NOT MODIFIED; PR NOT MERGED.**
