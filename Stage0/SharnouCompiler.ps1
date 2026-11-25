@@ -1313,28 +1313,15 @@ function Set-FrameSize {
 function Emit-StackProbe {
     param([int] $FrameSize)
     if ($FrameSize -le 0 -or ($FrameSize % 16) -ne 0) { throw "Invalid stack-probe frame size: $FrameSize" }
-    $loopLabel = New-UniqueLabel -Prefix 'stack_probe_loop'
-    $tailLabel = New-UniqueLabel -Prefix 'stack_probe_tail'
-    $doneLabel = New-UniqueLabel -Prefix 'stack_probe_done'
-    # Walk a volatile pointer down the future frame one 4 KiB page at a time.
-    # RSP is deliberately unchanged until every page has been touched, so the
-    # Windows unwinder can describe the entire probe loop with the final fixed
-    # allocation operation only.
-    Emit-Bytes -Bytes ([byte[]]@(0x49, 0x89, 0xE2)) # mov r10,rsp
-    Emit-Bytes -Bytes ([byte[]]@(0x49, 0xC7, 0xC3)); Emit-I32 -Value $FrameSize # mov r11,FrameSize
-    Mark-CodeLabel -Label $loopLabel
-    Emit-Bytes -Bytes ([byte[]]@(0x49, 0x81, 0xFB, 0x00, 0x10, 0x00, 0x00)) # cmp r11,1000h
-    Emit-JumpConditional -ConditionCode 0x82 -Label $tailLabel # jb tail
-    Emit-Bytes -Bytes ([byte[]]@(0x49, 0x81, 0xEA, 0x00, 0x10, 0x00, 0x00)) # sub r10,1000h
-    Emit-Bytes -Bytes ([byte[]]@(0x41, 0xF6, 0x02, 0x00)) # test byte ptr [r10],0
-    Emit-Bytes -Bytes ([byte[]]@(0x49, 0x81, 0xEB, 0x00, 0x10, 0x00, 0x00)) # sub r11,1000h
-    Emit-Jump -Label $loopLabel
-    Mark-CodeLabel -Label $tailLabel
-    Emit-Bytes -Bytes ([byte[]]@(0x4D, 0x85, 0xDB)) # test r11,r11
-    Emit-JumpConditional -ConditionCode 0x84 -Label $doneLabel
-    Emit-Bytes -Bytes ([byte[]]@(0x4D, 0x29, 0xDA)) # sub r10,r11
-    Emit-Bytes -Bytes ([byte[]]@(0x41, 0xF6, 0x02, 0x00)) # test byte ptr [r10],0
-    Mark-CodeLabel -Label $doneLabel
+    # Windows x64 uses a special stack-probe helper contract: RAX carries the
+    # allocation size; the helper preserves RAX and argument registers, and
+    # may clobber only R10, R11, and flags. RSP remains unchanged until it
+    # returns, after which the ordinary fixed SUB RSP is unwind-described.
+    Emit-Bytes -Bytes ([byte[]]@(0xB8)); Emit-I32 -Value $FrameSize # mov eax,FrameSize
+    Emit-Bytes -Bytes ([byte[]]@(0xE8))
+    $dispOffset = $script:Code.Count
+    Emit-I32 -Value 0
+    $script:CodeFixups.Add([pscustomobject]@{ Kind = 'Code'; DispOffset = $dispOffset; Target = '__sharnou_chkstk' })
 }
 function Emit-Prologue {
     param([object] $Context, [object] $Function = $null)
@@ -1480,22 +1467,47 @@ foreach ($functionObject in ($script:Functions.Values | Sort-Object Index)) {
     Emit-IntegerExpression -Node $functionObject.ReturnExpression
     Emit-Epilogue
 }
+# Windows x64 stack-probe helper. This is a leaf routine using only R10/R11
+# and flags; RAX (the requested allocation size), argument registers, RSP, and
+# all nonvolatile registers are preserved. Leaf routines require no .pdata row.
+$stackProbeOffset = [int]$script:Code.Count
+Mark-CodeLabel -Label '__sharnou_chkstk'
+Emit-Bytes -Bytes ([byte[]]@(0x49, 0x89, 0xE2)) # mov r10,rsp (includes the call return address)
+Emit-Bytes -Bytes ([byte[]]@(0x49, 0x89, 0xC3)) # mov r11,rax
+Emit-Bytes -Bytes ([byte[]]@(0x49, 0x83, 0xEB, 0x08)) # sub r11,8 (adjust for the call return address)
+$probeLoopLabel = New-UniqueLabel -Prefix 'chkstk_loop'
+$probeTailLabel = New-UniqueLabel -Prefix 'chkstk_tail'
+$probeDoneLabel = New-UniqueLabel -Prefix 'chkstk_done'
+Mark-CodeLabel -Label $probeLoopLabel
+Emit-Bytes -Bytes ([byte[]]@(0x49, 0x81, 0xFB, 0x00, 0x10, 0x00, 0x00)) # cmp r11,1000h
+Emit-JumpConditional -ConditionCode 0x82 -Label $probeTailLabel
+Emit-Bytes -Bytes ([byte[]]@(0x49, 0x81, 0xEA, 0x00, 0x10, 0x00, 0x00)) # sub r10,1000h
+Emit-Bytes -Bytes ([byte[]]@(0x41, 0xF6, 0x02, 0x00)) # test byte ptr [r10],0
+Emit-Bytes -Bytes ([byte[]]@(0x49, 0x81, 0xEB, 0x00, 0x10, 0x00, 0x00)) # sub r11,1000h
+Emit-Jump -Label $probeLoopLabel
+Mark-CodeLabel -Label $probeTailLabel
+Emit-Bytes -Bytes ([byte[]]@(0x4D, 0x85, 0xDB)) # test r11,r11
+Emit-JumpConditional -ConditionCode 0x84 -Label $probeDoneLabel
+Emit-Bytes -Bytes ([byte[]]@(0x4D, 0x29, 0xDA)) # sub r10,r11
+Emit-Bytes -Bytes ([byte[]]@(0x41, 0xF6, 0x02, 0x00)) # test byte ptr [r10],0
+Mark-CodeLabel -Label $probeDoneLabel
+Emit-Bytes -Bytes ([byte[]]@(0xC3)) # ret; RAX is deliberately unchanged
+
 # WINAPI thread callback used by the thread/synchronization smoke-test intrinsic.
+$workerOffset = [int]$script:Code.Count
 Mark-CodeLabel -Label '__sharnou_worker'
 Emit-Bytes -Bytes ([byte[]]@(0x31, 0xC0, 0xC3)) # return DWORD 0
 
-# The worker callback is a true leaf (no stack adjustment or nonvolatile saves),
-# so it needs no RUNTIME_FUNCTION entry. Every other emitted function has a
-# fixed stack frame and receives an x64 UNWIND_INFO record.
+# The stack-probe helper and worker callback are true leaf routines and need
+# no RUNTIME_FUNCTION entries. Every frame-owning function gets x64 unwind data.
 $orderedFunctions = @($script:Functions.Values | Sort-Object Index)
-$workerOffset = [int]$script:CodeLabels['__sharnou_worker']
 $runtimeFunctionSpecs = [System.Collections.Generic.List[object]]::new()
-$entryEndOffset = if ($orderedFunctions.Count -gt 0) { [int]$script:CodeLabels[$orderedFunctions[0].Label] } else { $workerOffset }
+$entryEndOffset = if ($orderedFunctions.Count -gt 0) { [int]$script:CodeLabels[$orderedFunctions[0].Label] } else { $stackProbeOffset }
 $runtimeFunctionSpecs.Add([pscustomobject]@{ StartOffset = [int]$script:CodeLabels['__entry']; EndOffset = $entryEndOffset; Context = $script:MainContext; UnwindBytes = $null; UnwindOffset = 0 })
 for ($functionIndex = 0; $functionIndex -lt $orderedFunctions.Count; $functionIndex++) {
     $functionObject = $orderedFunctions[$functionIndex]
     $startOffset = [int]$script:CodeLabels[$functionObject.Label]
-    $endOffset = if (($functionIndex + 1) -lt $orderedFunctions.Count) { [int]$script:CodeLabels[$orderedFunctions[$functionIndex + 1].Label] } else { $workerOffset }
+    $endOffset = if (($functionIndex + 1) -lt $orderedFunctions.Count) { [int]$script:CodeLabels[$orderedFunctions[$functionIndex + 1].Label] } else { $stackProbeOffset }
     if ($endOffset -le $startOffset) { throw "Invalid generated function range for '$($functionObject.Name)'." }
     $runtimeFunctionSpecs.Add([pscustomobject]@{ StartOffset = $startOffset; EndOffset = $endOffset; Context = $functionObject.Context; UnwindBytes = $null; UnwindOffset = 0 })
 }
