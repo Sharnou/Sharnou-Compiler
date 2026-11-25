@@ -1,13 +1,15 @@
 # SharnouDevAgent Native Process Broker - Security Design
 
-Status: DESIGN / IMPLEMENTATION NOT YET ACCEPTED
+Status: PHASE 1 IMPLEMENTED / SECURITY ACCEPTANCE INCOMPLETE
 Owner: Sharnou Compiler
 Target: Windows x64, native Sharnou-generated PE32+
 Date: 2026-11-26
 
 ## Current implementation status - 2026-11-26
 
-Status: PHASE 1 IMPLEMENTED; latest integrated Windows validation PENDING. This is not yet security-accepted and must not be exposed to model-generated plans.
+Status: PHASE 1 IMPLEMENTED; WINDOWS CI PASS on PR #18 head `2ee44cef7f3d67b4ccdc26aa391a9e789197197b`. This is not yet security-accepted and must not be exposed to model-generated plans.
+
+Validation runs: Stage 7A / combined [45724983298](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45724983298); frozen M1-M6 baseline [45724983299](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45724983299). The combined run passed Stage 7A 24/24, collection imports 2/2, stack-probe/unwind 6/6, Runtime ABI, broker phase-1 adversarial tests, and the integrated M1-M6 83/83 baseline.
 
 Implemented in the dependent DevAgent broker candidate:
 
