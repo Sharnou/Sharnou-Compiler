@@ -73,7 +73,7 @@ if ($bytes[$pe] -ne 0x50 -or $bytes[$pe + 1] -ne 0x45 -or $bytes[$pe + 2] -ne 0 
 if ((Read-U16 -Bytes $bytes -Offset ($pe + 4)) -ne 0x8664) { Fail-PE 'COFF machine is not AMD64.' }
 $sectionCount = [int](Read-U16 -Bytes $bytes -Offset ($pe + 6))
 $optionalSize = [int](Read-U16 -Bytes $bytes -Offset ($pe + 20))
-if ($sectionCount -ne 4 -or $optionalSize -lt 240) { Fail-PE 'Expected four sections and a complete PE32+ optional header.' }
+if ($sectionCount -ne 6 -or $optionalSize -lt 240) { Fail-PE 'Expected six sections including x64 unwind tables and a complete PE32+ optional header.' }
 $opt = $pe + 24
 if ((Read-U16 -Bytes $bytes -Offset $opt) -ne 0x020B) { Fail-PE 'Optional header is not PE32+.' }
 $entryRva = [UInt64](Read-U32 -Bytes $bytes -Offset ($opt + 16))
@@ -106,18 +106,22 @@ for ($index = 0; $index -lt $sectionCount; $index++) {
     if (($rawPointer + $rawSize) -gt [UInt64]$bytes.Length -or ($rva + $virtualSize) -gt $sizeImage) { Fail-PE "Section '$name' exceeds its image bounds." }
     $sections.Add([pscustomobject]@{ Name = $name; VirtualSize = $virtualSize; Rva = $rva; RawSize = $rawSize; RawPointer = $rawPointer; Flags = $flags })
 }
-foreach ($name in @('.text', '.rdata', '.idata', '.reloc')) { if (-not $seenNames.Contains($name)) { Fail-PE "Missing section '$name'." } }
+foreach ($name in @('.text', '.rdata', '.idata', '.reloc', '.pdata', '.xdata')) { if (-not $seenNames.Contains($name)) { Fail-PE "Missing section '$name'." } }
 
 $text = $sections | Where-Object Name -eq '.text' | Select-Object -First 1
 $rdata = $sections | Where-Object Name -eq '.rdata' | Select-Object -First 1
 $idata = $sections | Where-Object Name -eq '.idata' | Select-Object -First 1
 $reloc = $sections | Where-Object Name -eq '.reloc' | Select-Object -First 1
+$pdata = $sections | Where-Object Name -eq '.pdata' | Select-Object -First 1
+$xdata = $sections | Where-Object Name -eq '.xdata' | Select-Object -First 1
 if ($text.Rva -ne 0x1000) { Fail-PE '.text must start at RVA 0x1000.' }
 $expectedRdata = $text.Rva + (Align-Up-PE -Value $text.VirtualSize -Alignment $sectionAlignment)
 $expectedIdata = $rdata.Rva + (Align-Up-PE -Value $rdata.VirtualSize -Alignment $sectionAlignment)
 $expectedReloc = $idata.Rva + (Align-Up-PE -Value $idata.VirtualSize -Alignment $sectionAlignment)
-if ($rdata.Rva -ne $expectedRdata -or $idata.Rva -ne $expectedIdata -or $reloc.Rva -ne $expectedReloc) { Fail-PE 'Section RVAs do not follow the aligned preceding sections.' }
-$expectedSizeImage = $reloc.Rva + (Align-Up-PE -Value $reloc.VirtualSize -Alignment $sectionAlignment)
+$expectedPdata = $reloc.Rva + (Align-Up-PE -Value $reloc.VirtualSize -Alignment $sectionAlignment)
+$expectedXdata = $pdata.Rva + (Align-Up-PE -Value $pdata.VirtualSize -Alignment $sectionAlignment)
+if ($rdata.Rva -ne $expectedRdata -or $idata.Rva -ne $expectedIdata -or $reloc.Rva -ne $expectedReloc -or $pdata.Rva -ne $expectedPdata -or $xdata.Rva -ne $expectedXdata) { Fail-PE 'Section RVAs do not follow the aligned preceding sections.' }
+$expectedSizeImage = $xdata.Rva + (Align-Up-PE -Value $xdata.VirtualSize -Alignment $sectionAlignment)
 if ($sizeImage -ne $expectedSizeImage) { Fail-PE 'SizeOfImage does not match the final aligned section.' }
 foreach ($a in $sections) {
     foreach ($b in $sections) {
@@ -132,7 +136,106 @@ if (($text.Flags -band 0x60000000) -ne 0x60000000 -or ($text.Flags -band 0x80000
 if (($rdata.Flags -band 0x40000000) -eq 0 -or ($rdata.Flags -band 0xA0000000) -ne 0) { Fail-PE '.rdata must be read-only data.' }
 if (($idata.Flags -band [UInt32]3221225472) -ne [UInt32]3221225472) { Fail-PE '.idata must be readable and writable.' }
 if (($reloc.Flags -band 0x02000000) -eq 0) { Fail-PE '.reloc must be discardable.' }
+foreach ($section in @($pdata, $xdata)) { if (($section.Flags -band 0x40000000) -eq 0 -or ($section.Flags -band 0xA0000000) -ne 0) { Fail-PE "$($section.Name) must be read-only initialized data." } }
 if ($entryRva -lt $text.Rva -or $entryRva -ge ($text.Rva + $text.VirtualSize)) { Fail-PE 'Entry point is outside .text.' }
+
+$exceptionRva = [UInt64](Read-U32 -Bytes $bytes -Offset ($opt + 136))
+$exceptionSize = [UInt64](Read-U32 -Bytes $bytes -Offset ($opt + 140))
+if ($exceptionRva -ne [UInt64]$pdata.Rva -or $exceptionSize -ne [UInt64]$pdata.VirtualSize -or $exceptionSize -lt 12 -or ($exceptionSize % 12) -ne 0) {
+    Fail-PE 'x64 exception directory must cover the complete .pdata runtime-function table.'
+}
+$exceptionOffset = Convert-RvaToOffset -Rva $exceptionRva -Size $exceptionSize -Sections $sections.ToArray() -FileSize $bytes.Length
+$runtimeFunctionCount = [int]($exceptionSize / 12)
+$previousEndRva = [UInt64]0
+$stackProbeInstructionPrefix = [byte[]]@(0x55, 0x48, 0x89, 0xE5, 0x49, 0x89, 0xE2, 0x49, 0xC7, 0xC3)
+$stackProbeCompare = [byte[]]@(0x49, 0x81, 0xFB, 0x00, 0x10, 0x00, 0x00)
+$stackProbeSubPointer = [byte[]]@(0x49, 0x81, 0xEA, 0x00, 0x10, 0x00, 0x00)
+$stackProbeTouch = [byte[]]@(0x41, 0xF6, 0x02, 0x00)
+$stackProbeSubRemaining = [byte[]]@(0x49, 0x81, 0xEB, 0x00, 0x10, 0x00, 0x00)
+$stackProbeSubTail = [byte[]]@(0x4D, 0x29, 0xDA)
+$stackAllocOpcode = [byte[]]@(0x48, 0x81, 0xEC)
+for ($runtimeIndex = 0; $runtimeIndex -lt $runtimeFunctionCount; $runtimeIndex++) {
+    $runtimeOffset = $exceptionOffset + ($runtimeIndex * 12)
+    $beginRva = [UInt64](Read-U32 -Bytes $bytes -Offset $runtimeOffset)
+    $endRva = [UInt64](Read-U32 -Bytes $bytes -Offset ($runtimeOffset + 4))
+    $unwindRva = [UInt64](Read-U32 -Bytes $bytes -Offset ($runtimeOffset + 8))
+    if ($beginRva -lt $text.Rva -or $endRva -le $beginRva -or $endRva -gt ($text.Rva + $text.VirtualSize)) {
+        Fail-PE ("RUNTIME_FUNCTION {0} has an invalid .text range." -f $runtimeIndex)
+    }
+    if ($runtimeIndex -gt 0 -and $beginRva -lt $previousEndRva) { Fail-PE 'RUNTIME_FUNCTION entries are not sorted and non-overlapping.' }
+    $previousEndRva = $endRva
+    if ($unwindRva -lt $xdata.Rva -or ($unwindRva + 4) -gt ($xdata.Rva + $xdata.VirtualSize)) { Fail-PE 'RUNTIME_FUNCTION unwind RVA is outside .xdata.' }
+    $unwindOffset = Convert-RvaToOffset -Rva $unwindRva -Size 4 -Sections $sections.ToArray() -FileSize $bytes.Length
+    $versionFlags = [int]$bytes[$unwindOffset]
+    $version = $versionFlags -band 0x07
+    $flags = $versionFlags -shr 3
+    $prologSize = [int]$bytes[$unwindOffset + 1]
+    $countOfCodes = [int]$bytes[$unwindOffset + 2]
+    $frameRegister = [int]($bytes[$unwindOffset + 3] -band 0x0F)
+    $frameOffset = [int]($bytes[$unwindOffset + 3] -shr 4)
+    if ($version -ne 1 -or $flags -ne 0) { Fail-PE 'Only version-1, non-chained x64 UNWIND_INFO is supported.' }
+    if ($prologSize -lt 73 -or $prologSize -gt 255 -or $prologSize -ge ($endRva - $beginRva)) { Fail-PE 'UNWIND_INFO prologue size is invalid.' }
+    if ($frameRegister -ne 5 -or $frameOffset -ne 0) { Fail-PE 'UNWIND_INFO must describe the generated RBP frame register.' }
+    if ($countOfCodes -notin @(4, 5)) { Fail-PE 'UNWIND_INFO has an unsupported unwind-code slot count.' }
+    $physicalCodeSlots = [int]([Math]::Ceiling([double]$countOfCodes / 2.0) * 2)
+    $unwindSize = 4 + ($physicalCodeSlots * 2)
+    if (($unwindRva + $unwindSize) -gt ($xdata.Rva + $xdata.VirtualSize)) { Fail-PE 'UNWIND_INFO code array exceeds .xdata.' }
+    $allocCodeOffset = [int]$bytes[$unwindOffset + 4]
+    $allocOpInfo = [int]($bytes[$unwindOffset + 5] -shr 4)
+    $allocOperation = [int]($bytes[$unwindOffset + 5] -band 0x0F)
+    if ($allocCodeOffset -ne $prologSize -or $allocOperation -ne 1 -or $allocOpInfo -notin @(0, 1)) { Fail-PE 'UNWIND_INFO must begin with the final UWOP_ALLOC_LARGE operation.' }
+    if ($allocOpInfo -eq 0) {
+        if ($countOfCodes -ne 4) { Fail-PE 'UWOP_ALLOC_LARGE scaled form has an invalid slot count.' }
+        $frameSize = [int](Read-U16 -Bytes $bytes -Offset ($unwindOffset + 6)) * 8
+        $setFrameCodeOffset = $unwindOffset + 8
+        $pushCodeOffset = $unwindOffset + 10
+    } else {
+        if ($countOfCodes -ne 5) { Fail-PE 'UWOP_ALLOC_LARGE 32-bit form has an invalid slot count.' }
+        $frameSize = [int](Read-U32 -Bytes $bytes -Offset ($unwindOffset + 6))
+        $setFrameCodeOffset = $unwindOffset + 10
+        $pushCodeOffset = $unwindOffset + 12
+    }
+    if ($frameSize -lt 0x1000 -or $frameSize -gt 0x100000 -or ($frameSize % 16) -ne 0) { Fail-PE 'UNWIND_INFO frame allocation is outside the compiler frame policy.' }
+    if ($allocOpInfo -eq 0 -and $frameSize -gt 0x7FFF8) { Fail-PE 'UWOP_ALLOC_LARGE scaled form overflows its 16-bit size slot.' }
+    if ($allocOpInfo -eq 1 -and $frameSize -le 0x7FFF8) { Fail-PE 'UWOP_ALLOC_LARGE 32-bit form is non-canonical for this frame size.' }
+    if ([int]$bytes[$setFrameCodeOffset] -ne 4 -or [int]$bytes[$setFrameCodeOffset + 1] -ne 0x03) { Fail-PE 'UNWIND_INFO is missing UWOP_SET_FPREG at the generated prologue offset.' }
+    if ([int]$bytes[$pushCodeOffset] -ne 1 -or [int]$bytes[$pushCodeOffset + 1] -ne 0x50) { Fail-PE 'UNWIND_INFO is missing UWOP_PUSH_NONVOL RBP.' }
+    if (($countOfCodes % 2) -ne 0) {
+        if ($bytes[$unwindOffset + 4 + ($countOfCodes * 2)] -ne 0 -or $bytes[$unwindOffset + 5 + ($countOfCodes * 2)] -ne 0) { Fail-PE 'UNWIND_INFO alignment padding is not zero.' }
+    }
+
+    # Verify the exact stack-probe prologue contract, including the final
+    # single SUB RSP that the unwind record describes.
+    $textOffset = Convert-RvaToOffset -Rva $beginRva -Size ([UInt64]$prologSize) -Sections $sections.ToArray() -FileSize $bytes.Length
+    for ($byteIndex = 0; $byteIndex -lt $stackProbeInstructionPrefix.Length; $byteIndex++) {
+        if ($bytes[$textOffset + $byteIndex] -ne $stackProbeInstructionPrefix[$byteIndex]) { Fail-PE 'Function prologue does not start with the expected frame-pointer and stack-probe instructions.' }
+    }
+    $encodedFrameSize = [BitConverter]::ToInt32($bytes, $textOffset + 10)
+    if ($encodedFrameSize -ne $frameSize) { Fail-PE 'Stack-probe immediate and UNWIND_INFO frame sizes do not match.' }
+    foreach ($pattern in @(
+        [pscustomobject]@{ Offset = 14; Bytes = $stackProbeCompare },
+        [pscustomobject]@{ Offset = 27; Bytes = $stackProbeSubPointer },
+        [pscustomobject]@{ Offset = 34; Bytes = $stackProbeTouch },
+        [pscustomobject]@{ Offset = 38; Bytes = $stackProbeSubRemaining },
+        [pscustomobject]@{ Offset = 59; Bytes = $stackProbeSubTail },
+        [pscustomobject]@{ Offset = 62; Bytes = $stackProbeTouch },
+        [pscustomobject]@{ Offset = 66; Bytes = $stackAllocOpcode }
+    )) {
+        for ($byteIndex = 0; $byteIndex -lt $pattern.Bytes.Length; $byteIndex++) {
+            if ($bytes[$textOffset + $pattern.Offset + $byteIndex] -ne $pattern.Bytes[$byteIndex]) { Fail-PE 'Generated stack-probe instruction sequence is malformed.' }
+        }
+    }
+    $allocImmediate = [BitConverter]::ToInt32($bytes, $textOffset + 69)
+    if ($allocImmediate -ne $frameSize -or $prologSize -ne 73) { Fail-PE 'Final SUB RSP allocation or stack-probe prologue length is invalid.' }
+    $jccBelowDisplacement = [BitConverter]::ToInt32($bytes, $textOffset + 23)
+    $jccBelowTarget = 27 + 6 + $jccBelowDisplacement
+    $loopJumpDisplacement = [BitConverter]::ToInt32($bytes, $textOffset + 46)
+    $loopJumpTarget = 45 + 5 + $loopJumpDisplacement
+    $jccDoneDisplacement = [BitConverter]::ToInt32($bytes, $textOffset + 55)
+    $jccDoneTarget = 53 + 6 + $jccDoneDisplacement
+    if ($jccBelowTarget -ne 50 -or $loopJumpTarget -ne 14 -or $jccDoneTarget -ne 66) { Fail-PE 'Stack-probe branch fixups do not target the page loop, tail probe, and final allocation correctly.' }
+}
+if ($runtimeFunctionCount -lt 1) { Fail-PE 'At least the PE entry point must have unwind metadata.' }
 
 $importRva = [UInt64](Read-U32 -Bytes $bytes -Offset ($opt + 120))
 $importSize = [UInt64](Read-U32 -Bytes $bytes -Offset ($opt + 124))
