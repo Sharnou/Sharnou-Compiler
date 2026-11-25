@@ -1394,7 +1394,7 @@ function Test-ImageBasic {
     if ($pe -lt 0 -or ($pe + 24) -gt $Image.Length -or $Image[$pe] -ne 0x50 -or $Image[$pe + 1] -ne 0x45) { throw 'Internal linker validation: invalid PE header/signature.' }
     if ([BitConverter]::ToUInt16($Image, $pe + 4) -ne 0x8664) { throw 'Internal linker validation: target machine is not AMD64.' }
     if ([BitConverter]::ToUInt16($Image, $pe + 24) -ne 0x020B) { throw 'Internal linker validation: optional header is not PE32+.' }
-    $count = [BitConverter]::ToUInt16($Image, $pe + 6); if ($count -ne 4) { throw "Internal linker validation: expected four sections, found $count." }
+    $count = [BitConverter]::ToUInt16($Image, $pe + 6); if ($count -ne 6) { throw "Internal linker validation: expected six sections, found $count." }
     $table = $pe + 24 + [BitConverter]::ToUInt16($Image, $pe + 20)
     if (($table + ($count * 40)) -gt [BitConverter]::ToUInt32($Image, $pe + 24 + 60)) { throw 'Internal linker validation: section headers exceed SizeOfHeaders.' }
     $optional = $pe + 24
@@ -1408,6 +1408,8 @@ function Test-ImageBasic {
     }
     $relocRva = [BitConverter]::ToUInt32($Image, $optional + 152); $relocSize = [BitConverter]::ToUInt32($Image, $optional + 156)
     if ($relocSectionRva -eq 0 -or $relocRva -ne $relocSectionRva -or $relocSize -ne 12) { throw 'Internal linker validation: base relocation directory is missing or malformed.' }
+    $exceptionRva = [BitConverter]::ToUInt32($Image, $optional + 136); $exceptionSize = [BitConverter]::ToUInt32($Image, $optional + 140)
+    if ($exceptionRva -eq 0 -or $exceptionSize -lt 12 -or ($exceptionSize % 12) -ne 0) { throw 'Internal linker validation: x64 exception/unwind directory is missing or malformed.' }
 }
 
 if (-not [Environment]::Is64BitOperatingSystem) { throw 'The Sharnou compiler emits x64 PE32+ executables and requires 64-bit Windows.' }
@@ -1636,17 +1638,29 @@ $reloc = [byte[]]::new(0x200)
 Set-U32 -Buffer $reloc -Offset 0 -Value $dataRva; Set-U32 -Buffer $reloc -Offset 4 -Value 12; Set-U16 -Buffer $reloc -Offset 8 -Value 0xA000; Set-U16 -Buffer $reloc -Offset 10 -Value 0
 if ($idata.Length -gt $idataVirtualSpan) { throw 'Generated .idata section exceeds its reserved virtual span.' }
 $headersSize = 0x400
-$textRawPointer = $headersSize; $dataRawPointer = $textRawPointer + $textRawSize; $idataRawPointer = $dataRawPointer + $dataRawSize; $relocRawPointer = $idataRawPointer + $idata.Length
-$totalSize = $relocRawPointer + $reloc.Length
+$pdataRawSize = Align-Up -Value $pdataBytes.Length -Alignment 0x200
+$xdataRawSize = Align-Up -Value $xdataBytes.Length -Alignment 0x200
+$textRawPointer = $headersSize
+$dataRawPointer = $textRawPointer + $textRawSize
+$idataRawPointer = $dataRawPointer + $dataRawSize
+$relocRawPointer = $idataRawPointer + $idata.Length
+$pdataRawPointer = $relocRawPointer + $reloc.Length
+$xdataRawPointer = $pdataRawPointer + $pdataRawSize
+$totalSize = $xdataRawPointer + $xdataRawSize
 $image = [byte[]]::new($totalSize)
-Set-Bytes -Buffer $image -Offset $textRawPointer -Bytes $codeBytes; Set-Bytes -Buffer $image -Offset $dataRawPointer -Bytes $dataBytes; Set-Bytes -Buffer $image -Offset $idataRawPointer -Bytes $idata; Set-Bytes -Buffer $image -Offset $relocRawPointer -Bytes $reloc
+Set-Bytes -Buffer $image -Offset $textRawPointer -Bytes $codeBytes
+Set-Bytes -Buffer $image -Offset $dataRawPointer -Bytes $dataBytes
+Set-Bytes -Buffer $image -Offset $idataRawPointer -Bytes $idata
+Set-Bytes -Buffer $image -Offset $relocRawPointer -Bytes $reloc
+Set-Bytes -Buffer $image -Offset $pdataRawPointer -Bytes $pdataBytes
+Set-Bytes -Buffer $image -Offset $xdataRawPointer -Bytes $xdataBytes
 
 # DOS and PE headers.
 $image[0] = 0x4D; $image[1] = 0x5A; Set-U32 -Buffer $image -Offset 0x3C -Value 0x80; Set-Ascii -Buffer $image -Offset 0x80 -Value "PE`0`0"
-Set-U16 -Buffer $image -Offset 0x84 -Value 0x8664; Set-U16 -Buffer $image -Offset 0x86 -Value 4; Set-U32 -Buffer $image -Offset 0x88 -Value 0; Set-U32 -Buffer $image -Offset 0x8C -Value 0; Set-U32 -Buffer $image -Offset 0x90 -Value 0; Set-U16 -Buffer $image -Offset 0x94 -Value 240; Set-U16 -Buffer $image -Offset 0x96 -Value 0x0022
+Set-U16 -Buffer $image -Offset 0x84 -Value 0x8664; Set-U16 -Buffer $image -Offset 0x86 -Value 6; Set-U32 -Buffer $image -Offset 0x88 -Value 0; Set-U32 -Buffer $image -Offset 0x8C -Value 0; Set-U32 -Buffer $image -Offset 0x90 -Value 0; Set-U16 -Buffer $image -Offset 0x94 -Value 240; Set-U16 -Buffer $image -Offset 0x96 -Value 0x0022
 $opt = 0x98
 Set-U16 -Buffer $image -Offset ($opt + 0) -Value 0x020B; $image[$opt + 2] = 1; $image[$opt + 3] = 0
-Set-U32 -Buffer $image -Offset ($opt + 4) -Value $textRawSize; Set-U32 -Buffer $image -Offset ($opt + 8) -Value ($dataRawSize + $idata.Length + $reloc.Length); Set-U32 -Buffer $image -Offset ($opt + 12) -Value 0
+Set-U32 -Buffer $image -Offset ($opt + 4) -Value $textRawSize; Set-U32 -Buffer $image -Offset ($opt + 8) -Value ($dataRawSize + $idata.Length + $reloc.Length + $pdataRawSize + $xdataRawSize); Set-U32 -Buffer $image -Offset ($opt + 12) -Value 0
 Set-U32 -Buffer $image -Offset ($opt + 16) -Value $textRva; Set-U32 -Buffer $image -Offset ($opt + 20) -Value $textRva; Set-U64 -Buffer $image -Offset ($opt + 24) -Value ([UInt64]([Int64]0x140000000))
 Set-U32 -Buffer $image -Offset ($opt + 32) -Value 0x1000; Set-U32 -Buffer $image -Offset ($opt + 36) -Value 0x200
 Set-U16 -Buffer $image -Offset ($opt + 40) -Value 6; Set-U16 -Buffer $image -Offset ($opt + 42) -Value 0; Set-U16 -Buffer $image -Offset ($opt + 44) -Value 0; Set-U16 -Buffer $image -Offset ($opt + 46) -Value 0; Set-U16 -Buffer $image -Offset ($opt + 48) -Value 6; Set-U16 -Buffer $image -Offset ($opt + 50) -Value 0
@@ -1655,6 +1669,7 @@ Set-U16 -Buffer $image -Offset ($opt + 68) -Value 3; Set-U16 -Buffer $image -Off
 Set-U64 -Buffer $image -Offset ($opt + 72) -Value ([UInt64]0x100000); Set-U64 -Buffer $image -Offset ($opt + 80) -Value ([UInt64]0x1000); Set-U64 -Buffer $image -Offset ($opt + 88) -Value ([UInt64]0x100000); Set-U64 -Buffer $image -Offset ($opt + 96) -Value ([UInt64]0x1000)
 Set-U32 -Buffer $image -Offset ($opt + 104) -Value 0; Set-U32 -Buffer $image -Offset ($opt + 108) -Value 16
 Set-U32 -Buffer $image -Offset ($opt + 120) -Value ([UInt32]([long]$idataRva + [long]$descriptorBase)); Set-U32 -Buffer $image -Offset ($opt + 124) -Value $importDirectorySize
+Set-U32 -Buffer $image -Offset ($opt + 136) -Value $pdataRva; Set-U32 -Buffer $image -Offset ($opt + 140) -Value $pdataBytes.Length
 Set-U32 -Buffer $image -Offset ($opt + 152) -Value $relocRva; Set-U32 -Buffer $image -Offset ($opt + 156) -Value 12
 Set-U32 -Buffer $image -Offset ($opt + 208) -Value ([UInt32]([long]$idataRva + 0x70)); Set-U32 -Buffer $image -Offset ($opt + 212) -Value 0x108
 $sectionText = 0x188
@@ -1665,6 +1680,10 @@ $sectionImport = 0x1D8
 Set-Ascii -Buffer $image -Offset $sectionImport -Value '.idata'; Set-U32 -Buffer $image -Offset ($sectionImport + 8) -Value $idata.Length; Set-U32 -Buffer $image -Offset ($sectionImport + 12) -Value $idataRva; Set-U32 -Buffer $image -Offset ($sectionImport + 16) -Value $idata.Length; Set-U32 -Buffer $image -Offset ($sectionImport + 20) -Value $idataRawPointer; Set-U32 -Buffer $image -Offset ($sectionImport + 36) -Value ([UInt32]([Int64]3221225536))
 $sectionReloc = 0x200
 Set-Ascii -Buffer $image -Offset $sectionReloc -Value '.reloc'; Set-U32 -Buffer $image -Offset ($sectionReloc + 8) -Value 12; Set-U32 -Buffer $image -Offset ($sectionReloc + 12) -Value $relocRva; Set-U32 -Buffer $image -Offset ($sectionReloc + 16) -Value $reloc.Length; Set-U32 -Buffer $image -Offset ($sectionReloc + 20) -Value $relocRawPointer; Set-U32 -Buffer $image -Offset ($sectionReloc + 36) -Value 0x42000040
+$sectionPdata = 0x228
+Set-Ascii -Buffer $image -Offset $sectionPdata -Value '.pdata'; Set-U32 -Buffer $image -Offset ($sectionPdata + 8) -Value $pdataBytes.Length; Set-U32 -Buffer $image -Offset ($sectionPdata + 12) -Value $pdataRva; Set-U32 -Buffer $image -Offset ($sectionPdata + 16) -Value $pdataRawSize; Set-U32 -Buffer $image -Offset ($sectionPdata + 20) -Value $pdataRawPointer; Set-U32 -Buffer $image -Offset ($sectionPdata + 36) -Value 0x40000040
+$sectionXdata = 0x250
+Set-Ascii -Buffer $image -Offset $sectionXdata -Value '.xdata'; Set-U32 -Buffer $image -Offset ($sectionXdata + 8) -Value $xdataBytes.Length; Set-U32 -Buffer $image -Offset ($sectionXdata + 12) -Value $xdataRva; Set-U32 -Buffer $image -Offset ($sectionXdata + 16) -Value $xdataRawSize; Set-U32 -Buffer $image -Offset ($sectionXdata + 20) -Value $xdataRawPointer; Set-U32 -Buffer $image -Offset ($sectionXdata + 36) -Value 0x40000040
 Test-ImageBasic -Image $image
 
 $outputDirectory = [System.IO.Path]::GetDirectoryName($outputFullPath)
