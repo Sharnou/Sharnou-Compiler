@@ -895,3 +895,83 @@ Normal human review of PR #11 remains the integration decision; do not auto-merg
 - Disposition: REPOSITORY PRESENT / STATIC REVIEWED for the current compiler/repository/PR audit; WINDOWS CI PASS only for the historical Stage 7A and orchestrator runs described above; NOT IMPLEMENTED / NOT RUN for the current DevAgent and Reverse Engineering Agent; BLOCKED for safe model-controlled execution by issues #1 and #9.
 - No compiler, verifier, agent, Engine, IDE, example, fixture, test, or workflow source was changed. No PR was rebased, merged or edited; no workflow was dispatched; no external compiler/toolchain was used.
 - Next dependency-ordered work: (1) complete normal human review/integration and provenance work for the frozen baseline; (2) close the ABI runtime gates; (3) build and adversarially test a typed, allowlisted process broker with workspace confinement, bounded output, timeout/cancellation, Job Object containment and rollback; (4) implement the read-only PE/DLL/export/relocation/unwind analyzer and separate D3DCompiler shader adapter; (5) integrate local inference/planning and bounded source repair only after the tool and recovery/security gates pass. Keep issues #12 and #14 open.
+ 
+## Milestone 7A local regression repair - 2026-11-25
+
+### User-provided Windows validation log
+
+The uploaded `Pasted text(7).txt` is an execution log, not the source package. It reports:
+
+- Engine foundation preflight: 5/5.
+- Milestone 7A example build: 22/22.
+- Example runtime: 15/15.
+- Stage 2: 25/25.
+- Stage 4: 20/20.
+- PE verifier: 4/4.
+- Stage 5: 24/25. The only failure is the absent imported module `Tests\\StdLib\\Collections.sharnou`.
+- Stage 6: 9/9.
+- Stage 7A: 27/28. The failing `BranchConditionCodes` case expected 13 output lines but received the first 6.
+
+### Repair PR #15
+
+PR [#15 - Repair Stage 5 collection imports and add full Stage 7A branch regression](https://github.com/Sharnou/Sharnou-Compiler/pull/15) is based on default HEAD `f80dae6fc6efccce84bc733a7529664085b3250e` and remains OPEN / UNMERGED.
+
+Changes:
+- Restores canonical `StdLib/Collections.sharnou` from the pinned M1-M6 payload. Its original member SHA-256 is `46140cdd516f2d96fb93675af1bbacab79db4daf5e711881103ee27b2cd730e3`.
+- Adds `Tests/StdLib/Collections.sharnou` as a compatibility import shim to the canonical module.
+- Adds two native compile / PE-verify / runtime tests for the canonical and legacy import paths.
+- Adds `Examples/ControlFlow/BranchConditionCodes.sharnou` with all six comparison operators, true/false paths, variable operands and INT32_MIN/INT32_MAX boundaries. Its expected 13-line output matches the output expected by the uploaded log.
+- Integrates that fixture into Build.ps1, Run.ps1 and Tests/Test-Stage7A.ps1.
+
+### Windows CI result
+
+Windows Actions run [45696244484](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45696244484) completed SUCCESS on PR #15 head `01fd2d7b6bd6ab4d80a920449bc529fa865634e8`.
+
+Exact job log:
+- Source encoding check: PASS (ASCII / UTF-8 without BOM).
+- Stage 7A: 24 passed, 0 failed, 24 total.
+- The new 13-line signed branch-boundary regression: PASS.
+- Canonical `StdLib` import: PASS.
+- Legacy `Tests/StdLib` import: PASS.
+- Stage 5 collection import tests: 2 passed, 0 failed, 2 total.
+- Combined result: PASS.
+
+The 13-line branch test passing means the current compiler implementation did not reproduce the user's truncated-output failure with an independently maintained equivalent fixture. No Stage0 compiler change is justified by the available evidence. The exact local `BranchConditionCodes.sharnou` and expanded local `Test.ps1` were not uploaded, so the original local failure is not yet conclusively reconciled against the new fixture.
+
+The full 83-case M1-M6 baseline is still tracked separately by issue #9 / PR #11. This PR run does not claim 83/83 or the full Stage 5 25-case suite.
+
+Classification: **WINDOWS CI PASS on PR #15; USER-REPORTED LOCAL FAILURE IDENTIFIED; EXACT LOCAL TEST SOURCE NOT AVAILABLE; DEFAULT BRANCH NOT MODIFIED; PR NOT MERGED.**
+
+ 
+### Branch fixture size cross-check - 2026-11-25
+
+- Uploaded local `BranchConditionCodes.exe`: `codeBytes=1171`, `dataBytes=57` (the user log lines 853-856); its runtime output contains only six labels.
+- The PR #15 equivalent 13-output fixture: `codeBytes=3573`, `dataBytes=275`; its Windows run prints the exact 13-line expected output and passes.
+- Because each output label is a distinct string constant retained in the generated data section, the much smaller local image strongly suggests the local executable did not contain the seven additional output-label constants. Leading explanation: the local fixture or expected-output list is stale/truncated, or the local fixture uses a construct not represented by the current reproducer. This size evidence does not conclusively distinguish an incomplete source file from a parser-path defect.
+- Do not change signed-comparison machine code based on this log alone. Obtain the exact local `BranchConditionCodes.sharnou` to close the remaining ambiguity.
+
+
+## User-local Milestone 7A Windows validation - 2026-11-25
+
+- The user ran PR #15 source snapshot commit `de4e64e3f45bc142391886033c33a825722a6eca` on Windows from the downloaded folder `Sharnou-Compiler-de4e64e3f45bc142391886033c33a825722a6eca`. Classification: **USER-REPORTED WINDOWS PASS**.
+- `Test.ps1`: Stage 7A **24 passed, 0 failed, 24 total** (9 positive runtime cases, 12 negative parser/type cases, 3 native instruction/branch checks); Stage 5 collection imports **2 passed, 0 failed, 2 total**; final **Combined result: PASS**.
+- `Build.ps1`: all 9 control-flow examples built as native AMD64 PE32+ images; the repository PE verifier passed on each image. `Run.ps1`: all 9 examples returned exit code 0 and exact expected output.
+- The 13-output `BranchConditionCodes` fixture passed. Canonical and legacy collection import paths both passed.
+- The log also contains eight `InputObjectNotBound` parameter-binding errors after the command `Get-ChildItem -LiteralPath $PWD -Recurse -File -Filter *.ps1 | .\Test.ps1`. This is a command-composition error: `Test.ps1` has no pipeline-input parameter. The test script subsequently completed and reported PASS. Run the listing command and ` .\Test.ps1` as separate commands; do not pipe file objects into the test runner.
+- The execution-policy listing showed Process=Bypass and CurrentUser=RemoteSigned; scripts ran successfully. No execution-policy blocker was observed.
+- The user log does **not** run the frozen M1-M6 83-case baseline. PR #11 remains open/unmerged and issue #9 remains a separate gate. Do not describe the current 24+2 local results as an 83-case pass.
+- Static re-audit of the compiler at this source snapshot reconfirms issue #1's ABI gaps: `Set-FrameSize` allows frames up to 1 MiB and yields a minimum frame above one 4 KiB page; `Emit-Prologue` subtracts the frame size without a stack probe. The PE writer/verifier still use four sections and no exception directory or `.pdata` / `.xdata` unwind records. These are **REPOSITORY PRESENT / STATIC REVIEWED**, not failures reproduced by this log, and remain open ABI work before full ABI/self-hosting acceptance. See [Microsoft x64 prolog and epilog](https://learn.microsoft.com/en-us/cpp/build/prolog-and-epilog?view=msvc-160) and [x64 exception handling](https://learn.microsoft.com/en-us/cpp/build/exception-handling-x64).
+- No compiler or backend source change was justified by this log: its compiler, test, build, and run cases all passed. README and plan test inventory were corrected from eight to nine positive cases and now document the standalone test-runner invocation.
+
+## Windows x64 stack-probe and unwind repair - 2026-11-25
+
+- User requested repair of the remaining stack-probe and unwind defects and a full Milestone download. Work is isolated in [PR #16](https://github.com/Sharnou/Sharnou-Compiler/pull/16), branch `repair/m7a-x64-stack-probe-unwind-20261125`; current code/documentation test snapshot verified by Windows run `45705513598` at head `b1365dc17bb5aeaad74462633fadfdc29b56fa3e`.
+- Implemented `Emit-StackProbe`: the function prologue establishes RBP, passes frame size in EAX, calls private leaf `__sharnou_chkstk`, then performs the single fixed `sub rsp, imm32`. The helper probes downward in 4 KiB steps and uses only volatile R10/R11 and flags; it preserves RAX, RCX/RDX/R8/R9, nonvolatile registers and RSP. The helper is a leaf and has no RUNTIME_FUNCTION record.
+- Added `New-UnwindInfoBytes` and generated version-1 UNWIND_INFO for the entry routine and each Sharnou function. Records contain UWOP_ALLOC_LARGE (scaled 16-bit or 32-bit form), UWOP_SET_FPREG, and UWOP_PUSH_NONVOL RBP. Added sorted RUNTIME_FUNCTION records in `.pdata`, unwind data in `.xdata`, and the PE32+ exception directory. The linker now emits six sections: `.text`, `.rdata`, `.idata`, `.reloc`, `.pdata`, `.xdata`.
+- Changed generated function epilogues to `lea rsp,[rbp+0]; pop rbp; ret`, matching the Windows x64 epilogue pattern. The PE verifier validates section layout, exception directory coverage, sorted runtime-function ranges, unwind version/flags/codes, stack frame sizes, exact prologue bytes, helper bytes and rel32 branch targets.
+- Added `Tests/Test-StackProbeUnwind.ps1` and wired it into `Test.ps1`. It compiles and executes a 17,000-local multi-page main frame and a smaller user-function frame; checks both UWOP_ALLOC_LARGE encodings; verifies the generated epilogue; and confirms the PE verifier rejects a truncated exception directory and an unsupported UNWIND_INFO version.
+- **WINDOWS CI PASS:** run [45705513598](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45705513598), head `b1365dc17bb5aeaad74462633fadfdc29b56fa3e`: ASCII/no-BOM PASS; Stage 7A 24/24; Stage 5 collection imports 2/2; stack-probe/unwind 6/6; Combined result PASS. The native multi-page executable logged `codeBytes=187553`, passed the PE verifier, and exited 0 with the expected output `16999` then `17000`. Both UNWIND_INFO allocation encodings were exercised.
+- PR #16 remains OPEN / UNMERGED; no default-branch source merge was performed. The previous user-provided local run validated PR #15 before these ABI changes. **User-local testing of PR #16 is still pending**; the current new stack/unwind evidence is Windows CI, not a user-PC execution report.
+- Issue #1 is partially resolved but remains OPEN: stack probing and PE unwind metadata now have source, verifier and Windows CI coverage. Additional ABI acceptance remains: runtime nonvolatile-register sentinels, RSP/call-site alignment and argument-value probes, and generic checked marshalling for higher-arity Windows API calls. Do not claim complete ABI acceptance.
+- The frozen Milestone 1-6 83-case baseline was not run by this PR. Issue #9 / PR #11 remain separate and unmerged. Do not describe the current 24 + 2 + 6 result as 83/83.
+- The PowerShell `InputObjectNotBound` messages in the user's log remain explained by piping `Get-ChildItem` FileInfo objects into parameterless `Test.ps1`; those errors are not compiler failures. Invoke `Get-ChildItem ...` and ` .\Test.ps1` as separate commands.

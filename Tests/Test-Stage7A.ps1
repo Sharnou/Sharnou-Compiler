@@ -19,6 +19,7 @@ $positiveCases = @(
     [pscustomobject]@{ Name = 'nested if inside while'; File = 'NestedControlFlow.sharnou'; Expected = ('15' + $nl + 'bounded') },
     [pscustomobject]@{ Name = 'control flow inside user functions'; File = 'FunctionControlFlow.sharnou'; Expected = ('10' + $nl + '7') },
     [pscustomobject]@{ Name = 'signed integer comparison boundaries'; File = 'SignedComparisonEdges.sharnou'; Expected = ('signed less' + $nl + 'minimum inclusive' + $nl + 'signed greater' + $nl + 'maximum inclusive' + $nl + 'not equal') },
+    [pscustomobject]@{ Name = 'all comparison outcomes at signed integer boundaries'; File = 'BranchConditionCodes.sharnou'; Expected = ('lt' + $nl + 'gt-false' + $nl + 'le' + $nl + 'ge' + $nl + 'eq' + $nl + 'ne-false' + $nl + 'lt-false-edge' + $nl + 'gt-false-edge' + $nl + 'le-false-edge' + $nl + 'ge-false-edge' + $nl + 'eq-false-edge' + $nl + 'ne-true-edge' + $nl + 'gt-true-edge') },
     [pscustomobject]@{ Name = 'zero-iteration loop'; File = 'WhileFalse.sharnou'; Expected = 'zero iterations' },
     [pscustomobject]@{ Name = 'arithmetic precedence before comparison'; File = 'ComparisonPrecedence.sharnou'; Expected = 'arithmetic before comparison' }
 )

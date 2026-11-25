@@ -1310,10 +1310,31 @@ function Set-FrameSize {
     $Context.FrameSize = Align-Up -Value $required -Alignment 0x10
     if ($Context.FrameSize -gt 0x100000) { throw "Function or main frame is too large: $($Context.FrameSize) bytes." }
 }
+function Emit-StackProbe {
+    param([int] $FrameSize)
+    if ($FrameSize -le 0 -or ($FrameSize % 16) -ne 0) { throw "Invalid stack-probe frame size: $FrameSize" }
+    # Windows x64 uses a special stack-probe helper contract: RAX carries the
+    # allocation size; the helper preserves RAX and argument registers, and
+    # may clobber only R10, R11, and flags. RSP remains unchanged until it
+    # returns, after which the ordinary fixed SUB RSP is unwind-described.
+    Emit-Bytes -Bytes ([byte[]]@(0xB8)); Emit-I32 -Value $FrameSize # mov eax,FrameSize
+    Emit-Bytes -Bytes ([byte[]]@(0xE8))
+    $dispOffset = $script:Code.Count
+    Emit-I32 -Value 0
+    $script:CodeFixups.Add([pscustomobject]@{ Kind = 'Code'; DispOffset = $dispOffset; Target = '__sharnou_chkstk' })
+}
 function Emit-Prologue {
     param([object] $Context, [object] $Function = $null)
     $script:ActiveContext = $Context; $script:TempDepth = 0
-    Emit-Bytes -Bytes ([byte[]]@(0x55, 0x48, 0x89, 0xE5, 0x48, 0x81, 0xEC)); Emit-I32 -Value $Context.FrameSize
+    $Context | Add-Member -NotePropertyName PrologueSize -NotePropertyValue 0 -Force
+    $Context | Add-Member -NotePropertyName StackAllocCodeOffset -NotePropertyValue 0 -Force
+    $prologueStart = $script:Code.Count
+    Emit-Bytes -Bytes ([byte[]]@(0x55, 0x48, 0x89, 0xE5)) # push rbp; mov rbp,rsp
+    Emit-StackProbe -FrameSize ([int]$Context.FrameSize)
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x81, 0xEC)); Emit-I32 -Value $Context.FrameSize # sub rsp,imm32
+    $Context.PrologueSize = [int]($script:Code.Count - $prologueStart)
+    $Context.StackAllocCodeOffset = $Context.PrologueSize
+    if ($Context.PrologueSize -gt 255) { throw "Generated unwind prologue exceeds 255 bytes: $($Context.PrologueSize)." }
     if ($null -ne $Function) {
         for ($i = 0; $i -lt $Function.Parameters.Count; $i++) {
             $slotPosition = 0x80 + ($i * 16)
@@ -1330,7 +1351,31 @@ function Emit-Prologue {
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x83, 0xF8, 0xFF)); Emit-JumpConditional -ConditionCode 0x84 -Label '__runtime_fail'
     Emit-StoreRaxFrame -SlotPosition 0x78
 }
-function Emit-Epilogue { Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xEC, 0x5D, 0xC3)) }
+function New-UnwindInfoBytes {
+    param([object] $Context)
+    $frameSize = [int]$Context.FrameSize
+    if ($frameSize -lt 0x1000 -or ($frameSize % 16) -ne 0) { throw "Unwind metadata received an invalid frame size: $frameSize." }
+    $allocInfo = if ($frameSize -le 0x7FFF8) { 0 } else { 1 }
+    $countOfCodes = if ($allocInfo -eq 0) { 4 } else { 5 }
+    $bytes = [System.Collections.Generic.List[byte]]::new()
+    $bytes.Add([byte]1) # version 1, flags 0
+    $bytes.Add([byte]$Context.PrologueSize)
+    $bytes.Add([byte]$countOfCodes)
+    $bytes.Add([byte]0x05) # frame register RBP, frame offset 0
+    $bytes.Add([byte]$Context.StackAllocCodeOffset)
+    $bytes.Add([byte](($allocInfo -shl 4) -bor 0x01)) # UWOP_ALLOC_LARGE
+    if ($allocInfo -eq 0) {
+        $scaledSize = [UInt16]($frameSize / 8)
+        $bytes.AddRange([BitConverter]::GetBytes($scaledSize))
+    } else {
+        $bytes.AddRange([BitConverter]::GetBytes([UInt32]$frameSize))
+    }
+    $bytes.Add([byte]4); $bytes.Add([byte]0x03) # UWOP_SET_FPREG
+    $bytes.Add([byte]1); $bytes.Add([byte]0x50) # UWOP_PUSH_NONVOL RBP
+    if (($countOfCodes % 2) -ne 0) { $bytes.Add([byte]0); $bytes.Add([byte]0) }
+    return ,$bytes.ToArray()
+}
+function Emit-Epilogue { Emit-Bytes -Bytes ([byte[]]@(0x48, 0x8D, 0x65, 0x00, 0x5D, 0xC3)) } # lea rsp,[rbp+0]; pop rbp; ret (legal x64 epilogue)
 function Test-ImageBasic {
     param([byte[]] $Image)
     if ($Image.Length -lt 0x400 -or $Image[0] -ne 0x4D -or $Image[1] -ne 0x5A) { throw 'Internal linker validation: invalid DOS header.' }
@@ -1338,7 +1383,7 @@ function Test-ImageBasic {
     if ($pe -lt 0 -or ($pe + 24) -gt $Image.Length -or $Image[$pe] -ne 0x50 -or $Image[$pe + 1] -ne 0x45) { throw 'Internal linker validation: invalid PE header/signature.' }
     if ([BitConverter]::ToUInt16($Image, $pe + 4) -ne 0x8664) { throw 'Internal linker validation: target machine is not AMD64.' }
     if ([BitConverter]::ToUInt16($Image, $pe + 24) -ne 0x020B) { throw 'Internal linker validation: optional header is not PE32+.' }
-    $count = [BitConverter]::ToUInt16($Image, $pe + 6); if ($count -ne 4) { throw "Internal linker validation: expected four sections, found $count." }
+    $count = [BitConverter]::ToUInt16($Image, $pe + 6); if ($count -ne 6) { throw "Internal linker validation: expected six sections, found $count." }
     $table = $pe + 24 + [BitConverter]::ToUInt16($Image, $pe + 20)
     if (($table + ($count * 40)) -gt [BitConverter]::ToUInt32($Image, $pe + 24 + 60)) { throw 'Internal linker validation: section headers exceed SizeOfHeaders.' }
     $optional = $pe + 24
@@ -1352,6 +1397,8 @@ function Test-ImageBasic {
     }
     $relocRva = [BitConverter]::ToUInt32($Image, $optional + 152); $relocSize = [BitConverter]::ToUInt32($Image, $optional + 156)
     if ($relocSectionRva -eq 0 -or $relocRva -ne $relocSectionRva -or $relocSize -ne 12) { throw 'Internal linker validation: base relocation directory is missing or malformed.' }
+    $exceptionRva = [BitConverter]::ToUInt32($Image, $optional + 136); $exceptionSize = [BitConverter]::ToUInt32($Image, $optional + 140)
+    if ($exceptionRva -eq 0 -or $exceptionSize -lt 12 -or ($exceptionSize % 12) -ne 0) { throw 'Internal linker validation: x64 exception/unwind directory is missing or malformed.' }
 }
 
 if (-not [Environment]::Is64BitOperatingSystem) { throw 'The Sharnou compiler emits x64 PE32+ executables and requires 64-bit Windows.' }
@@ -1422,9 +1469,62 @@ foreach ($functionObject in ($script:Functions.Values | Sort-Object Index)) {
     Emit-IntegerExpression -Node $functionObject.ReturnExpression
     Emit-Epilogue
 }
+# Windows x64 stack-probe helper. This is a leaf routine using only R10/R11
+# and flags; RAX (the requested allocation size), argument registers, RSP, and
+# all nonvolatile registers are preserved. Leaf routines require no .pdata row.
+$stackProbeOffset = [int]$script:Code.Count
+Mark-CodeLabel -Label '__sharnou_chkstk'
+Emit-Bytes -Bytes ([byte[]]@(0x49, 0x89, 0xE2)) # mov r10,rsp (includes the call return address)
+Emit-Bytes -Bytes ([byte[]]@(0x49, 0x89, 0xC3)) # mov r11,rax
+Emit-Bytes -Bytes ([byte[]]@(0x49, 0x83, 0xEB, 0x08)) # sub r11,8 (adjust for the call return address)
+$probeLoopLabel = New-UniqueLabel -Prefix 'chkstk_loop'
+$probeTailLabel = New-UniqueLabel -Prefix 'chkstk_tail'
+$probeDoneLabel = New-UniqueLabel -Prefix 'chkstk_done'
+Mark-CodeLabel -Label $probeLoopLabel
+Emit-Bytes -Bytes ([byte[]]@(0x49, 0x81, 0xFB, 0x00, 0x10, 0x00, 0x00)) # cmp r11,1000h
+Emit-JumpConditional -ConditionCode 0x82 -Label $probeTailLabel
+Emit-Bytes -Bytes ([byte[]]@(0x49, 0x81, 0xEA, 0x00, 0x10, 0x00, 0x00)) # sub r10,1000h
+Emit-Bytes -Bytes ([byte[]]@(0x41, 0xF6, 0x02, 0x00)) # test byte ptr [r10],0
+Emit-Bytes -Bytes ([byte[]]@(0x49, 0x81, 0xEB, 0x00, 0x10, 0x00, 0x00)) # sub r11,1000h
+Emit-Jump -Label $probeLoopLabel
+Mark-CodeLabel -Label $probeTailLabel
+Emit-Bytes -Bytes ([byte[]]@(0x4D, 0x85, 0xDB)) # test r11,r11
+Emit-JumpConditional -ConditionCode 0x84 -Label $probeDoneLabel
+Emit-Bytes -Bytes ([byte[]]@(0x4D, 0x29, 0xDA)) # sub r10,r11
+Emit-Bytes -Bytes ([byte[]]@(0x41, 0xF6, 0x02, 0x00)) # test byte ptr [r10],0
+Mark-CodeLabel -Label $probeDoneLabel
+Emit-Bytes -Bytes ([byte[]]@(0xC3)) # ret; RAX is deliberately unchanged
+
 # WINAPI thread callback used by the thread/synchronization smoke-test intrinsic.
+$workerOffset = [int]$script:Code.Count
 Mark-CodeLabel -Label '__sharnou_worker'
 Emit-Bytes -Bytes ([byte[]]@(0x31, 0xC0, 0xC3)) # return DWORD 0
+
+# The stack-probe helper and worker callback are true leaf routines and need
+# no RUNTIME_FUNCTION entries. Every frame-owning function gets x64 unwind data.
+$orderedFunctions = @($script:Functions.Values | Sort-Object Index)
+$runtimeFunctionSpecs = [System.Collections.Generic.List[object]]::new()
+$entryEndOffset = if ($orderedFunctions.Count -gt 0) { [int]$script:CodeLabels[$orderedFunctions[0].Label] } else { $stackProbeOffset }
+$runtimeFunctionSpecs.Add([pscustomobject]@{ StartOffset = [int]$script:CodeLabels['__entry']; EndOffset = $entryEndOffset; Context = $script:MainContext; UnwindBytes = $null; UnwindOffset = 0 })
+for ($functionIndex = 0; $functionIndex -lt $orderedFunctions.Count; $functionIndex++) {
+    $functionObject = $orderedFunctions[$functionIndex]
+    $startOffset = [int]$script:CodeLabels[$functionObject.Label]
+    $endOffset = if (($functionIndex + 1) -lt $orderedFunctions.Count) { [int]$script:CodeLabels[$orderedFunctions[$functionIndex + 1].Label] } else { $stackProbeOffset }
+    if ($endOffset -le $startOffset) { throw "Invalid generated function range for '$($functionObject.Name)'." }
+    $runtimeFunctionSpecs.Add([pscustomobject]@{ StartOffset = $startOffset; EndOffset = $endOffset; Context = $functionObject.Context; UnwindBytes = $null; UnwindOffset = 0 })
+}
+foreach ($runtimeFunction in $runtimeFunctionSpecs) {
+    $runtimeFunction.UnwindBytes = New-UnwindInfoBytes -Context $runtimeFunction.Context
+}
+$xdataLength = 0
+foreach ($runtimeFunction in $runtimeFunctionSpecs) {
+    $xdataLength = Align-Up -Value $xdataLength -Alignment 4
+    $runtimeFunction.UnwindOffset = $xdataLength
+    $xdataLength += $runtimeFunction.UnwindBytes.Length
+}
+$pdataLength = $runtimeFunctionSpecs.Count * 12
+if ($pdataLength -le 0 -or $xdataLength -le 0) { throw 'Generated PE unwind tables cannot be empty.' }
+
 $codeBytes = $script:Code.ToArray()
 if ($codeBytes.Length -le 0) { throw 'Generated .text section is empty.' }
 if ($codeBytes.Length -gt 0x01000000) { throw "Generated .text section is too large: $($codeBytes.Length) bytes; maximum is 16777216." }
@@ -1437,11 +1537,27 @@ if ($script:DataLength -gt 0x1000) { throw "Generated .rdata section is too larg
 $dataVirtualSpan = Align-Up -Value ([Math]::Max(8, $script:DataLength)) -Alignment 0x1000
 $idataVirtualSpan = Align-Up -Value 0x800 -Alignment 0x1000
 $relocVirtualSpan = Align-Up -Value 12 -Alignment 0x1000
+$pdataVirtualSpan = Align-Up -Value $pdataLength -Alignment 0x1000
+$xdataVirtualSpan = Align-Up -Value $xdataLength -Alignment 0x1000
 $dataRva = [UInt32]([long]$textRva + [long]$textVirtualSpan)
 $idataRva = [UInt32]([long]$dataRva + [long]$dataVirtualSpan)
 $relocRva = [UInt32]([long]$idataRva + [long]$idataVirtualSpan)
-$sizeOfImage = [UInt32]([long]$relocRva + [long]$relocVirtualSpan)
+$pdataRva = [UInt32]([long]$relocRva + [long]$relocVirtualSpan)
+$xdataRva = [UInt32]([long]$pdataRva + [long]$pdataVirtualSpan)
+$sizeOfImage = [UInt32]([long]$xdataRva + [long]$xdataVirtualSpan)
 if ([UInt64]$sizeOfImage -gt [UInt32]::MaxValue) { throw 'Linked image exceeds the PE32+ 32-bit RVA address space.' }
+
+# Build sorted x64 RUNTIME_FUNCTION entries and their 4-byte-aligned UNWIND_INFO records.
+$pdataBytes = [byte[]]::new($pdataLength)
+$xdataBytes = [byte[]]::new($xdataLength)
+for ($runtimeIndex = 0; $runtimeIndex -lt $runtimeFunctionSpecs.Count; $runtimeIndex++) {
+    $runtimeFunction = $runtimeFunctionSpecs[$runtimeIndex]
+    $recordOffset = $runtimeIndex * 12
+    Set-U32 -Buffer $pdataBytes -Offset $recordOffset -Value ([UInt32]([long]$textRva + [long]$runtimeFunction.StartOffset))
+    Set-U32 -Buffer $pdataBytes -Offset ($recordOffset + 4) -Value ([UInt32]([long]$textRva + [long]$runtimeFunction.EndOffset))
+    Set-U32 -Buffer $pdataBytes -Offset ($recordOffset + 8) -Value ([UInt32]([long]$xdataRva + [long]$runtimeFunction.UnwindOffset))
+    [System.Buffer]::BlockCopy($runtimeFunction.UnwindBytes, 0, $xdataBytes, $runtimeFunction.UnwindOffset, $runtimeFunction.UnwindBytes.Length)
+}
 
 # Patch RIP-relative data references, IAT calls, conditional branches, and internal rel32 calls.
 foreach ($fixup in $script:CodeFixups) {
@@ -1536,17 +1652,29 @@ $reloc = [byte[]]::new(0x200)
 Set-U32 -Buffer $reloc -Offset 0 -Value $dataRva; Set-U32 -Buffer $reloc -Offset 4 -Value 12; Set-U16 -Buffer $reloc -Offset 8 -Value 0xA000; Set-U16 -Buffer $reloc -Offset 10 -Value 0
 if ($idata.Length -gt $idataVirtualSpan) { throw 'Generated .idata section exceeds its reserved virtual span.' }
 $headersSize = 0x400
-$textRawPointer = $headersSize; $dataRawPointer = $textRawPointer + $textRawSize; $idataRawPointer = $dataRawPointer + $dataRawSize; $relocRawPointer = $idataRawPointer + $idata.Length
-$totalSize = $relocRawPointer + $reloc.Length
+$pdataRawSize = Align-Up -Value $pdataBytes.Length -Alignment 0x200
+$xdataRawSize = Align-Up -Value $xdataBytes.Length -Alignment 0x200
+$textRawPointer = $headersSize
+$dataRawPointer = $textRawPointer + $textRawSize
+$idataRawPointer = $dataRawPointer + $dataRawSize
+$relocRawPointer = $idataRawPointer + $idata.Length
+$pdataRawPointer = $relocRawPointer + $reloc.Length
+$xdataRawPointer = $pdataRawPointer + $pdataRawSize
+$totalSize = $xdataRawPointer + $xdataRawSize
 $image = [byte[]]::new($totalSize)
-Set-Bytes -Buffer $image -Offset $textRawPointer -Bytes $codeBytes; Set-Bytes -Buffer $image -Offset $dataRawPointer -Bytes $dataBytes; Set-Bytes -Buffer $image -Offset $idataRawPointer -Bytes $idata; Set-Bytes -Buffer $image -Offset $relocRawPointer -Bytes $reloc
+Set-Bytes -Buffer $image -Offset $textRawPointer -Bytes $codeBytes
+Set-Bytes -Buffer $image -Offset $dataRawPointer -Bytes $dataBytes
+Set-Bytes -Buffer $image -Offset $idataRawPointer -Bytes $idata
+Set-Bytes -Buffer $image -Offset $relocRawPointer -Bytes $reloc
+Set-Bytes -Buffer $image -Offset $pdataRawPointer -Bytes $pdataBytes
+Set-Bytes -Buffer $image -Offset $xdataRawPointer -Bytes $xdataBytes
 
 # DOS and PE headers.
 $image[0] = 0x4D; $image[1] = 0x5A; Set-U32 -Buffer $image -Offset 0x3C -Value 0x80; Set-Ascii -Buffer $image -Offset 0x80 -Value "PE`0`0"
-Set-U16 -Buffer $image -Offset 0x84 -Value 0x8664; Set-U16 -Buffer $image -Offset 0x86 -Value 4; Set-U32 -Buffer $image -Offset 0x88 -Value 0; Set-U32 -Buffer $image -Offset 0x8C -Value 0; Set-U32 -Buffer $image -Offset 0x90 -Value 0; Set-U16 -Buffer $image -Offset 0x94 -Value 240; Set-U16 -Buffer $image -Offset 0x96 -Value 0x0022
+Set-U16 -Buffer $image -Offset 0x84 -Value 0x8664; Set-U16 -Buffer $image -Offset 0x86 -Value 6; Set-U32 -Buffer $image -Offset 0x88 -Value 0; Set-U32 -Buffer $image -Offset 0x8C -Value 0; Set-U32 -Buffer $image -Offset 0x90 -Value 0; Set-U16 -Buffer $image -Offset 0x94 -Value 240; Set-U16 -Buffer $image -Offset 0x96 -Value 0x0022
 $opt = 0x98
 Set-U16 -Buffer $image -Offset ($opt + 0) -Value 0x020B; $image[$opt + 2] = 1; $image[$opt + 3] = 0
-Set-U32 -Buffer $image -Offset ($opt + 4) -Value $textRawSize; Set-U32 -Buffer $image -Offset ($opt + 8) -Value ($dataRawSize + $idata.Length + $reloc.Length); Set-U32 -Buffer $image -Offset ($opt + 12) -Value 0
+Set-U32 -Buffer $image -Offset ($opt + 4) -Value $textRawSize; Set-U32 -Buffer $image -Offset ($opt + 8) -Value ($dataRawSize + $idata.Length + $reloc.Length + $pdataRawSize + $xdataRawSize); Set-U32 -Buffer $image -Offset ($opt + 12) -Value 0
 Set-U32 -Buffer $image -Offset ($opt + 16) -Value $textRva; Set-U32 -Buffer $image -Offset ($opt + 20) -Value $textRva; Set-U64 -Buffer $image -Offset ($opt + 24) -Value ([UInt64]([Int64]0x140000000))
 Set-U32 -Buffer $image -Offset ($opt + 32) -Value 0x1000; Set-U32 -Buffer $image -Offset ($opt + 36) -Value 0x200
 Set-U16 -Buffer $image -Offset ($opt + 40) -Value 6; Set-U16 -Buffer $image -Offset ($opt + 42) -Value 0; Set-U16 -Buffer $image -Offset ($opt + 44) -Value 0; Set-U16 -Buffer $image -Offset ($opt + 46) -Value 0; Set-U16 -Buffer $image -Offset ($opt + 48) -Value 6; Set-U16 -Buffer $image -Offset ($opt + 50) -Value 0
@@ -1555,6 +1683,7 @@ Set-U16 -Buffer $image -Offset ($opt + 68) -Value 3; Set-U16 -Buffer $image -Off
 Set-U64 -Buffer $image -Offset ($opt + 72) -Value ([UInt64]0x100000); Set-U64 -Buffer $image -Offset ($opt + 80) -Value ([UInt64]0x1000); Set-U64 -Buffer $image -Offset ($opt + 88) -Value ([UInt64]0x100000); Set-U64 -Buffer $image -Offset ($opt + 96) -Value ([UInt64]0x1000)
 Set-U32 -Buffer $image -Offset ($opt + 104) -Value 0; Set-U32 -Buffer $image -Offset ($opt + 108) -Value 16
 Set-U32 -Buffer $image -Offset ($opt + 120) -Value ([UInt32]([long]$idataRva + [long]$descriptorBase)); Set-U32 -Buffer $image -Offset ($opt + 124) -Value $importDirectorySize
+Set-U32 -Buffer $image -Offset ($opt + 136) -Value $pdataRva; Set-U32 -Buffer $image -Offset ($opt + 140) -Value $pdataBytes.Length
 Set-U32 -Buffer $image -Offset ($opt + 152) -Value $relocRva; Set-U32 -Buffer $image -Offset ($opt + 156) -Value 12
 Set-U32 -Buffer $image -Offset ($opt + 208) -Value ([UInt32]([long]$idataRva + 0x70)); Set-U32 -Buffer $image -Offset ($opt + 212) -Value 0x108
 $sectionText = 0x188
@@ -1565,6 +1694,10 @@ $sectionImport = 0x1D8
 Set-Ascii -Buffer $image -Offset $sectionImport -Value '.idata'; Set-U32 -Buffer $image -Offset ($sectionImport + 8) -Value $idata.Length; Set-U32 -Buffer $image -Offset ($sectionImport + 12) -Value $idataRva; Set-U32 -Buffer $image -Offset ($sectionImport + 16) -Value $idata.Length; Set-U32 -Buffer $image -Offset ($sectionImport + 20) -Value $idataRawPointer; Set-U32 -Buffer $image -Offset ($sectionImport + 36) -Value ([UInt32]([Int64]3221225536))
 $sectionReloc = 0x200
 Set-Ascii -Buffer $image -Offset $sectionReloc -Value '.reloc'; Set-U32 -Buffer $image -Offset ($sectionReloc + 8) -Value 12; Set-U32 -Buffer $image -Offset ($sectionReloc + 12) -Value $relocRva; Set-U32 -Buffer $image -Offset ($sectionReloc + 16) -Value $reloc.Length; Set-U32 -Buffer $image -Offset ($sectionReloc + 20) -Value $relocRawPointer; Set-U32 -Buffer $image -Offset ($sectionReloc + 36) -Value 0x42000040
+$sectionPdata = 0x228
+Set-Ascii -Buffer $image -Offset $sectionPdata -Value '.pdata'; Set-U32 -Buffer $image -Offset ($sectionPdata + 8) -Value $pdataBytes.Length; Set-U32 -Buffer $image -Offset ($sectionPdata + 12) -Value $pdataRva; Set-U32 -Buffer $image -Offset ($sectionPdata + 16) -Value $pdataRawSize; Set-U32 -Buffer $image -Offset ($sectionPdata + 20) -Value $pdataRawPointer; Set-U32 -Buffer $image -Offset ($sectionPdata + 36) -Value 0x40000040
+$sectionXdata = 0x250
+Set-Ascii -Buffer $image -Offset $sectionXdata -Value '.xdata'; Set-U32 -Buffer $image -Offset ($sectionXdata + 8) -Value $xdataBytes.Length; Set-U32 -Buffer $image -Offset ($sectionXdata + 12) -Value $xdataRva; Set-U32 -Buffer $image -Offset ($sectionXdata + 16) -Value $xdataRawSize; Set-U32 -Buffer $image -Offset ($sectionXdata + 20) -Value $xdataRawPointer; Set-U32 -Buffer $image -Offset ($sectionXdata + 36) -Value 0x40000040
 Test-ImageBasic -Image $image
 
 $outputDirectory = [System.IO.Path]::GetDirectoryName($outputFullPath)
