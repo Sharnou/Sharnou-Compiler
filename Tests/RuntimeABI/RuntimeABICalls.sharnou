@@ -22,5 +22,8 @@ print(sh_string_equal("abi-sentinel", "abi-sentinel"));
 print(sh_string_equal("abi-sentinel", "abi-sentinEL"));
 print(sh_memory_fill(32, 65));
 print(sh_memory_byte_at(0));
+print(sh_file_exists("Tests\\RuntimeABI\\RuntimeABICalls.sharnou"));
+print(sh_asset_read_count("Tests\\RuntimeABI\\RuntimeABICalls.sharnou", 16));
+print(sh_asset_read_byte("Tests\\RuntimeABI\\RuntimeABICalls.sharnou", 0));
 print(sh_window_probe("Sharnou ABI Probe"));
 print(sh_thread_sync_probe());
