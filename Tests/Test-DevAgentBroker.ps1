@@ -180,7 +180,7 @@ try {
     Write-Host 'PASS: runtime SHA-256 mismatch rejected before modified tool execution' -ForegroundColor Green
     Write-Host 'PASS: unknown tool IDs rejected before process creation' -ForegroundColor Green
     Write-Host 'PASS: timeout values below policy minimum rejected' -ForegroundColor Green
-    Write-Host 'PASS: fixed allowlisted Stage 7A tool launched by absolute System32 PowerShell path' -ForegroundColor Green
+    Write-Host 'PASS: fixed allowlisted success tool launched by absolute System32 PowerShell path' -ForegroundColor Green
     Write-Host 'PASS: child process exit code propagated' -ForegroundColor Green
     Write-Host 'PASS: suspended process assigned to Job Object before resume' -ForegroundColor Green
     Write-Host 'PASS: timeout terminated the child and its spawned descendant' -ForegroundColor Green
