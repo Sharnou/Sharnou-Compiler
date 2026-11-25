@@ -15,6 +15,7 @@ $examples = @(
     'NestedControlFlow.sharnou',
     'FunctionControlFlow.sharnou',
     'SignedComparisonEdges.sharnou',
+    'BranchConditionCodes.sharnou',
     'WhileFalse.sharnou',
     'ComparisonPrecedence.sharnou'
 )
