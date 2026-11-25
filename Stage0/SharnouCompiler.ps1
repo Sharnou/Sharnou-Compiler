@@ -1155,8 +1155,9 @@ function Emit-D3D11RenderDemo {
     Emit-LeaRaxFrame -SlotPosition $formatBufferSlot; Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC2))
     Emit-LoadEaxFrame -SlotPosition $formatLengthSlot; Emit-Bytes -Bytes ([byte[]]@(0x41, 0x89, 0xC0))
     Emit-LeaRaxFrame -SlotPosition $bytesWrittenSlot; Emit-Bytes -Bytes ([byte[]]@(0x49, 0x89, 0xC1))
-    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x83, 0xEC, 0x30)); Emit-StackArgumentImmediate -Offset 0x20 -Value 0
-    Emit-CallIat -TargetRva ([UInt32]0x3078); Emit-Bytes -Bytes ([byte[]]@(0x48, 0x83, 0xC4, 0x30))
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3078) -StackArguments @(
+        @{ Kind = 'Immediate'; Value = 0 }
+    )
     Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0)); Emit-JumpConditional -ConditionCode 0x84 -Label $failLabel
     Emit-LoadEaxFrame -SlotPosition $bytesWrittenSlot; Emit-Bytes -Bytes ([byte[]]@(0x3B, 0x85)); Emit-I32 -Value (Get-FrameDisp -SlotPosition $formatLengthSlot); Emit-JumpConditional -ConditionCode 0x85 -Label $failLabel
     Emit-LoadEaxFrame -SlotPosition $frameCountSlot
@@ -1289,7 +1290,9 @@ function Emit-StringExpression {
 }
 function Emit-WriteCall {
     Emit-LoadRcxFrame -SlotPosition 0x78; Emit-LeaR9Frame -SlotPosition 0x70
-    Emit-Bytes -Bytes ([byte[]]@(0x48, 0xC7, 0x44, 0x24, 0x20, 0, 0, 0, 0)); Emit-CallIat -TargetRva ([UInt32]0x3078)
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3078) -StackArguments @(
+        @{ Kind = 'Immediate'; Value = 0 }
+    )
     Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0)); Emit-JumpConditional -ConditionCode 0x84 -Label '__runtime_fail'
 }
 function Emit-PrintString {
@@ -1302,7 +1305,9 @@ function Emit-PrintInteger {
     Emit-IntegerExpression -Node $Node; $formatItem = Register-DataConstant -Value '%d'; Emit-Bytes -Bytes ([byte[]]@(0x41, 0x89, 0xC0)); Emit-LeaRcxFrame -SlotPosition 0x30; Emit-DataAddress -DataItem $formatItem; Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC2)); Emit-CallIat -TargetRva ([UInt32]0x3090)
     Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0)); Emit-JumpConditional -ConditionCode 0x8E -Label '__runtime_fail'; Emit-StoreEaxFrame -SlotPosition 0x74
     Emit-LoadEaxFrame -SlotPosition 0x74; Emit-LeaRdxFrame -SlotPosition 0x30; Emit-Bytes -Bytes ([byte[]]@(0x48, 0x01, 0xC2)); Emit-Bytes -Bytes ([byte[]]@(0xC6, 0x02, 0x0D)); Emit-Bytes -Bytes ([byte[]]@(0xC6, 0x42, 0x01, 0x0A))
-    Emit-LoadRcxFrame -SlotPosition 0x78; Emit-LeaRdxFrame -SlotPosition 0x30; Emit-LoadEaxFrame -SlotPosition 0x74; Emit-Bytes -Bytes ([byte[]]@(0x83, 0xC0, 0x02)); Emit-Bytes -Bytes ([byte[]]@(0x41, 0x89, 0xC0)); Emit-LeaR9Frame -SlotPosition 0x70; Emit-Bytes -Bytes ([byte[]]@(0x48, 0xC7, 0x44, 0x24, 0x20, 0, 0, 0, 0)); Emit-CallIat -TargetRva ([UInt32]0x3078); Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0)); Emit-JumpConditional -ConditionCode 0x84 -Label '__runtime_fail'
+    Emit-LoadRcxFrame -SlotPosition 0x78; Emit-LeaRdxFrame -SlotPosition 0x30; Emit-LoadEaxFrame -SlotPosition 0x74; Emit-Bytes -Bytes ([byte[]]@(0x83, 0xC0, 0x02)); Emit-Bytes -Bytes ([byte[]]@(0x41, 0x89, 0xC0)); Emit-LeaR9Frame -SlotPosition 0x70; Emit-Win64CallIat -TargetRva ([UInt32]0x3078) -StackArguments @(
+        @{ Kind = 'Immediate'; Value = 0 }
+    ); Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0)); Emit-JumpConditional -ConditionCode 0x84 -Label '__runtime_fail'
 }
 function Emit-Statement {
     param([object] $Statement)
