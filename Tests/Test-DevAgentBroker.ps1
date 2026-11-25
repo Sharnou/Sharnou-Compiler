@@ -43,7 +43,40 @@ try {
 
     $lines = @(& $outputPath 2>&1)
     $exitCode = $LASTEXITCODE
-    $actual = (($lines | ForEach-Object { [string]$_ }) -join $nl).TrimEnd([char[]]@([char]13, [char]10))
+    # The allowlisted child shares the Windows console, so its Stage 7A
+    # PASS lines are visible too. Compare only the broker's numeric return records.
+    $numericLines = @($lines | ForEach-Object { [string]$_ } | Where-Object { $_ -match '^-?\d+
+    if ($exitCode -ne 0) { throw "Broker fixture process exited with code $exitCode. Output=[$actual]." }
+    if (-not [string]::Equals($actual, $expected, [StringComparison]::Ordinal)) {
+        throw "Broker fixture output mismatch. Expected=[$expected] Actual=[$actual]."
+    }
+
+    if (-not (Test-Path -LiteralPath $childPidPath -PathType Leaf)) {
+        throw 'Timeout probe did not publish the child PID before the broker timeout.'
+    }
+    $childPid = [int](Get-Content -LiteralPath $childPidPath -Raw)
+    $survivor = Get-Process -Id $childPid -ErrorAction SilentlyContinue
+    if ($null -ne $survivor) {
+        throw "Job Object timeout failed to terminate descendant process PID $childPid."
+    }
+
+    Write-Host 'PASS: unknown tool IDs rejected before process creation' -ForegroundColor Green
+    Write-Host 'PASS: timeout values below policy minimum rejected' -ForegroundColor Green
+    Write-Host 'PASS: fixed allowlisted Stage 7A tool launched by absolute System32 PowerShell path' -ForegroundColor Green
+    Write-Host 'PASS: child process exit code propagated' -ForegroundColor Green
+    Write-Host 'PASS: suspended process assigned to Job Object before resume' -ForegroundColor Green
+    Write-Host 'PASS: timeout terminated the child and its spawned descendant' -ForegroundColor Green
+    Write-Host 'DevAgent broker phase-1 result: PASS' -ForegroundColor Green
+}
+catch {
+    Write-Host "DevAgent broker phase-1 result: FAIL - $($_.Exception.Message)" -ForegroundColor Red
+    throw
+}
+finally {
+    Set-Location -LiteralPath $originalLocation
+}
+ })
+    $actual = ($numericLines -join $nl).TrimEnd([char[]]@([char]13, [char]10))
     if ($exitCode -ne 0) { throw "Broker fixture process exited with code $exitCode. Output=[$actual]." }
     if (-not [string]::Equals($actual, $expected, [StringComparison]::Ordinal)) {
         throw "Broker fixture output mismatch. Expected=[$expected] Actual=[$actual]."
