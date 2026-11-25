@@ -1,3 +1,8 @@
+fn abi_nonvolatile_target() {
+    let equal = sh_string_equal("register-sentinel", "register-sentinel");
+    let filled = sh_memory_fill(8, 90);
+    return equal + filled;
+}
 fn weighted8(a, b, c, d, e, f, g, h) {
     return a + b * 2 + c * 3 + d * 4 + e * 5 + f * 6 + g * 7 + h * 8;
 }
@@ -27,3 +32,4 @@ print(sh_asset_read_count("Tests\\RuntimeABI\\RuntimeABICalls.sharnou", 16));
 print(sh_asset_read_byte("Tests\\RuntimeABI\\RuntimeABICalls.sharnou", 0));
 print(sh_window_probe("Sharnou ABI Probe"));
 print(sh_thread_sync_probe());
+print(sh_abi_nonvolatile_probe());
