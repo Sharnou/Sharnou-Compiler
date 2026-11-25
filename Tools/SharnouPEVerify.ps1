@@ -147,13 +147,15 @@ if ($exceptionRva -ne [UInt64]$pdata.Rva -or $exceptionSize -ne [UInt64]$pdata.V
 $exceptionOffset = Convert-RvaToOffset -Rva $exceptionRva -Size $exceptionSize -Sections $sections.ToArray() -FileSize $bytes.Length
 $runtimeFunctionCount = [int]($exceptionSize / 12)
 $previousEndRva = [UInt64]0
-$stackProbeInstructionPrefix = [byte[]]@(0x55, 0x48, 0x89, 0xE5, 0x49, 0x89, 0xE2, 0x49, 0xC7, 0xC3)
+$stackProbeInstructionPrefix = [byte[]]@(0x55, 0x48, 0x89, 0xE5, 0xB8)
+$stackAllocOpcode = [byte[]]@(0x48, 0x81, 0xEC)
 $stackProbeCompare = [byte[]]@(0x49, 0x81, 0xFB, 0x00, 0x10, 0x00, 0x00)
 $stackProbeSubPointer = [byte[]]@(0x49, 0x81, 0xEA, 0x00, 0x10, 0x00, 0x00)
 $stackProbeTouch = [byte[]]@(0x41, 0xF6, 0x02, 0x00)
 $stackProbeSubRemaining = [byte[]]@(0x49, 0x81, 0xEB, 0x00, 0x10, 0x00, 0x00)
 $stackProbeSubTail = [byte[]]@(0x4D, 0x29, 0xDA)
-$stackAllocOpcode = [byte[]]@(0x48, 0x81, 0xEC)
+$previousEndRva = [UInt64]0
+$stackProbeHelperRva = [Int64]-1
 for ($runtimeIndex = 0; $runtimeIndex -lt $runtimeFunctionCount; $runtimeIndex++) {
     $runtimeOffset = $exceptionOffset + ($runtimeIndex * 12)
     $beginRva = [UInt64](Read-U32 -Bytes $bytes -Offset $runtimeOffset)
@@ -174,7 +176,7 @@ for ($runtimeIndex = 0; $runtimeIndex -lt $runtimeFunctionCount; $runtimeIndex++
     $frameRegister = [int]($bytes[$unwindOffset + 3] -band 0x0F)
     $frameOffset = [int]($bytes[$unwindOffset + 3] -shr 4)
     if ($version -ne 1 -or $flags -ne 0) { Fail-PE 'Only version-1, non-chained x64 UNWIND_INFO is supported.' }
-    if ($prologSize -lt 73 -or $prologSize -gt 255 -or $prologSize -ge ($endRva - $beginRva)) { Fail-PE 'UNWIND_INFO prologue size is invalid.' }
+    if ($prologSize -ne 21 -or $prologSize -ge ($endRva - $beginRva)) { Fail-PE 'UNWIND_INFO prologue size is invalid.' }
     if ($frameRegister -ne 5 -or $frameOffset -ne 0) { Fail-PE 'UNWIND_INFO must describe the generated RBP frame register.' }
     if ($countOfCodes -notin @(4, 5)) { Fail-PE 'UNWIND_INFO has an unsupported unwind-code slot count.' }
     $physicalCodeSlots = [int]([Math]::Ceiling([double]$countOfCodes / 2.0) * 2)
@@ -204,37 +206,60 @@ for ($runtimeIndex = 0; $runtimeIndex -lt $runtimeFunctionCount; $runtimeIndex++
         if ($bytes[$unwindOffset + 4 + ($countOfCodes * 2)] -ne 0 -or $bytes[$unwindOffset + 5 + ($countOfCodes * 2)] -ne 0) { Fail-PE 'UNWIND_INFO alignment padding is not zero.' }
     }
 
-    # Verify the exact stack-probe prologue contract, including the final
-    # single SUB RSP that the unwind record describes.
+    # Validate the generated prologue: save RBP, pass the fixed allocation in
+    # RAX, call the private leaf probe helper, then perform one fixed SUB RSP.
     $textOffset = Convert-RvaToOffset -Rva $beginRva -Size ([UInt64]$prologSize) -Sections $sections.ToArray() -FileSize $bytes.Length
     for ($byteIndex = 0; $byteIndex -lt $stackProbeInstructionPrefix.Length; $byteIndex++) {
         if ($bytes[$textOffset + $byteIndex] -ne $stackProbeInstructionPrefix[$byteIndex]) { Fail-PE 'Function prologue does not start with the expected frame-pointer and stack-probe instructions.' }
     }
-    $encodedFrameSize = [BitConverter]::ToInt32($bytes, $textOffset + 10)
-    if ($encodedFrameSize -ne $frameSize) { Fail-PE 'Stack-probe immediate and UNWIND_INFO frame sizes do not match.' }
-    foreach ($pattern in @(
-        [pscustomobject]@{ Offset = 14; Bytes = $stackProbeCompare },
-        [pscustomobject]@{ Offset = 27; Bytes = $stackProbeSubPointer },
-        [pscustomobject]@{ Offset = 34; Bytes = $stackProbeTouch },
-        [pscustomobject]@{ Offset = 38; Bytes = $stackProbeSubRemaining },
-        [pscustomobject]@{ Offset = 59; Bytes = $stackProbeSubTail },
-        [pscustomobject]@{ Offset = 62; Bytes = $stackProbeTouch },
-        [pscustomobject]@{ Offset = 66; Bytes = $stackAllocOpcode }
-    )) {
-        for ($byteIndex = 0; $byteIndex -lt $pattern.Bytes.Length; $byteIndex++) {
-            if ($bytes[$textOffset + $pattern.Offset + $byteIndex] -ne $pattern.Bytes[$byteIndex]) { Fail-PE 'Generated stack-probe instruction sequence is malformed.' }
-        }
+    $encodedFrameSize = [BitConverter]::ToInt32($bytes, $textOffset + 5)
+    if ($encodedFrameSize -ne $frameSize -or $bytes[$textOffset + 9] -ne 0xE8) { Fail-PE 'Stack-probe call or allocation immediate is invalid.' }
+    for ($byteIndex = 0; $byteIndex -lt $stackAllocOpcode.Length; $byteIndex++) {
+        if ($bytes[$textOffset + 14 + $byteIndex] -ne $stackAllocOpcode[$byteIndex]) { Fail-PE 'Fixed stack allocation opcode is invalid.' }
     }
-    $allocImmediate = [BitConverter]::ToInt32($bytes, $textOffset + 69)
-    if ($allocImmediate -ne $frameSize -or $prologSize -ne 73) { Fail-PE 'Final SUB RSP allocation or stack-probe prologue length is invalid.' }
-    $jccBelowDisplacement = [BitConverter]::ToInt32($bytes, $textOffset + 23)
-    $jccBelowTarget = 27 + 6 + $jccBelowDisplacement
-    $loopJumpDisplacement = [BitConverter]::ToInt32($bytes, $textOffset + 46)
-    $loopJumpTarget = 45 + 5 + $loopJumpDisplacement
-    $jccDoneDisplacement = [BitConverter]::ToInt32($bytes, $textOffset + 55)
-    $jccDoneTarget = 53 + 6 + $jccDoneDisplacement
-    if ($jccBelowTarget -ne 50 -or $loopJumpTarget -ne 14 -or $jccDoneTarget -ne 66) { Fail-PE 'Stack-probe branch fixups do not target the page loop, tail probe, and final allocation correctly.' }
+    $allocImmediate = [BitConverter]::ToInt32($bytes, $textOffset + 17)
+    if ($allocImmediate -ne $frameSize) { Fail-PE 'Final SUB RSP allocation and UNWIND_INFO frame sizes do not match.' }
+    $callDisplacement = [BitConverter]::ToInt32($bytes, $textOffset + 10)
+    $currentProbeTarget = [Int64]$beginRva + 14 + [Int64]$callDisplacement
+    if ($stackProbeHelperRva -lt 0) { $stackProbeHelperRva = $currentProbeTarget }
+    elseif ($currentProbeTarget -ne $stackProbeHelperRva) { Fail-PE 'Generated functions do not share the same stack-probe helper.' }
 }
+if ($runtimeFunctionCount -lt 1) { Fail-PE 'At least the PE entry point must have unwind metadata.' }
+if ($stackProbeHelperRva -lt [Int64]$previousEndRva -or $stackProbeHelperRva -ge ([Int64]$text.Rva + [Int64]$text.VirtualSize)) { Fail-PE 'Stack-probe helper is not located after the managed function ranges inside .text.' }
+
+# The private x64 stack-probe helper is a leaf routine. It preserves RAX,
+# register arguments, nonvolatile registers, and RSP; only R10/R11 and flags
+# are volatile. Validate every opcode and rel32 target in its page-walk loop.
+$probeHelperOffset = Convert-RvaToOffset -Rva ([UInt64]$stackProbeHelperRva) -Size 63 -Sections $sections.ToArray() -FileSize $bytes.Length
+$helperPatterns = @(
+    [pscustomobject]@{ Offset = 0; Bytes = [byte[]]@(0x49, 0x89, 0xE2) },
+    [pscustomobject]@{ Offset = 3; Bytes = [byte[]]@(0x49, 0x89, 0xC3) },
+    [pscustomobject]@{ Offset = 6; Bytes = [byte[]]@(0x49, 0x83, 0xEB, 0x08) },
+    [pscustomobject]@{ Offset = 10; Bytes = $stackProbeCompare },
+    [pscustomobject]@{ Offset = 17; Bytes = [byte[]]@(0x0F, 0x82) },
+    [pscustomobject]@{ Offset = 23; Bytes = $stackProbeSubPointer },
+    [pscustomobject]@{ Offset = 30; Bytes = $stackProbeTouch },
+    [pscustomobject]@{ Offset = 34; Bytes = $stackProbeSubRemaining },
+    [pscustomobject]@{ Offset = 41; Bytes = [byte[]]@(0xE9) },
+    [pscustomobject]@{ Offset = 46; Bytes = [byte[]]@(0x4D, 0x85, 0xDB) },
+    [pscustomobject]@{ Offset = 49; Bytes = [byte[]]@(0x0F, 0x84) },
+    [pscustomobject]@{ Offset = 55; Bytes = $stackProbeSubTail },
+    [pscustomobject]@{ Offset = 58; Bytes = $stackProbeTouch },
+    [pscustomobject]@{ Offset = 62; Bytes = [byte[]]@(0xC3) }
+)
+foreach ($pattern in $helperPatterns) {
+    for ($byteIndex = 0; $byteIndex -lt $pattern.Bytes.Length; $byteIndex++) {
+        if ($bytes[$probeHelperOffset + $pattern.Offset + $byteIndex] -ne $pattern.Bytes[$byteIndex]) { Fail-PE 'Private stack-probe helper instruction sequence is malformed.' }
+    }
+}
+$probeBelowDisp = [BitConverter]::ToInt32($bytes, $probeHelperOffset + 19)
+$probeBelowTarget = 23 + $probeBelowDisp
+$probeLoopDisp = [BitConverter]::ToInt32($bytes, $probeHelperOffset + 42)
+$probeLoopTarget = 46 + $probeLoopDisp
+$probeDoneDisp = [BitConverter]::ToInt32($bytes, $probeHelperOffset + 51)
+$probeDoneTarget = 55 + $probeDoneDisp
+if ($probeBelowTarget -ne 46 -or $probeLoopTarget -ne 10 -or $probeDoneTarget -ne 62) { Fail-PE 'Private stack-probe helper branch fixups do not target the page loop, tail probe, and return correctly.' }
+
 if ($runtimeFunctionCount -lt 1) { Fail-PE 'At least the PE entry point must have unwind metadata.' }
 
 $importRva = [UInt64](Read-U32 -Bytes $bytes -Offset ($opt + 120))
@@ -305,4 +330,4 @@ $anchorOffset = Convert-RvaToOffset -Rva $rdata.Rva -Size 8 -Sections $sections.
 $anchor = Read-U64 -Bytes $bytes -Offset $anchorOffset
 if ($anchor -ne ($imageBase + $entryRva)) { Fail-PE 'Relocation anchor does not equal ImageBase + entry-point RVA.' }
 
-Write-Host ("PE verifier: PASS - AMD64 PE32+, 4 sections, {0} DLLs, {1} APIs, dynamic .text supported." -f $foundDlls.Count, $foundImports.Count) -ForegroundColor Green
+Write-Host ("PE verifier: PASS - AMD64 PE32+, 6 sections, {0} DLLs, {1} APIs, x64 unwind and stack probing verified." -f $foundDlls.Count, $foundImports.Count) -ForegroundColor Green
