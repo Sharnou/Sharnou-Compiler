@@ -4,6 +4,7 @@ on:
   pull_request:
     branches:
       - Sharnou-Compiler
+      - milestone7-abi-baseline-completion-20261126
   push:
     branches:
       - Sharnou-Compiler
