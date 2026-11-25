@@ -773,3 +773,70 @@ The two status-only commits above triggered the existing push workflow; both com
 - Run [45340141791](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45340141791), exact commit `f4c018f171b45e997615b7e933281a0401804e43`, job `windows-stage7a` (`138261550209`): SUCCESS; source encoding PASS; Stage 7A 23 passed, 0 failed, 23 total.
 - These are documentation-only follow-up CI checks, not new compiler-source, baseline, or 7B runs. The PowerShell test step did not print a separate numeric process exit code; the step and job concluded success.
 - GitHub issue #8 was updated with the same follow-up evidence. No issue state changed.
+
+
+## Scheduled audit update - 2026-11-25 08:47 Africa/Cairo
+
+### Live repository and branch state
+- Repository: `Sharnou/Sharnou-Compiler`; default branch: `Sharnou-Compiler`.
+- Starting HEAD: `b817cc59f281a732f0e4759be87a00ec7ef63df6`. This is the current branch ref verified immediately before this status update.
+- The latest default-branch Stage 7A workflow is [45340141791](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45340141791), SUCCESS on parent commit `f4c018f171b45e997615b7e933281a0401804e43`. It ran 23/23 (8 positive, 12 negative, 3 instruction checks). Current HEAD `b817cc5` has no run attached (GitHub returned zero runs for that exact SHA); it is a status-only `[skip ci]` commit after the tested parent.
+- Current HEAD, tested parent `f4c018f`, and PR #11 head `135b7eec7bf13fc147756dfaeeb3f92eab57a250` have identical Git blobs for `Stage0/SharnouCompiler.ps1`, `Tools/SharnouPEVerify.ps1`, `Test.ps1`, `Tests/Test-Stage7A.ps1`, and `.github/workflows/stage7a-control-flow.yml`.
+- Current blob IDs: compiler `ee01ef77b068df5d149934fbf463c43b34c54bf3`; verifier `3606b57920043882a2277ad41fd0e0578156944a`; root runner `699eb04aefdf1149aa5807107ce351f8c2aae676`; Stage 7A test `80d8df1c9a6da7c8fb6f2b414c2929f07ba44804`; workflow `2b982f0165495854b52d346637e457932a5b0271`.
+- Windows CI source SHA-256 values from the same-source PR #11 baseline run: compiler `f1cb1ea2920c62c781f317b52ba281c2a7df72f626638a4aab71ff8d2dd47ead`; PE verifier `8efec55da3a1614f30272227f8d8158710337cb06148fb7f98b8fa2ff013a3de`.
+
+### Current pull-request inventory
+All remain OPEN / UNMERGED; no PR was modified or merged.
+- PR #2 release database/publisher: head `4f16c9426cd51ad3bdfe97e7f1691a8fa26e218f`, 10 ahead / 56 behind.
+- PR #4 roadmap/automation proposal: head `c80828005c069956dca4ab3b045adc8afcce397b`, 5 ahead / 49 behind.
+- PR #5 7B candidate: head `0b8dee87b699eabcaaac37f111686231fb29a82c`, 2 ahead / 49 behind; not user-accepted.
+- PR #6 frozen baseline restoration: head `9dfe1bc09685a6f7deb9d29b5192b1aae0686039`, 15 ahead / 49 behind. It remains open and must not be merged by automation.
+- PR #7 native DevAgent test orchestrator: draft, head `ac3849800412b1208acb540ef090ffb3ac0455ca`, 9 ahead / 49 behind.
+- PR #11 preferred baseline integration candidate: head `135b7eec7bf13fc147756dfaeeb3f92eab57a250`, 7 ahead / 12 behind. Its five-file baseline diff is unchanged; the 12 commits behind are documentation-only. It remains open for normal human review, not automatic merge.
+- PR #13 reverse-engineering audit documentation: draft, head `43d2447cdbadb6280fbcc3b190c666c07b97b352`, 2 ahead / 8 behind.
+
+### Windows workflow evidence and test accounting
+- Default Stage 7A: run [45340141791](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45340141791), job `138261550209`, SUCCESS; 23 passed, 0 failed, 23 total. The log includes ASCII/no-BOM PASS. No explicit process exit code is printed; the job completed successfully.
+- PR #6 exact head: [44700641397](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/44700641397), attempt 2, SUCCESS, 83/83; and [44700641419](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/44700641419), attempt 2, SUCCESS, Stage 7A 23/23.
+- PR #11 exact head: [45004395351](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45004395351), SUCCESS, 83/83; and [45004395353](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45004395353), SUCCESS, Stage 7A 23/23. Both tested the same exact PR head.
+- PR #5 old candidate: [44693097619](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/44693097619), SUCCESS; Stage 7A 23/23 and proposed Stage 7B 32/32 (15 positive runtime, 13 negative diagnostics, 4 instruction-presence checks). It did not run the 83-case baseline.
+- PR #7 native utility: [44758761226](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/44758761226), attempt 2, SUCCESS. It built and ran the native utility, re-ran Stage 7A 23/23, verified child exit code 7 propagation, and reported DevAgent process exit code 0. Artifact ID `14654214120`.
+- PR #13 documentation branch: [45286151951](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45286151951), SUCCESS, Stage 7A 23/23; this is not new implementation evidence.
+- Frozen M1-M6 accounting: Stage 2 25, Stage 4 20, PE verifier 4, Stage 5 25, Stage 6 9 = 83. Case-intent classification is 36 positive / 47 negative, inferred from case names; the manifest records suite totals only. The Windows runner reports 83 passed and 0 failed; it does not separately print a skipped count.
+- Stage 7A accounting: 8 positive, 12 negative, 3 instruction checks = 23. The Windows log reports 23 passed, 0 failed.
+- Stage 7B candidate accounting: 15 positive, 13 negative, 4 instruction checks = 32. The Windows log reports 32 passed, 0 failed.
+
+### Baseline provenance audit
+- PR #11 runner blob: `1bc252b197ba244ea9910ad67b4b8b3cd141138d`; manifest blob: `bbf9a2beb87b84bb51261a28268247d96419424c`.
+- Frozen M6 archive SHA-256: `0b6bf15445a5dfd8cbf93450af7fd2f5fd6239d4ed082ab18b09878a94b8b164`; compressed payload SHA-256: `3dd1d7417874159c0bc625edbbc1e8cee1ae7d8a6ea42f30b4dd80ba92102748`; original `SHA256SUMS.txt` digest: `61539cb577b3c116d25739cdb8286e3de38410af1d1a39fa1418893799f3c9c9`.
+- Reconfirmed: the runner verifies the compressed payload and each member against the hash embedded inside that payload. It does not load or independently verify the original `SHA256SUMS.txt`, despite manifest field `members_verified_against_original_sha256_manifest: true`. This is a provenance-verification gap, not a failed 83-case test.
+- R25-R4 archive SHA-256 remains `CA01AEACB2E35C6E8039E58F15202A01399DAEA3E0A24E7B4D357772C8EF1274` (611 entries per issue #1). The Library search found related reports and checksum sidecars but not the archive bytes. No archive download was attempted under the no-download constraint; the file-by-file comparison remains NOT RUN. Issue #9 stays OPEN.
+- PR #11 still has the five baseline files only on its feature branch. The 83-case baseline is not integrated into default.
+
+### Milestone 7B proposal audit (no implementation)
+- PR #5 remains an old, unaccepted candidate. Its 7B compiler blob is `e884d5223bad5e8fdbb048c5414bc547c4d22ada`; its test blob is `0c0bdbf2b8ec23b1445329b86d9d94b8653e7aed`.
+- The four short-circuit side-effect tests use literal left operands (`false &&`, `true ||`, `true &&`, `false ||`). Add runtime tests with Boolean variables on the left for both skip and evaluate paths of AND and OR.
+- The implementation emits runtime conditional branches for logical expressions. The `Get-ConstantValue` pass visits a dynamic-left RHS for compile-time constant-arithmetic validation; this is not proof that the runtime evaluates the RHS and no runtime short-circuit defect was reproduced.
+- Function parameters are implicitly Integer and function return expressions are explicitly required to be Integer. Boolean arguments/returns should remain rejected while the ABI is integer-only, but the current suite lacks dedicated negative cases for those two contracts.
+- The existing nested loop test covers two loop levels. Add a three-level case that proves innermost break/continue do not corrupt parent-loop targets.
+- Existing machine checks search for `0F 84`, `0F 85`, `E9`, and `C3` byte patterns; they do not decode rel32 displacements or verify branch destinations/instruction boundaries.
+- Minimal proposed test expansion: four dynamic-variable-left short-circuit runtime cases, two Boolean function ABI rejection cases, and one deeper nested-loop runtime case. This would raise the candidate suite from 32 to 39 (20 positive, 15 negative, 4 strengthened machine checks). Require 83 + 23 + 39 = 145 result records on one exact Windows commit before acceptance. This is a proposal only, not an accepted milestone or a test result.
+- Do not use PR #5 as a direct implementation base without reconciling its 49-commit divergence. A fresh isolated branch is required after the baseline dependency and explicit implementation authorization.
+
+### Native SharnouDevAgent state
+- PR #7 run [44758761226](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/44758761226) built a genuine AMD64 PE32+ utility with SHA-256 `9F128ED96972858B13C763B4324813B3D6A1970737F2403C10C70717CE947341`; artifact ZIP ID `14654214120`. The utility process exited 0 and correctly propagated child exit code 7.
+- This is a Stage 0 bootstrap-generated native test orchestrator, not a Sharnou-compiled self-hosted compiler or AI source-generating agent.
+- No native `SharnouCompiler.exe`, local model inference, autonomous source generation, persistent worker, checkpoint/recovery, Windows-host deployment, or restart proof exists in the verified evidence.
+- PR #7 uses a free-form command string with `CreateProcessA` and indefinite wait. No reviewed executable allowlist, typed argument boundary, workspace sandbox, timeout/cancellation, Job Object process-tree containment, or output limit is present. Do not pass model-generated commands to it.
+
+### Evidence classification and work performed
+- WINDOWS CI PASS: runs 45340141791, 44700641397, 44700641419, 45004395351, 45004395353, 44693097619, 44758761226, and 45286151951 as described above.
+- USER-REPORTED WINDOWS PASS: historical M1-M6 acceptance remains user-reported; no new local execution is claimed.
+- REPOSITORY PRESENT / STATIC REVIEWED: current compiler, verifier, 7A tests, baseline runner/manifest, 7B candidate, DevAgent architecture and PR diffs.
+- NOT RUN: assistant-side Windows execution, R25-R4 byte comparison, user-local M7A run, ABI runtime sentinels/stack-probe/unwind tests, native self-hosted compiler, and autonomous-agent restart/deployment tests.
+- BLOCKED: baseline PR integration/provenance and the outstanding Windows x64 ABI gate in issue #1.
+- No compiler, verifier, test, fixture, build script, runtime, Engine, IDE, or game source changed. No workflow was dispatched. No PR was created, edited, merged, or rebased.
+- Only this status record is being appended to `Docs/AI-SESSION-STATE.md`; issue #8 is updated separately. The issue register and accepted development plan remain unchanged because no blocker status or accepted scope changed.
+
+### Next bounded task
+Normal human review of PR #11 remains the integration decision; do not auto-merge. Complete the R25-R4 comparison only when the archive bytes are supplied through an approved accessible source, and retain issue #1 ABI gates. After the baseline dependency is accepted and the user explicitly authorizes implementation, start a fresh isolated 7B branch with the proposed 39-case coverage and same-commit 145-case Windows gate. DevAgent process-broker security work must precede model-controlled execution.
