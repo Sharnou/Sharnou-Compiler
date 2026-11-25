@@ -82,6 +82,7 @@ try {
         [pscustomobject]@{ Name = 'first incoming stack argument at RBP+0x30'; Bytes = [byte[]]@(0x8B, 0x85, 0x30, 0x00, 0x00, 0x00) },
         [pscustomobject]@{ Name = 'fourth incoming stack argument at RBP+0x48'; Bytes = [byte[]]@(0x8B, 0x85, 0x48, 0x00, 0x00, 0x00) },
         [pscustomobject]@{ Name = 'outgoing stack argument slot at RSP+0x20'; Bytes = [byte[]]@(0x48, 0x89, 0x44, 0x24, 0x20) },
+        [pscustomobject]@{ Name = 'live RSP 16-byte alignment assertion'; Bytes = [byte[]]@(0x48, 0x89, 0xE0, 0x83, 0xE0, 0x0F, 0x85, 0xC0) },
         [pscustomobject]@{ Name = 'runtime RBX sentinel load'; Bytes = [byte[]]@(0x48, 0xBB, 0x44, 0x33, 0x22, 0x11) },
         [pscustomobject]@{ Name = 'runtime R12 sentinel load'; Bytes = [byte[]]@(0x49, 0xBC, 0x77, 0x66, 0x55, 0x44) },
         [pscustomobject]@{ Name = 'nonvolatile RSI save'; Bytes = [byte[]]@(0x48, 0x89, 0xB5) },
