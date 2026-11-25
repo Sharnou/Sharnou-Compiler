@@ -2087,7 +2087,7 @@ $importSets = @(
     [pscustomobject]@{ Descriptor = 0x64; Lookup = 0x610; Iat = 0x140; Dll = 'DXGI.dll'; Names = @('CreateDXGIFactory') },
     [pscustomobject]@{ Descriptor = 0x78; Lookup = 0x620; Iat = 0x150; Dll = 'KERNEL32.dll'; Names = @('QueryPerformanceCounter', 'QueryPerformanceFrequency') },
     [pscustomobject]@{ Descriptor = 0x8C; Lookup = 0x640; Iat = 0x168; Dll = 'USER32.dll'; Names = @('IsWindow') },
-    [pscustomobject]@{ Descriptor = 0xA0; Lookup = 0x650; Iat = 0x178; Dll = 'KERNEL32.dll'; Names = @('GetSystemDirectoryA', 'GetCurrentDirectoryA', 'CreateProcessA', 'CreateJobObjectA', 'SetInformationJobObject', 'AssignProcessToJobObject', 'ResumeThread', 'TerminateJobObject', 'GetExitCodeProcess', 'TerminateProcess') }
+    [pscustomobject]@{ Descriptor = 0xA0; Lookup = 0x650; Iat = 0x178; Dll = 'KERNEL32.dll'; Names = @('GetSystemDirectoryA', 'GetCurrentDirectoryA', 'CreateProcessA', 'CreateJobObjectA', 'SetInformationJobObject', 'AssignProcessToJobObject', 'ResumeThread', 'TerminateJobObject', 'GetExitCodeProcess', 'TerminateProcess', 'GetFileAttributesA') }
 )
 $apiNameRvas = @{}
 $nameCursor = 0x280
@@ -2136,7 +2136,7 @@ $script:StdLibIatOffsets = @{
     'QueryPerformanceCounter' = [UInt32]0x150; 'QueryPerformanceFrequency' = [UInt32]0x158; 'IsWindow' = [UInt32]0x168
     'GetSystemDirectoryA' = [UInt32]0x178; 'GetCurrentDirectoryA' = [UInt32]0x180; 'CreateProcessA' = [UInt32]0x188
     'CreateJobObjectA' = [UInt32]0x190; 'SetInformationJobObject' = [UInt32]0x198; 'AssignProcessToJobObject' = [UInt32]0x1A0
-    'ResumeThread' = [UInt32]0x1A8; 'TerminateJobObject' = [UInt32]0x1B0; 'GetExitCodeProcess' = [UInt32]0x1B8; 'TerminateProcess' = [UInt32]0x1C0
+    'ResumeThread' = [UInt32]0x1A8; 'TerminateJobObject' = [UInt32]0x1B0; 'GetExitCodeProcess' = [UInt32]0x1B8; 'TerminateProcess' = [UInt32]0x1C0; 'GetFileAttributesA' = [UInt32]0x1C8
 }
 
 # One DIR64 relocation patches the absolute image-base + entry-point pointer at the dynamic .rdata RVA.
@@ -2177,7 +2177,7 @@ Set-U32 -Buffer $image -Offset ($opt + 104) -Value 0; Set-U32 -Buffer $image -Of
 Set-U32 -Buffer $image -Offset ($opt + 120) -Value ([UInt32]([long]$idataRva + [long]$descriptorBase)); Set-U32 -Buffer $image -Offset ($opt + 124) -Value $importDirectorySize
 Set-U32 -Buffer $image -Offset ($opt + 136) -Value $pdataRva; Set-U32 -Buffer $image -Offset ($opt + 140) -Value $pdataBytes.Length
 Set-U32 -Buffer $image -Offset ($opt + 152) -Value $relocRva; Set-U32 -Buffer $image -Offset ($opt + 156) -Value 12
-Set-U32 -Buffer $image -Offset ($opt + 208) -Value ([UInt32]([long]$idataRva + 0x70)); Set-U32 -Buffer $image -Offset ($opt + 212) -Value 0x160
+Set-U32 -Buffer $image -Offset ($opt + 208) -Value ([UInt32]([long]$idataRva + 0x70)); Set-U32 -Buffer $image -Offset ($opt + 212) -Value 0x168
 $sectionText = 0x188
 Set-Ascii -Buffer $image -Offset $sectionText -Value '.text'; Set-U32 -Buffer $image -Offset ($sectionText + 8) -Value $codeBytes.Length; Set-U32 -Buffer $image -Offset ($sectionText + 12) -Value $textRva; Set-U32 -Buffer $image -Offset ($sectionText + 16) -Value $textRawSize; Set-U32 -Buffer $image -Offset ($sectionText + 20) -Value $textRawPointer; Set-U32 -Buffer $image -Offset ($sectionText + 36) -Value 0x60000020
 $sectionData = 0x1B0
