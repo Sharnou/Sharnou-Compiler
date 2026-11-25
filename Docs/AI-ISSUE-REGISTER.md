@@ -412,3 +412,10 @@ Classification: REPOSITORY PRESENT / STATIC REVIEWED; historical PR #7 WINDOWS C
 - Windows Actions run 45696244484 on PR #15 head `01fd2d7b6bd6ab4d80a920449bc529fa865634e8`: 24/24 Stage 7A, 2/2 collection-import tests, source encoding PASS, Combined result PASS.
 - The original local `BranchConditionCodes.sharnou` and expanded local `Test.ps1` were not supplied. The equivalent new test passes; a compiler defect is therefore NOT established. Keep the original local result classified as user-reported failure until those exact files can be compared.
 - PR #15 remains open/unmerged. No default-branch source changes or baseline integration are claimed.
+
+ 
+### BranchConditionCodes failure follow-up - 2026-11-25
+
+- Local failing executable link record: 1 module, 0 functions, 1,171 code bytes, 57 data bytes; local output shows only six labels.
+- PR #15's independent 13-output equivalent generated 3,573 code bytes and 275 data bytes; Windows runtime output matched all 13 expected labels.
+- Distinct output strings are stored in the generated data section, so the local 57-byte data section strongly suggests the local binary did not contain the seven additional labels. This makes an incomplete/stale test fixture or an untested local syntax path more likely than a general signed-Jcc lowering defect. The exact local source remains required for final root-cause attribution.
