@@ -125,6 +125,18 @@ foreach($structure in $manifest.structureLayouts){
     $typeMatch=[regex]::Match($combinedHeaders,$typePattern)
     Assert-Contract $typeMatch.Success ("Windows SDK declaration for {0} was not found." -f $type)
     $body=$typeMatch.Groups['body'].Value
+    if ($type -eq 'SECURITY_CAPABILITIES') {
+        # winnt.h expresses the two pointer members in nested conditional-compilation
+        # arms. A raw first-text-occurrence comparison crosses mutually exclusive
+        # branches and is not a valid C ABI field-order test for this declaration.
+        # Require the four typed declarations to be present; separately validate the
+        # expected x64 offsets/sizes with the pack-8 layout model below.
+        Assert-Contract ([regex]::IsMatch($body,'(?m)\b(?:PISID|PSID)\s+AppContainerSid\s*;')) 'SECURITY_CAPABILITIES AppContainerSid declaration is missing.'
+        Assert-Contract ([regex]::IsMatch($body,'(?m)\bPSID_AND_ATTRIBUTES\s+Capabilities\s*;')) 'SECURITY_CAPABILITIES Capabilities declaration is missing.'
+        Assert-Contract ([regex]::IsMatch($body,'(?m)\bDWORD\s+CapabilityCount\s*;')) 'SECURITY_CAPABILITIES CapabilityCount declaration is missing.'
+        Assert-Contract ([regex]::IsMatch($body,'(?m)\bDWORD\s+Reserved\s*;')) 'SECURITY_CAPABILITIES Reserved declaration is missing.'
+        continue
+    }
     $lastIndex=-1
     foreach($field in $structure.fields){
         $fieldName=[string]$field[0]
