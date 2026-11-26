@@ -178,6 +178,29 @@ foreach($api in $manifest.plannedApiSignatures){
     Assert-Contract ([string]$api.name -ceq [string]$api.name.Trim()) ("API name contains invalid surrounding whitespace: {0}" -f $api.name)
     Assert-Contract ($apiHeaders[[string]$api.name] -ceq $expectedHeader) ("API declaration header mapping differs for {0}" -f $api.name)
 }
+    $prototypeMatch=[regex]::Match($header,'\b'+[regex]::Escape([string]$api.name)+'\s*\(')
+    Assert-Contract $prototypeMatch.Success ("SDK prototype not found for {0}" -f $api.name)
+    $openParen=$header.IndexOf('(',[int]$prototypeMatch.Index)
+    Assert-Contract ($openParen -ge 0) ("SDK prototype opening parenthesis missing for {0}" -f $api.name)
+    $depth=0; $closeParen=-1
+    for($scan=$openParen;$scan -lt $header.Length;$scan++){
+        if($header[$scan] -eq '('){$depth++}
+        elseif($header[$scan] -eq ')'){
+            $depth--
+            if($depth -eq 0){$closeParen=$scan;break}
+        }
+    }
+    Assert-Contract ($closeParen -gt $openParen) ("SDK prototype parameter list is unterminated for {0}" -f $api.name)
+    $parameterText=$header.Substring($openParen+1,$closeParen-$openParen-1)
+    $normalizedParameters=[regex]::Replace($parameterText,'\s+','')
+    $parameterCursor=0
+    foreach($parameterType in $api.parameters){
+        $normalizedType=[regex]::Replace([string]$parameterType,'\s+','')
+        $parameterIndex=$normalizedParameters.IndexOf($normalizedType,$parameterCursor,[StringComparison]::Ordinal)
+        Assert-Contract ($parameterIndex -ge $parameterCursor) ("SDK parameter type/order mismatch for {0}: expected {1}" -f $api.name,$parameterType)
+        $parameterCursor=$parameterIndex+$normalizedType.Length
+    }
+
 
 Assert-Contract ([int]$manifest.tokenInformation[0].value -eq 25) 'TokenIntegrityLevel class value mismatch.'
 Assert-Contract ([int]$manifest.tokenInformation[1].value -eq 29) 'TokenIsAppContainer class value mismatch.'
