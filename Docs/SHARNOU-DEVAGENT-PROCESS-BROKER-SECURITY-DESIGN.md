@@ -153,3 +153,16 @@ Known design risks requiring explicit resolution before acceptance:
 5. Every termination path must wait for the Job Object to become empty before revoking ACLs. A failed wait must retain the failure state and must not be interpreted as successful cleanup.
 
 Until the runtime flow and adversarial Windows tests pass, the existing broker remains test-build opt-in only, and model-generated process execution remains DISABLED.
+
+## 11. Helper correctness review - 2026-11-26
+
+The stacked helper-hardening candidate corrects three concrete source-level issues:
+1. During the drive-root check in `Emit-DevBrokerCheckDirectoryChain`, the code previously loaded a saved path byte into EAX after `GetFileAttributesA`, replacing the API's result before the invalid-attributes check. The helper now stores the API result in a dedicated frame slot, restores the path byte, then reloads the result before branching.
+2. `Emit-DevBrokerUpdateAcl` now rejects a NULL old DACL. A NULL DACL grants broad access; replacing it with a DACL containing only a package ACE could alter the existing security model and lock out other principals. The helper must fail closed instead.
+3. `Emit-DevBrokerEnsureAppContainerSid` now verifies that successful profile creation or SID derivation actually returned a non-NULL SID pointer.
+
+Static regression assertions have been added. They are not runtime tests and do not demonstrate that the helpers are invoked.
+
+The live `Emit-DevRunTool` remains the phase-1 caller-token process path. The helpers are still not wired into it. Restricted primary-token creation, AppContainer process attributes, workspace ACL transactions, bounded stdout/stderr capture, output overflow termination, and crash recovery remain unimplemented as an integrated runtime path. The branch has no matching Windows CI result at this checkpoint.
+
+Keep model-generated process execution DISABLED. Do not merge this helper-hardening candidate as a completed sandbox milestone.

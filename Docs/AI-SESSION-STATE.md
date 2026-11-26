@@ -1041,3 +1041,20 @@ Important scope boundary:
 - Do not merge the follow-on branch or mark the security target complete on this evidence.
 
 Required next gates: wire the restricted primary token and no-capability AppContainer into suspended process creation; apply and reliably revoke least-privilege workspace DACL entries; capture combined stdout/stderr through an explicit STARTUPINFOEX handle list under a hard byte cap; terminate and confirm the entire job on timeout/overflow/failure; then add adversarial Windows tests for token identity, denied filesystem/network access, ACL rollback/restart, handle isolation, output cap, timeout and descendant termination. Clean environment/DLL-search policy and durable evidence journaling remain separate gates.
+
+## AppContainer / ACL helper hardening - 2026-11-26
+
+Stacked follow-on branch `devagent-appcontainer-helper-hardening-20261126`, intended for draft PR #20 over draft PR #19, contains two helper correctness fixes and corresponding static regression assertions:
+
+- The directory-chain helper now preserves the `GetFileAttributesA` result while restoring the first component byte after the drive-root probe. The previous sequence loaded the saved path byte into EAX and thereby overwrote the API result before checking `INVALID_FILE_ATTRIBUTES`.
+- The ACL helper now fails closed when `GetNamedSecurityInfoA` reports a NULL DACL. A NULL DACL is not equivalent to an empty DACL; replacing it with a package-only DACL could unexpectedly lock out existing principals.
+- AppContainer profile creation now verifies the returned SID pointer is non-NULL even when the HRESULT indicates success.
+- `Tests/Test-DevAgentBroker.ps1` adds static regression assertions for these source invariants.
+
+Acceptance boundary:
+- These are helper-level fixes and static assertions only. They do not make the helpers part of the live `Emit-DevRunTool` path.
+- No restricted-token or AppContainer child has been launched by this branch; no workspace ACL was applied at runtime; no stdout/stderr capture or output-overflow termination has been exercised.
+- Windows Actions status has not yet been established for this head. Do not report a test pass until a matching run is observed.
+- PR #18 remains the earlier phase-1 broker; PR #19 remains a helper/import scaffold. Both stay open/unmerged. Model-facing process execution remains **DISABLED**.
+
+Next implementation gate remains end-to-end restricted primary token + AppContainer launch, transactional workspace ACL grant/revoke with crash recovery, STARTUPINFOEX handle allowlist, 1 MiB bounded output capture, whole-job termination/wait verification, and adversarial Windows tests. This branch is a prerequisite hardening step, not completion of that gate.
