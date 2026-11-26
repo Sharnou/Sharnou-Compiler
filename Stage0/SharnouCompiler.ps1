@@ -867,7 +867,8 @@ function Emit-DevBrokerPathCheck {
 }
 function Emit-DevBrokerVerifyScript {
     param(
-        [object] $PathItem,
+        [object] $PathItem = $null,
+        [int] $FrameSlot = -1,
         [string] $ExpectedSha256,
         [int] $PersistentFileHandleSlot,
         [string] $FailureLabel
@@ -891,7 +892,13 @@ function Emit-DevBrokerVerifyScript {
     Emit-StoreZero64Frame -SlotPosition $bytesReadSlot
     Emit-StoreZero64Frame -SlotPosition $bufferSlot
     Emit-StoreZero64Frame -SlotPosition $algorithmSlot
-    Emit-DataAddress -DataItem $PathItem
+    if ($FrameSlot -ge 0) {
+        Emit-LeaRaxFrame -SlotPosition $FrameSlot
+    } elseif ($null -ne $PathItem) {
+        Emit-DataAddress -DataItem $PathItem
+    } else {
+        throw 'DevAgent script verification requires an absolute frame-backed or fixed path.'
+    }
     Emit-StoreRaxFrame -SlotPosition $pathSlot
 
     # Open for read only and deny concurrent write/delete; retain handle through child completion.
@@ -1152,6 +1159,120 @@ function Emit-DevBrokerUpdateAcl {
     Emit-JumpConditional -ConditionCode 0x85 -Label $FailureLabel
     Emit-Jump -Label $done
     Mark-CodeLabel -Label $done
+}
+
+function Emit-DevBrokerBuildWorkspacePath {
+    param([int] $RootSlot, [int] $RootLengthSlot, [object] $SuffixItem, [int] $SuffixLength, [int] $DestinationSlot)
+    if ($SuffixLength -lt 1 -or $SuffixLength -gt 240) { throw 'Invalid DevAgent workspace path suffix length.' }
+    Emit-LeaRaxFrame -SlotPosition $DestinationSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC7)) # RDI = destination
+    Emit-LeaRaxFrame -SlotPosition $RootSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC6, 0xFC)) # RSI = root; CLD
+    Emit-LoadEaxFrame -SlotPosition $RootLengthSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x89, 0xC1, 0xF3, 0xA4)) # copy root length
+    Emit-DataAddress -DataItem $SuffixItem
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC6, 0xB9))
+    Emit-I32 -Value $SuffixLength
+    Emit-Bytes -Bytes ([byte[]]@(0xF3, 0xA4, 0xC6, 0x07, 0x00)) # suffix + NUL
+}
+function Emit-DevBrokerCheckDirectoryChain {
+    param([int] $PathSlot, [string] $FailureLabel)
+    $driveUpper = New-UniqueLabel -Prefix 'dev_path_drive_upper'
+    $scanColon = New-UniqueLabel -Prefix 'dev_path_scan_colon'
+    $colonDone = New-UniqueLabel -Prefix 'dev_path_colon_done'
+    $scanComponents = New-UniqueLabel -Prefix 'dev_path_scan_components'
+    $nextComponent = New-UniqueLabel -Prefix 'dev_path_next_component'
+    $checkFinal = New-UniqueLabel -Prefix 'dev_path_check_final'
+    $checkRoot = New-UniqueLabel -Prefix 'dev_path_check_drive_root'
+    $rootChecked = New-UniqueLabel -Prefix 'dev_path_drive_root_checked'
+
+    # Require a drive-qualified DOS absolute path. UNC/device paths fail closed.
+    Emit-Bytes -Bytes ([byte[]]@(0x0F, 0xB6, 0x85))
+    Emit-I32 -Value (Get-FrameDisp -SlotPosition $PathSlot)
+    Emit-Bytes -Bytes ([byte[]]@(0x3C, 0x41))
+    Emit-JumpConditional -ConditionCode 0x82 -Label $FailureLabel
+    Emit-Bytes -Bytes ([byte[]]@(0x3C, 0x5A))
+    Emit-JumpConditional -ConditionCode 0x86 -Label $driveUpper
+    Emit-Bytes -Bytes ([byte[]]@(0x3C, 0x61))
+    Emit-JumpConditional -ConditionCode 0x82 -Label $FailureLabel
+    Emit-Bytes -Bytes ([byte[]]@(0x3C, 0x7A))
+    Emit-JumpConditional -ConditionCode 0x87 -Label $FailureLabel
+    Mark-CodeLabel -Label $driveUpper
+    Emit-Bytes -Bytes ([byte[]]@(0x80, 0xBD))
+    Emit-I32 -Value (Get-FrameDisp -SlotPosition ($PathSlot + 1))
+    Emit-Bytes -Bytes ([byte[]]@(0x3A))
+    Emit-JumpConditional -ConditionCode 0x85 -Label $FailureLabel
+    Emit-Bytes -Bytes ([byte[]]@(0x80, 0xBD))
+    Emit-I32 -Value (Get-FrameDisp -SlotPosition ($PathSlot + 2))
+    Emit-Bytes -Bytes ([byte[]]@(0x5C))
+    Emit-JumpConditional -ConditionCode 0x85 -Label $FailureLabel
+
+    # Reject alternate data streams in every character after the drive prefix.
+    Emit-LeaRaxFrame -SlotPosition ($PathSlot + 2)
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC6))
+    Mark-CodeLabel -Label $scanColon
+    Emit-Bytes -Bytes ([byte[]]@(0x8A, 0x06, 0x84, 0xC0))
+    Emit-JumpConditional -ConditionCode 0x84 -Label $colonDone
+    Emit-Bytes -Bytes ([byte[]]@(0x3C, 0x3A))
+    Emit-JumpConditional -ConditionCode 0x84 -Label $FailureLabel
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0xFF, 0xC6))
+    Emit-Jump -Label $scanColon
+    Mark-CodeLabel -Label $colonDone
+
+    # Validate C:\ itself before walking subsequent components.
+    Emit-LeaRaxFrame -SlotPosition ($PathSlot + 3)
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC6))
+    Emit-Bytes -Bytes ([byte[]]@(0x8A, 0x06, 0x88, 0x06)) # save first component byte into AH? replaced below
+    # Use a dedicated byte slot rather than relying on a caller register across API calls.
+    $savedByteSlot = [int]$script:ActiveContext.ScratchPosition + 0xDF0
+    Emit-StoreZero64Frame -SlotPosition $savedByteSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x8A, 0x06, 0x88, 0x85))
+    Emit-I32 -Value (Get-FrameDisp -SlotPosition $savedByteSlot)
+    Emit-Bytes -Bytes ([byte[]]@(0xC6, 0x06, 0x00)) # temporarily end at C:\
+    Emit-LeaRaxFrame -SlotPosition $PathSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1))
+    Emit-Win64CallIat -TargetRva ([UInt32]0x31C8) -StackArguments @()
+    Emit-LoadEaxFrame -SlotPosition $savedByteSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x88, 0x06)) # restore first component byte
+    Emit-Bytes -Bytes ([byte[]]@(0x3D, 0xFF, 0xFF, 0xFF, 0xFF))
+    Emit-JumpConditional -ConditionCode 0x84 -Label $FailureLabel
+    Emit-Bytes -Bytes ([byte[]]@(0xA9, 0x10, 0x00, 0x00, 0x00))
+    Emit-JumpConditional -ConditionCode 0x84 -Label $FailureLabel
+    Emit-Bytes -Bytes ([byte[]]@(0xA9, 0x00, 0x04, 0x00, 0x00))
+    Emit-JumpConditional -ConditionCode 0x85 -Label $FailureLabel
+
+    # Every intermediate component must be a non-reparse directory.
+    Emit-LeaRaxFrame -SlotPosition ($PathSlot + 3)
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC6))
+    Mark-CodeLabel -Label $scanComponents
+    Emit-Bytes -Bytes ([byte[]]@(0x8A, 0x06, 0x84, 0xC0))
+    Emit-JumpConditional -ConditionCode 0x84 -Label $checkFinal
+    Emit-Bytes -Bytes ([byte[]]@(0x3C, 0x5C))
+    Emit-JumpConditional -ConditionCode 0x85 -Label $nextComponent
+    Emit-Bytes -Bytes ([byte[]]@(0xC6, 0x06, 0x00))
+    Emit-LeaRaxFrame -SlotPosition $PathSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1))
+    Emit-Win64CallIat -TargetRva ([UInt32]0x31C8) -StackArguments @()
+    Emit-Bytes -Bytes ([byte[]]@(0xC6, 0x06, 0x5C))
+    Emit-Bytes -Bytes ([byte[]]@(0x3D, 0xFF, 0xFF, 0xFF, 0xFF))
+    Emit-JumpConditional -ConditionCode 0x84 -Label $FailureLabel
+    Emit-Bytes -Bytes ([byte[]]@(0xA9, 0x10, 0x00, 0x00, 0x00))
+    Emit-JumpConditional -ConditionCode 0x84 -Label $FailureLabel
+    Emit-Bytes -Bytes ([byte[]]@(0xA9, 0x00, 0x04, 0x00, 0x00))
+    Emit-JumpConditional -ConditionCode 0x85 -Label $FailureLabel
+    Mark-CodeLabel -Label $nextComponent
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0xFF, 0xC6))
+    Emit-Jump -Label $scanComponents
+    Mark-CodeLabel -Label $checkFinal
+    Emit-LeaRaxFrame -SlotPosition $PathSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1))
+    Emit-Win64CallIat -TargetRva ([UInt32]0x31C8) -StackArguments @()
+    Emit-Bytes -Bytes ([byte[]]@(0x3D, 0xFF, 0xFF, 0xFF, 0xFF))
+    Emit-JumpConditional -ConditionCode 0x84 -Label $FailureLabel
+    Emit-Bytes -Bytes ([byte[]]@(0xA9, 0x10, 0x00, 0x00, 0x00))
+    Emit-JumpConditional -ConditionCode 0x84 -Label $FailureLabel
+    Emit-Bytes -Bytes ([byte[]]@(0xA9, 0x00, 0x04, 0x00, 0x00))
+    Emit-JumpConditional -ConditionCode 0x85 -Label $FailureLabel
 }
 function Emit-DevRunTool {
     param([int] $ToolSlot, [int] $TimeoutSlot, [int] $BaseDepth)
@@ -2511,7 +2632,7 @@ $idata = [byte[]]::new(0x1000)
 # Lookup tables occupy 0x700..0x8D8. Keep twelve import descriptors and the null terminator
 # in a separate 0xA00..0xB04 range.
 $descriptorBase = 0xA00
-$importDirectorySize = 0x140
+$importDirectorySize = 0x154
 if (($descriptorBase + $importDirectorySize) -gt $idata.Length) { throw 'Import descriptor table exceeds .idata storage.' }
 $importSets = @(
     [pscustomobject]@{ Descriptor = 0x00; Lookup = 0x700; Iat = 0x70; Dll = 'KERNEL32.dll'; Names = @('GetStdHandle', 'WriteFile', 'ExitProcess') },
@@ -2526,12 +2647,13 @@ $importSets = @(
     [pscustomobject]@{ Descriptor = 0xB4; Lookup = 0x880; Iat = 0x1E8; Dll = 'BCRYPT.dll'; Names = @('BCryptOpenAlgorithmProvider', 'BCryptHash', 'BCryptCloseAlgorithmProvider') },
     [pscustomobject]@{ Descriptor = 0xC8; Lookup = 0x8A0; Iat = 0x200; Dll = 'KERNEL32.dll'; Names = @('GetFileInformationByHandle') },
     [pscustomobject]@{ Descriptor = 0xDC; Lookup = 0x8C0; Iat = 0x208; Dll = 'KERNEL32.dll'; Names = @('GetModuleFileNameA', 'SetCurrentDirectoryA') },
-    [pscustomobject]@{ Descriptor = 0xF0; Lookup = 0x900; Iat = 0x218; Dll = 'KERNEL32.dll'; Names = @('CreatePipe', 'SetHandleInformation', 'PeekNamedPipe', 'InitializeProcThreadAttributeList', 'UpdateProcThreadAttribute', 'DeleteProcThreadAttributeList', 'LocalFree') },
-    [pscustomobject]@{ Descriptor = 0x104; Lookup = 0x940; Iat = 0x258; Dll = 'USERENV.dll'; Names = @('CreateAppContainerProfile', 'DeriveAppContainerSidFromAppContainerName') },
-    [pscustomobject]@{ Descriptor = 0x118; Lookup = 0x960; Iat = 0x270; Dll = 'ADVAPI32.dll'; Names = @('GetNamedSecurityInfoA', 'SetEntriesInAclA', 'SetNamedSecurityInfoA', 'FreeSid') }
+    [pscustomobject]@{ Descriptor = 0xF0; Lookup = 0x900; Iat = 0x218; Dll = 'KERNEL32.dll'; Names = @('CreatePipe', 'SetHandleInformation', 'PeekNamedPipe', 'InitializeProcThreadAttributeList', 'UpdateProcThreadAttribute', 'DeleteProcThreadAttributeList', 'LocalFree', 'GetLastError') },
+    [pscustomobject]@{ Descriptor = 0x104; Lookup = 0x940; Iat = 0x260; Dll = 'USERENV.dll'; Names = @('CreateAppContainerProfile', 'DeriveAppContainerSidFromAppContainerName') },
+    [pscustomobject]@{ Descriptor = 0x118; Lookup = 0x960; Iat = 0x278; Dll = 'ADVAPI32.dll'; Names = @('GetNamedSecurityInfoA', 'SetEntriesInAclA', 'SetNamedSecurityInfoA', 'FreeSid', 'OpenProcessToken', 'CreateRestrictedToken', 'CreateProcessAsUserA') },
+    [pscustomobject]@{ Descriptor = 0x12C; Lookup = 0x9A0; Iat = 0x2B8; Dll = 'KERNEL32.dll'; Names = @('GetFullPathNameA') }
 )
 $apiNameRvas = @{}
-$nameCursor = 0x2B0
+$nameCursor = 0x2D0
 foreach ($set in $importSets) {
     foreach ($apiName in $set.Names) {
         if (-not $apiNameRvas.ContainsKey($apiName)) {
@@ -2589,9 +2711,10 @@ $script:StdLibIatOffsets = @{
     'GetFileInformationByHandle' = [UInt32]0x200
     'GetModuleFileNameA' = [UInt32]0x208; 'SetCurrentDirectoryA' = [UInt32]0x210
     'CreatePipe' = [UInt32]0x218; 'SetHandleInformation' = [UInt32]0x220; 'PeekNamedPipe' = [UInt32]0x228
-    'InitializeProcThreadAttributeList' = [UInt32]0x230; 'UpdateProcThreadAttribute' = [UInt32]0x238; 'DeleteProcThreadAttributeList' = [UInt32]0x240; 'LocalFree' = [UInt32]0x248
-    'CreateAppContainerProfile' = [UInt32]0x258; 'DeriveAppContainerSidFromAppContainerName' = [UInt32]0x260
-    'GetNamedSecurityInfoA' = [UInt32]0x270; 'SetEntriesInAclA' = [UInt32]0x278; 'SetNamedSecurityInfoA' = [UInt32]0x280; 'FreeSid' = [UInt32]0x288
+    'InitializeProcThreadAttributeList' = [UInt32]0x230; 'UpdateProcThreadAttribute' = [UInt32]0x238; 'DeleteProcThreadAttributeList' = [UInt32]0x240; 'LocalFree' = [UInt32]0x248; 'GetLastError' = [UInt32]0x250
+    'CreateAppContainerProfile' = [UInt32]0x260; 'DeriveAppContainerSidFromAppContainerName' = [UInt32]0x268
+    'GetNamedSecurityInfoA' = [UInt32]0x278; 'SetEntriesInAclA' = [UInt32]0x280; 'SetNamedSecurityInfoA' = [UInt32]0x288; 'FreeSid' = [UInt32]0x290
+    'OpenProcessToken' = [UInt32]0x298; 'CreateRestrictedToken' = [UInt32]0x2A0; 'CreateProcessAsUserA' = [UInt32]0x2A8; 'GetFullPathNameA' = [UInt32]0x2B8
 }
 
 # One DIR64 relocation patches the absolute image-base + entry-point pointer at the dynamic .rdata RVA.
@@ -2632,7 +2755,7 @@ Set-U32 -Buffer $image -Offset ($opt + 104) -Value 0; Set-U32 -Buffer $image -Of
 Set-U32 -Buffer $image -Offset ($opt + 120) -Value ([UInt32]([long]$idataRva + [long]$descriptorBase)); Set-U32 -Buffer $image -Offset ($opt + 124) -Value $importDirectorySize
 Set-U32 -Buffer $image -Offset ($opt + 136) -Value $pdataRva; Set-U32 -Buffer $image -Offset ($opt + 140) -Value $pdataBytes.Length
 Set-U32 -Buffer $image -Offset ($opt + 152) -Value $relocRva; Set-U32 -Buffer $image -Offset ($opt + 156) -Value 12
-Set-U32 -Buffer $image -Offset ($opt + 208) -Value ([UInt32]([long]$idataRva + 0x70)); Set-U32 -Buffer $image -Offset ($opt + 212) -Value 0x228
+Set-U32 -Buffer $image -Offset ($opt + 208) -Value ([UInt32]([long]$idataRva + 0x70)); Set-U32 -Buffer $image -Offset ($opt + 212) -Value 0x250
 $sectionText = 0x188
 Set-Ascii -Buffer $image -Offset $sectionText -Value '.text'; Set-U32 -Buffer $image -Offset ($sectionText + 8) -Value $codeBytes.Length; Set-U32 -Buffer $image -Offset ($sectionText + 12) -Value $textRva; Set-U32 -Buffer $image -Offset ($sectionText + 16) -Value $textRawSize; Set-U32 -Buffer $image -Offset ($sectionText + 20) -Value $textRawPointer; Set-U32 -Buffer $image -Offset ($sectionText + 36) -Value 0x60000020
 $sectionData = 0x1B0
