@@ -272,6 +272,21 @@ try {
         $journalCommit -le $sidCreation -or $firstGrant -le $journalCommit) {
         throw 'WAIT_ABANDONED recovery, manifest identity setup, durable snapshot and first ACL expansion are out of order.'
     }
+
+    # Crash recovery must run before descendant path checks: a killed child may
+    # have left those DACLs restrictive. The shared pathScratchSlot is also the
+    # journalPathSlot, so the durable journal path must be reconstructed after
+    # the post-recovery checks have borrowed that buffer.
+    $rootPreflight = $brokerEmitterSource.IndexOf('Emit-DevBrokerPathCheck -FrameSlot $workspaceRootSlot', [StringComparison]::Ordinal)
+    $buildPreflight = $brokerEmitterSource.IndexOf('Emit-DevBrokerPathCheck -FrameSlot $buildPathSlot', [StringComparison]::Ordinal)
+    $journalPathRebuild = $brokerEmitterSource.IndexOf('DestinationSlot $journalPathSlot', $recoveryCall, [StringComparison]::Ordinal)
+    $workingDirectorySet = $brokerEmitterSource.IndexOf('# SetCurrentDirectoryA', $recoveryCall, [StringComparison]::Ordinal)
+    if ($rootPreflight -lt 0 -or $rootPreflight -gt $recoveryCall -or
+        $buildPreflight -le $recoveryCall -or
+        $journalPathRebuild -le $buildPreflight -or
+        $workingDirectorySet -le $journalPathRebuild) {
+        throw 'Crash recovery must precede descendant path checks, and the journal destination must be rebuilt after shared scratch-buffer use.'
+    }
     foreach ($requiredJournalApi in @('MoveFileExA', 'FlushFileBuffers', 'Emit-DevBrokerRestoreSecurityDescriptor', 'IsValidSecurityDescriptor', '0x80200002')) {
         if (-not $compilerSource.Contains($requiredJournalApi)) { throw "Crash-safe ACL journal component missing: $requiredJournalApi" }
     }
