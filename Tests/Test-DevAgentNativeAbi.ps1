@@ -191,7 +191,7 @@ Assert-Contract ((Convert-HexToInt ([string]$manifest.constants.PROCESS_QUERY_LI
 Assert-Contract ([int]$manifest.constants.ERROR_INSUFFICIENT_BUFFER -eq 122) 'ERROR_INSUFFICIENT_BUFFER value mismatch.'
 Assert-Contract ([int]$manifest.constants.ERROR_ALREADY_EXISTS -eq 183) 'ERROR_ALREADY_EXISTS value mismatch.'
 $alreadyExistsHresult = [string]$manifest.constants.HRESULT_FROM_WIN32_ERROR_ALREADY_EXISTS
-Assert-Contract (([Convert]::ToUInt32($alreadyExistsHresult.Substring(2),16)) -eq [uint32]0x800700B7) 'HRESULT_FROM_WIN32(ERROR_ALREADY_EXISTS) value mismatch.'
+Assert-Contract ($alreadyExistsHresult -ceq '0x800700B7') 'HRESULT_FROM_WIN32(ERROR_ALREADY_EXISTS) value mismatch.'
 Assert-Contract ((Convert-HexToInt ([string]$manifest.constants.S_OK)) -eq 0) 'S_OK value mismatch.'
 
 Write-Host 'Windows SDK ABI contract: PASS'
