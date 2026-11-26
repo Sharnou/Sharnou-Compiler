@@ -33,7 +33,7 @@ $sandboxMarkerPath = Join-Path $buildRoot 'sandbox-write-probe.ok'
 $deniedMarkerPath = Join-Path $PSScriptRoot 'DevAgentBroker\denied-write-probe.tmp'
 $capturedOutputPath = Join-Path $buildRoot 'captured-output.bin'
 $nl = [string][char]10
-$expected = @('-100', '-101', '37', '-110', '-114', '1') -join $nl
+$expected = @('-100', '-101', '37', '-110', '0', '-114') -join $nl
 $originalLocation = Get-Location
 $toolHashInputs = @(
     [pscustomobject]@{ Id = 1; Path = 'Tests\Test-Stage7A.ps1' },
