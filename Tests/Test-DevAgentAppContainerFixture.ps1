@@ -15,9 +15,10 @@ function Add-AppContainerPass {
     $script:AppContainerPassCount++
     Write-Host ("PASS: " + $Message) -ForegroundColor Green
 }
-function Get-HResultBits {
+function Get-HResultHex {
     param([Int32] $Value)
-    return [BitConverter]::ToUInt32([BitConverter]::GetBytes($Value),0)
+    $bits = [BitConverter]::ToUInt32([BitConverter]::GetBytes($Value),0)
+    return $bits.ToString('X8')
 }
 function Get-AppContainerTokenBuffer {
     param(
@@ -94,8 +95,8 @@ try {
     $createHr = [Int32](Invoke-SharnouNativeApi -ApiType $apiType -Name 'CreateAppContainerProfile' -Arguments @(
         $profileNamePointer,$displayNamePointer,$descriptionPointer,[IntPtr]::Zero,[UInt32]0,$sidOutput
     ))
-    if ((Get-HResultBits $createHr) -ne [UInt32]0) {
-        throw ("CreateAppContainerProfile failed: HRESULT=0x{0:X8}; profile ownership was not acquired." -f (Get-HResultBits $createHr))
+    if ((Get-HResultHex $createHr) -cne '00000000') {
+        throw ("CreateAppContainerProfile failed: HRESULT=0x{0}; profile ownership was not acquired." -f (Get-HResultHex $createHr))
     }
     $ownsProfile = $true
     $profileSid = [Runtime.InteropServices.Marshal]::ReadIntPtr($sidOutput)
@@ -112,8 +113,8 @@ try {
     $duplicateHr = [Int32](Invoke-SharnouNativeApi -ApiType $apiType -Name 'CreateAppContainerProfile' -Arguments @(
         $profileNamePointer,$displayNamePointer,$descriptionPointer,[IntPtr]::Zero,[UInt32]0,$duplicateSidOutput
     ))
-    if ((Get-HResultBits $duplicateHr) -ne [UInt32]0x800700B7) {
-        throw ("Duplicate profile creation did not fail with HRESULT_FROM_WIN32(ERROR_ALREADY_EXISTS): 0x{0:X8}." -f (Get-HResultBits $duplicateHr))
+    if ((Get-HResultHex $duplicateHr) -cne '800700B7') {
+        throw ("Duplicate profile creation did not fail with HRESULT_FROM_WIN32(ERROR_ALREADY_EXISTS): 0x{0}." -f (Get-HResultHex $duplicateHr))
     }
     Add-AppContainerPass 'Profile collision is rejected with ERROR_ALREADY_EXISTS; the duplicate path does not claim ownership.'
 
@@ -325,8 +326,8 @@ try {
     if ($ownsProfile -and $safeToDeleteProfile) {
         try {
             $deleteHr = [Int32](Invoke-SharnouNativeApi -ApiType $apiType -Name 'DeleteAppContainerProfile' -Arguments @($profileNamePointer))
-            if ((Get-HResultBits $deleteHr) -ne [UInt32]0 -and $null -eq $failure) {
-                $failure = ("DeleteAppContainerProfile failed: HRESULT=0x{0:X8}." -f (Get-HResultBits $deleteHr))
+            if ((Get-HResultHex $deleteHr) -cne '00000000' -and $null -eq $failure) {
+                $failure = ("DeleteAppContainerProfile failed: HRESULT=0x{0}." -f (Get-HResultHex $deleteHr))
             }
         } catch {
             if ($null -eq $failure) { $failure = "Profile deletion failed: $($_.Exception.Message)" }
