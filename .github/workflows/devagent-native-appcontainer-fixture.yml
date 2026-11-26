@@ -26,8 +26,11 @@ jobs:
           $paths = @(
             'Tests\DevAgentBroker\native-abi-manifest.json',
             'Tests\DevAgentBroker\NativeInterop.ps1',
+            'Tests\DevAgentBroker\WorkspaceTransaction.ps1',
+            'Tests\DevAgentBroker\WorkspaceCrashChild.ps1',
             'Tests\Test-DevAgentNativeAbiRuntime.ps1',
-            'Tests\Test-DevAgentAppContainerFixture.ps1'
+            'Tests\Test-DevAgentAppContainerFixture.ps1',
+            'Tests\Test-DevAgentAppContainerWorkspaceAcl.ps1'
           )
           foreach ($path in $paths) {
             $bytes = [IO.File]::ReadAllBytes((Join-Path $PWD $path))
@@ -38,7 +41,7 @@ jobs:
               if ($byte -gt 127) { throw "Non-ASCII byte: $path" }
             }
           }
-          Write-Host 'PASS: Phase 2B.2 test sources are ASCII without BOM.'
+          Write-Host 'PASS: Phase 2B.2/2B.3 test sources are ASCII without BOM.'
 
       - name: Execute Windows x64 interop layout probe
         shell: powershell
@@ -47,3 +50,7 @@ jobs:
       - name: Execute fixed suspended AppContainer token fixture
         shell: powershell
         run: .\Tests\Test-DevAgentAppContainerFixture.ps1
+
+      - name: Execute real AppContainer workspace ACL and crash-rollback fixture
+        shell: powershell
+        run: .\Tests\Test-DevAgentAppContainerWorkspaceAcl.ps1

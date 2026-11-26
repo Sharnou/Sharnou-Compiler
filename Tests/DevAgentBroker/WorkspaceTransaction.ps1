@@ -499,11 +499,10 @@ function New-SharnouExecutionWorkspace {
         Write-SharnouWorkspaceJournal -Path $journalPath -Record $record
         Invoke-SharnouWorkspaceTestPause -Enabled ([bool]$EnableTestHooks) -PauseAfterPhase $PauseAfterPhase -Phase 'AfterAclPending' -MarkerPath $MarkerPath
 
-        $allowedRights = @{
-            $roots.SupervisorSid = [System.Security.AccessControl.FileSystemRights]::FullControl
-            $script:SharnouSystemSid = [System.Security.AccessControl.FileSystemRights]::FullControl
-            $execution.Value = Get-SharnouExecutionWorkspaceRights
-        }
+        $allowedRights = @{}
+        $allowedRights[$roots.SupervisorSid] = [System.Security.AccessControl.FileSystemRights]::FullControl
+        $allowedRights[$script:SharnouSystemSid] = [System.Security.AccessControl.FileSystemRights]::FullControl
+        $allowedRights[$execution.Value] = Get-SharnouExecutionWorkspaceRights
         Set-SharnouProtectedDirectoryAcl -Path $workspacePath -AllowedSidRights $allowedRights
         Invoke-SharnouWorkspaceTestPause -Enabled ([bool]$EnableTestHooks) -PauseAfterPhase $PauseAfterPhase -Phase 'AfterAclApplied' -MarkerPath $MarkerPath
 
