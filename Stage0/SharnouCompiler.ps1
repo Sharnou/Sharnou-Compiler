@@ -1025,9 +1025,11 @@ function Emit-DevRunTool {
     $saveRsiSlot = Get-TempSlotPosition -Depth ($BaseDepth + 4)
     $resultSlot = Get-TempSlotPosition -Depth ($BaseDepth + 5)
     $exitCodeSlot = Get-TempSlotPosition -Depth ($BaseDepth + 6)
+    $hashFileHandleSlot = Get-TempSlotPosition -Depth ($BaseDepth + 7)
 
     # Initialize every handle slot before any validation branch can reach cleanup.
     Emit-StoreZero64Frame -SlotPosition $jobHandleSlot
+    Emit-StoreZero64Frame -SlotPosition $hashFileHandleSlot
     for ($i = 0; $i -lt 3; $i++) { Emit-StoreZero64Frame -SlotPosition ($processSlot + ($i * 8)) }
 
     $unknownTool = New-UniqueLabel -Prefix 'dev_tool_unknown'
@@ -1176,8 +1178,40 @@ function Emit-DevRunTool {
     Emit-DevBrokerPathCheck -DataItem $compilerFileItem -IsDirectory $false -FailureLabel $directoryFail
     foreach ($fixedTool in $fixedToolPaths) {
         $toolPathItem = Register-DataConstant -Value $fixedTool.Path
+        $entry = @($manifest.tools | Where-Object { [int]$_.id -eq $fixedTool.Id })
+        if ($entry.Count -ne 1) { throw "Pinned DevAgent manifest has no unique entry for tool ID $($fixedTool.Id)." }
+        $fixedTool | Add-Member -NotePropertyName PathItem -NotePropertyValue $toolPathItem -Force
+        $fixedTool | Add-Member -NotePropertyName Sha256 -NotePropertyValue ([string]$entry[0].sha256) -Force
         Emit-DevBrokerPathCheck -DataItem $toolPathItem -IsDirectory $false -FailureLabel $directoryFail
     }
+
+    # Verify the exact on-disk script selected by tool ID using native Windows CNG.
+    # The opened file handle remains alive until child completion, preventing write/delete
+    # replacement between the hash check and the PowerShell host opening the script.
+    $verifyLabels = @()
+    for ($i = 0; $i -lt $fixedToolPaths.Count; $i++) {
+        $verifyLabels += New-UniqueLabel -Prefix 'dev_tool_verify_hash'
+    }
+    $hashVerified = New-UniqueLabel -Prefix 'dev_tool_hash_verified'
+    $scriptHashFail = New-UniqueLabel -Prefix 'dev_tool_script_hash_fail'
+    Emit-LoadEaxFrame -SlotPosition $ToolSlot
+    for ($i = 0; $i -lt $fixedToolPaths.Count; $i++) {
+        Emit-Bytes -Bytes ([byte[]]@(0x3D))
+        Emit-I32 -Value ([int]$fixedToolPaths[$i].Id)
+        Emit-JumpConditional -ConditionCode 0x84 -Label $verifyLabels[$i]
+    }
+    Emit-Jump -Label $unknownTool
+    for ($i = 0; $i -lt $fixedToolPaths.Count; $i++) {
+        Mark-CodeLabel -Label $verifyLabels[$i]
+        Emit-DevBrokerVerifyScript -PathItem $fixedToolPaths[$i].PathItem -ExpectedSha256 $fixedToolPaths[$i].Sha256 -PersistentFileHandleSlot $hashFileHandleSlot -FailureLabel $scriptHashFail
+        Emit-Jump -Label $hashVerified
+    }
+    Mark-CodeLabel -Label $scriptHashFail
+    Emit-Bytes -Bytes ([byte[]]@(0xB8))
+    Emit-I32 -Value -111 # pinned script SHA-256 mismatch or native hash/read failure
+    Emit-StoreEaxFrame -SlotPosition $resultSlot
+    Emit-Jump -Label $cleanup
+    Mark-CodeLabel -Label $hashVerified
 
     # Zero STARTUPINFOA, PROCESS_INFORMATION and JOBOBJECT_EXTENDED_LIMIT_INFORMATION.
     for ($i = 0; $i -lt 13; $i++) { Emit-StoreZero64Frame -SlotPosition ($startupSlot + ($i * 8)) }
@@ -1342,6 +1376,12 @@ function Emit-DevRunTool {
     Emit-JumpConditional -ConditionCode 0x84 -Label $skipJob
     Emit-Win64CallIat -TargetRva ([UInt32]0x30B8) -StackArguments @() # CloseHandle(job)
     Mark-CodeLabel -Label $skipJob
+    Emit-LoadRcxFrame -SlotPosition $hashFileHandleSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x85, 0xC9))
+    $skipHashFile = New-UniqueLabel -Prefix 'dev_tool_skip_hash_file'
+    Emit-JumpConditional -ConditionCode 0x84 -Label $skipHashFile
+    Emit-Win64CallIat -TargetRva ([UInt32]0x30B8) -StackArguments @() # CloseHandle(pinned script file)
+    Mark-CodeLabel -Label $skipHashFile
     Emit-LoadRdiFrame -SlotPosition $saveRdiSlot
     Emit-LoadRsiFrame -SlotPosition $saveRsiSlot
     Emit-LoadEaxFrame -SlotPosition $resultSlot
