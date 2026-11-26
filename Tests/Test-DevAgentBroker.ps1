@@ -297,6 +297,12 @@ try {
             throw "Broker fixture output mismatch. Expected=[$expected] Actual=[$actual]."
         }
         if (-not (Test-Path -LiteralPath $sandboxMarkerPath -PathType Leaf)) {
+            if (Test-Path -LiteralPath $capturedOutputPath -PathType Leaf) {
+                $sandboxDiagnostic = [IO.File]::ReadAllBytes($capturedOutputPath)
+                $sandboxDiagnosticLength = [Math]::Min(4096, $sandboxDiagnostic.Length)
+                $sandboxDiagnosticText = [Text.Encoding]::UTF8.GetString($sandboxDiagnostic, 0, $sandboxDiagnosticLength)
+                Write-Host ("DEVAGENT_SANDBOX_DIAGNOSTIC|length={0}|sample={1}" -f $sandboxDiagnostic.Length, $sandboxDiagnosticText)
+            }
             throw 'AppContainer could not write to the designated Build staging directory.'
         }
         if (Test-Path -LiteralPath $deniedMarkerPath -PathType Leaf) {
