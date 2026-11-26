@@ -2010,6 +2010,10 @@ function Emit-DevRunTool {
     $aclRecoveryFail = New-UniqueLabel -Prefix 'dev_tool_acl_recovery_fail'
     $journalFail = New-UniqueLabel -Prefix 'dev_tool_acl_journal_fail'
     $aclRollbackFail = New-UniqueLabel -Prefix 'dev_tool_acl_rollback_fail'
+    $aclRollbackRootFail = New-UniqueLabel -Prefix 'dev_tool_acl_rollback_root_fail'
+    $aclRollbackBuildFail = New-UniqueLabel -Prefix 'dev_tool_acl_rollback_build_fail'
+    $aclRollbackBrokerFail = New-UniqueLabel -Prefix 'dev_tool_acl_rollback_broker_fail'
+    $aclRollbackJournalFail = New-UniqueLabel -Prefix 'dev_tool_acl_rollback_journal_fail'
     $tokenFail = New-UniqueLabel -Prefix 'dev_tool_token_fail'
     $pipeFail = New-UniqueLabel -Prefix 'dev_tool_pipe_fail'
     $attributeFail = New-UniqueLabel -Prefix 'dev_tool_attribute_fail'
@@ -3022,20 +3026,40 @@ function Emit-DevRunTool {
     Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
     Emit-JumpConditional -ConditionCode 0x84 -Label $skipAclRollback
 
-    Emit-DevBrokerRestoreSecurityDescriptor -PathSlot $workspaceRootSlot -DescriptorSlot $rootDescriptorSlot -FailureLabel $aclRollbackFail
-    Emit-DevBrokerRestoreSecurityDescriptor -PathSlot $buildPathSlot -DescriptorSlot $buildDescriptorSlot -FailureLabel $aclRollbackFail
-    Emit-DevBrokerRestoreSecurityDescriptor -PathSlot $brokerDirectorySlot -DescriptorSlot $brokerDescriptorSlot -FailureLabel $aclRollbackFail
+    Emit-DevBrokerRestoreSecurityDescriptor -PathSlot $workspaceRootSlot -DescriptorSlot $rootDescriptorSlot -FailureLabel $aclRollbackRootFail
+    Emit-DevBrokerRestoreSecurityDescriptor -PathSlot $buildPathSlot -DescriptorSlot $buildDescriptorSlot -FailureLabel $aclRollbackBuildFail
+    Emit-DevBrokerRestoreSecurityDescriptor -PathSlot $brokerDirectorySlot -DescriptorSlot $brokerDescriptorSlot -FailureLabel $aclRollbackBrokerFail
 
     Emit-LeaRaxFrame -SlotPosition $journalPathSlot
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1))
     Emit-Win64CallIat -TargetRva ([UInt32]0x3310) -StackArguments @() # delete active journal only after all three descriptors are restored
     Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
-    Emit-JumpConditional -ConditionCode 0x84 -Label $aclRollbackFail
+    Emit-JumpConditional -ConditionCode 0x84 -Label $aclRollbackJournalFail
     Emit-StoreBits32Frame -SlotPosition $transactionActiveSlot -Value 0
     Emit-Jump -Label $skipAclRollback
 
+    Mark-CodeLabel -Label $aclRollbackRootFail
+    Emit-Bytes -Bytes ([byte[]]@(0xB8, 0x7F, 0xFF, 0xFF, 0xFF)) # -129: workspace-root descriptor restore failed
+    Emit-StoreEaxFrame -SlotPosition $resultSlot
+    Emit-Jump -Label $skipAclRollback
+
+    Mark-CodeLabel -Label $aclRollbackBuildFail
+    Emit-Bytes -Bytes ([byte[]]@(0xB8, 0x7E, 0xFF, 0xFF, 0xFF)) # -130: Build descriptor restore failed
+    Emit-StoreEaxFrame -SlotPosition $resultSlot
+    Emit-Jump -Label $skipAclRollback
+
+    Mark-CodeLabel -Label $aclRollbackBrokerFail
+    Emit-Bytes -Bytes ([byte[]]@(0xB8, 0x7D, 0xFF, 0xFF, 0xFF)) # -131: broker-directory descriptor restore failed
+    Emit-StoreEaxFrame -SlotPosition $resultSlot
+    Emit-Jump -Label $skipAclRollback
+
+    Mark-CodeLabel -Label $aclRollbackJournalFail
+    Emit-Bytes -Bytes ([byte[]]@(0xB8, 0x7C, 0xFF, 0xFF, 0xFF)) # -132: ACL journal could not be retired after restore
+    Emit-StoreEaxFrame -SlotPosition $resultSlot
+    Emit-Jump -Label $skipAclRollback
+
     Mark-CodeLabel -Label $aclRollbackFail
-    Emit-Bytes -Bytes ([byte[]]@(0xB8, 0x80, 0xFF, 0xFF, 0xFF)) # -128: ACL rollback failed; durable journal retained
+    Emit-Bytes -Bytes ([byte[]]@(0xB8, 0x80, 0xFF, 0xFF, 0xFF)) # -128: generic ACL rollback failure
     Emit-StoreEaxFrame -SlotPosition $resultSlot
     Mark-CodeLabel -Label $skipAclRollback
 
