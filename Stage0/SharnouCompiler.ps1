@@ -1373,7 +1373,7 @@ function Emit-DevBrokerRestoreSecurityDescriptor {
     Emit-LeaRaxFrame -SlotPosition $daclSlot
     Emit-Bytes -Bytes ([byte[]]@(0x49, 0x89, 0xC0))
     Emit-LeaRaxFrame -SlotPosition $daclDefaultedSlot
-    Emit-Bytes -Bytes ([byte[]]@(0x4C, 0x89, 0xC1))
+    Emit-Bytes -Bytes ([byte[]]@(0x49, 0x89, 0xC1))
     Emit-Win64CallIat -TargetRva ([UInt32]0x32E0) -StackArguments @()
     Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
     Emit-JumpConditional -ConditionCode 0x84 -Label $failed
@@ -1390,7 +1390,7 @@ function Emit-DevBrokerRestoreSecurityDescriptor {
     Emit-LeaRaxFrame -SlotPosition $saclSlot
     Emit-Bytes -Bytes ([byte[]]@(0x49, 0x89, 0xC0))
     Emit-LeaRaxFrame -SlotPosition $saclDefaultedSlot
-    Emit-Bytes -Bytes ([byte[]]@(0x4C, 0x89, 0xC1))
+    Emit-Bytes -Bytes ([byte[]]@(0x49, 0x89, 0xC1))
     Emit-Win64CallIat -TargetRva ([UInt32]0x32E8) -StackArguments @()
     Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
     Emit-JumpConditional -ConditionCode 0x84 -Label $failed
@@ -1407,8 +1407,7 @@ function Emit-DevBrokerRestoreSecurityDescriptor {
     Emit-Jump -Label $done
 
     Mark-CodeLabel -Label $failed
-    Emit-Bytes -Bytes ([byte[]]@(0xB8, 0x01, 0x00, 0x00, 0x00))
-    Emit-StoreEaxFrame -SlotPosition $daclPresentSlot
+    Emit-StoreBits32Frame -SlotPosition $daclPresentSlot -Value 0
     Mark-CodeLabel -Label $done
     Emit-LoadRcxFrame -SlotPosition $handleSlot
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x85, 0xC9))
@@ -1417,7 +1416,7 @@ function Emit-DevBrokerRestoreSecurityDescriptor {
     Emit-Win64CallIat -TargetRva ([UInt32]0x30B8) -StackArguments @()
     Mark-CodeLabel -Label $skipClose
     Emit-LoadEaxFrame -SlotPosition $daclPresentSlot
-    Emit-Bytes -Bytes ([byte[]]@(0x83, 0xF8, 0x01))
+    Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
     Emit-JumpConditional -ConditionCode 0x84 -Label $FailureLabel
 }
 
@@ -1564,7 +1563,7 @@ function Emit-DevBrokerRecoverAclJournal {
         [int] $RootDescriptorSlot,
         [int] $BuildDescriptorSlot,
         [int] $BrokerDescriptorSlot,
-        [int] $FailureLabel
+        [string] $FailureLabel
     )
     $scratch = [int]$script:ActiveContext.ScratchPosition
     $fileInfoSlot = $scratch + 0xD18
@@ -1586,7 +1585,7 @@ function Emit-DevBrokerRecoverAclJournal {
         @{ Kind = 'Immediate'; Value = 0 }
     )
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x83, 0xF8, 0xFF))
-    Emit-JumpConditional -ConditionCode 0x85 -Label $notFound
+    Emit-JumpConditional -ConditionCode 0x84 -Label $notFound
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x85, 0xC0))
     Emit-JumpConditional -ConditionCode 0x84 -Label $notFound
     Emit-StoreRaxFrame -SlotPosition $JournalHandleSlot
@@ -1751,7 +1750,7 @@ function Emit-DevBrokerRecoverAclJournal {
     Mark-CodeLabel -Label $done
     # No active journal: discard only an uncommitted temporary record.
     $journalFound = New-UniqueLabel -Prefix 'dev_acl_recovery_journal_found'
-    Emit-LoadRaxFrame -SlotPosition $JournalHandleSlot
+    Emit-LoadRaxFrame -SlotPosition $JournalBufferSlot
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x85, 0xC0))
     Emit-JumpConditional -ConditionCode 0x85 -Label $journalFound
     Emit-LeaRaxFrame -SlotPosition $TempPathSlot
@@ -1766,6 +1765,9 @@ function Emit-DevBrokerRecoverAclJournal {
     Emit-Bytes -Bytes ([byte[]]@(0x33, 0xD2, 0x41, 0xB8, 0x00, 0x80, 0x00, 0x00))
     Emit-Win64CallIat -TargetRva ([UInt32]0x31D8) -StackArguments @()
     Mark-CodeLabel -Label $skipFreeSuccess
+    Emit-LeaRaxFrame -SlotPosition $TempPathSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1))
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3310) -StackArguments @() # discard stale uncommitted temporary journal
 }
 
 function Emit-DevBrokerBuildWorkspacePath {
