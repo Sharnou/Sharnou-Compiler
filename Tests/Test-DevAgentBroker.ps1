@@ -282,6 +282,11 @@ try {
     if ($restoreSuccessCheck -lt 0 -or $restoreFailureCheck -le $restoreSuccessCheck) {
         throw 'ACL restore helper must distinguish successful SetSecurityInfo from its fail-closed path.'
     }
+    foreach ($restoreStage in 1..6) {
+        if (-not $restoreHelper.Contains("-Value $restoreStage")) {
+            throw "ACL restore diagnostic stage $restoreStage is missing."
+        }
+    }
     Write-Host 'PASS: WAIT_ABANDONED acquires the mutex and recovers the durable ACL journal before any new child' -ForegroundColor Green
     Write-Host 'PASS: all ACL expansions occur after a flushed, write-through journal commit' -ForegroundColor Green
     Write-Host 'PASS: broker source declares restricted-token, AppContainer, handle-based ACL and bounded-output runtime gates' -ForegroundColor Green
