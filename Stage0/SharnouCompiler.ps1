@@ -721,15 +721,17 @@ function Get-TempSlotPosition {
     return [int](0x80 + ([int]$script:ActiveContext.SlotCount * 16) + ($Depth * 16))
 }
 function Emit-CreateFileForPath {
-    param([int] $PathSlot)
+    param([int] $PathSlot, [switch] $OpenReparsePoint)
     Emit-LoadRaxFrame -SlotPosition $PathSlot
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1)) # RCX = path
     Emit-Bytes -Bytes ([byte[]]@(0xBA, 0x00, 0x00, 0x00, 0x80)) # GENERIC_READ
     Emit-Bytes -Bytes ([byte[]]@(0x41, 0xB8, 0x01, 0x00, 0x00, 0x00)) # FILE_SHARE_READ
     Emit-Bytes -Bytes ([byte[]]@(0x45, 0x33, 0xC9)) # lpSecurityAttributes = NULL
+    $fileFlags = [UInt32]0x80 # FILE_ATTRIBUTE_NORMAL
+    if ($OpenReparsePoint) { $fileFlags = [UInt32]0x00200080 } # FILE_FLAG_OPEN_REPARSE_POINT
     Emit-Win64CallIat -TargetRva ([UInt32]0x30A0) -StackArguments @(
         @{ Kind = 'Immediate'; Value = 3 },
-        @{ Kind = 'Immediate'; Value = 0x80 },
+        @{ Kind = 'Immediate'; Value = $fileFlags },
         @{ Kind = 'Immediate'; Value = 0 }
     ) # CreateFileA
 }
@@ -893,12 +895,28 @@ function Emit-DevBrokerVerifyScript {
     Emit-StoreRaxFrame -SlotPosition $pathSlot
 
     # Open for read only and deny concurrent write/delete; retain handle through child completion.
-    Emit-CreateFileForPath -PathSlot $pathSlot
+    Emit-CreateFileForPath -PathSlot $pathSlot -OpenReparsePoint
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x83, 0xF8, 0xFF))
     Emit-JumpConditional -ConditionCode 0x84 -Label $hashFail
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x85, 0xC0))
     Emit-JumpConditional -ConditionCode 0x84 -Label $hashFail
     Emit-StoreRaxFrame -SlotPosition $PersistentFileHandleSlot
+
+    # Inspect the opened object itself, not only the path string. OPEN_REPARSE_POINT
+    # prevents CreateFileA from silently following a final-component symbolic link.
+    $fileInformationSlot = $scratch + 0x6A0
+    Emit-StoreZero64Frame -SlotPosition $fileInformationSlot
+    Emit-LoadRcxFrame -SlotPosition $PersistentFileHandleSlot
+    Emit-LeaRaxFrame -SlotPosition $fileInformationSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC2))
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3200) -StackArguments @() # GetFileInformationByHandle
+    Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
+    Emit-JumpConditional -ConditionCode 0x84 -Label $hashFail
+    Emit-Bytes -Bytes ([byte[]]@(0x8B, 0x85))
+    Emit-I32 -Value (Get-FrameDisp -SlotPosition $fileInformationSlot) # dwFileAttributes
+    Emit-Bytes -Bytes ([byte[]]@(0xF7, 0xC0))
+    Emit-I32 -Value 0x410 # reject FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_REPARSE_POINT
+    Emit-JumpConditional -ConditionCode 0x85 -Label $hashFail
 
     # Bound the exact script size to 1 MiB.
     Emit-LoadRcxFrame -SlotPosition $PersistentFileHandleSlot
@@ -2329,10 +2347,10 @@ $dataRawSize = Align-Up -Value $dataBytes.Length -Alignment 0x200
 # stay stable within .idata. Lookup tables use the disjoint 0x500-0x610 range;
 # no lookup table may overlap any IAT slot or import-by-name string. Emit-CallIat rebases target RVAs after section placement.
 $idata = [byte[]]::new(0x1000)
-# Lookup tables occupy 0x700..0x8A0. Keep ten import descriptors and the null terminator
-# in a separate 0xA00..0xADC range.
+# Lookup tables occupy 0x700..0x8B0. Keep eleven import descriptors and the null terminator
+# in a separate 0xA00..0xAF0 range.
 $descriptorBase = 0xA00
-$importDirectorySize = 0xDC
+$importDirectorySize = 0xF0
 if (($descriptorBase + $importDirectorySize) -gt $idata.Length) { throw 'Import descriptor table exceeds .idata storage.' }
 $importSets = @(
     [pscustomobject]@{ Descriptor = 0x00; Lookup = 0x700; Iat = 0x70; Dll = 'KERNEL32.dll'; Names = @('GetStdHandle', 'WriteFile', 'ExitProcess') },
@@ -2344,7 +2362,8 @@ $importSets = @(
     [pscustomobject]@{ Descriptor = 0x78; Lookup = 0x7E0; Iat = 0x150; Dll = 'KERNEL32.dll'; Names = @('QueryPerformanceCounter', 'QueryPerformanceFrequency') },
     [pscustomobject]@{ Descriptor = 0x8C; Lookup = 0x800; Iat = 0x168; Dll = 'USER32.dll'; Names = @('IsWindow') },
     [pscustomobject]@{ Descriptor = 0xA0; Lookup = 0x810; Iat = 0x178; Dll = 'KERNEL32.dll'; Names = @('GetSystemDirectoryA', 'GetCurrentDirectoryA', 'CreateProcessA', 'CreateJobObjectA', 'SetInformationJobObject', 'AssignProcessToJobObject', 'ResumeThread', 'TerminateJobObject', 'GetExitCodeProcess', 'TerminateProcess', 'GetFileAttributesA', 'VirtualAlloc', 'VirtualFree') },
-    [pscustomobject]@{ Descriptor = 0xB4; Lookup = 0x880; Iat = 0x1E8; Dll = 'BCRYPT.dll'; Names = @('BCryptOpenAlgorithmProvider', 'BCryptHash', 'BCryptCloseAlgorithmProvider') }
+    [pscustomobject]@{ Descriptor = 0xB4; Lookup = 0x880; Iat = 0x1E8; Dll = 'BCRYPT.dll'; Names = @('BCryptOpenAlgorithmProvider', 'BCryptHash', 'BCryptCloseAlgorithmProvider') },
+    [pscustomobject]@{ Descriptor = 0xC8; Lookup = 0x8A0; Iat = 0x200; Dll = 'KERNEL32.dll'; Names = @('GetFileInformationByHandle') }
 )
 $apiNameRvas = @{}
 $nameCursor = 0x290
@@ -2398,6 +2417,7 @@ $script:StdLibIatOffsets = @{
     'ResumeThread' = [UInt32]0x1A8; 'TerminateJobObject' = [UInt32]0x1B0; 'GetExitCodeProcess' = [UInt32]0x1B8; 'TerminateProcess' = [UInt32]0x1C0; 'GetFileAttributesA' = [UInt32]0x1C8
     'VirtualAlloc' = [UInt32]0x1D0; 'VirtualFree' = [UInt32]0x1D8
     'BCryptOpenAlgorithmProvider' = [UInt32]0x1E8; 'BCryptHash' = [UInt32]0x1F0; 'BCryptCloseAlgorithmProvider' = [UInt32]0x1F8
+    'GetFileInformationByHandle' = [UInt32]0x200
 }
 
 # One DIR64 relocation patches the absolute image-base + entry-point pointer at the dynamic .rdata RVA.
@@ -2438,7 +2458,7 @@ Set-U32 -Buffer $image -Offset ($opt + 104) -Value 0; Set-U32 -Buffer $image -Of
 Set-U32 -Buffer $image -Offset ($opt + 120) -Value ([UInt32]([long]$idataRva + [long]$descriptorBase)); Set-U32 -Buffer $image -Offset ($opt + 124) -Value $importDirectorySize
 Set-U32 -Buffer $image -Offset ($opt + 136) -Value $pdataRva; Set-U32 -Buffer $image -Offset ($opt + 140) -Value $pdataBytes.Length
 Set-U32 -Buffer $image -Offset ($opt + 152) -Value $relocRva; Set-U32 -Buffer $image -Offset ($opt + 156) -Value 12
-Set-U32 -Buffer $image -Offset ($opt + 208) -Value ([UInt32]([long]$idataRva + 0x70)); Set-U32 -Buffer $image -Offset ($opt + 212) -Value 0x198
+Set-U32 -Buffer $image -Offset ($opt + 208) -Value ([UInt32]([long]$idataRva + 0x70)); Set-U32 -Buffer $image -Offset ($opt + 212) -Value 0x1A0
 $sectionText = 0x188
 Set-Ascii -Buffer $image -Offset $sectionText -Value '.text'; Set-U32 -Buffer $image -Offset ($sectionText + 8) -Value $codeBytes.Length; Set-U32 -Buffer $image -Offset ($sectionText + 12) -Value $textRva; Set-U32 -Buffer $image -Offset ($sectionText + 16) -Value $textRawSize; Set-U32 -Buffer $image -Offset ($sectionText + 20) -Value $textRawPointer; Set-U32 -Buffer $image -Offset ($sectionText + 36) -Value 0x60000020
 $sectionData = 0x1B0
