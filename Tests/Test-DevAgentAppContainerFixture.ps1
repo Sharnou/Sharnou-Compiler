@@ -141,7 +141,7 @@ try {
 
     # SECURITY_CAPABILITIES: real profile SID, no requested capabilities.
     $capabilitiesType = $types['SECURITY_CAPABILITIES']
-    $capabilitiesSize = [Runtime.InteropServices.Marshal]::SizeOf($capabilitiesType)
+    $capabilitiesSize = Get-SharnouMarshalSize -NativeType $capabilitiesType
     if ($capabilitiesSize -ne 24) { throw "SECURITY_CAPABILITIES size mismatch: $capabilitiesSize." }
     $securityCapabilities = New-SharnouTrackedBuffer -ByteCount $capabilitiesSize -Allocations $allocations
     [Runtime.InteropServices.Marshal]::WriteIntPtr($securityCapabilities,0,$profileSid)
@@ -172,8 +172,8 @@ try {
     $environmentText = 'SystemRoot=' + $env:SystemRoot + [char]0 + 'WINDIR=' + $env:SystemRoot + [char]0
     $environmentPointer = New-SharnouTrackedUnicodeString -Value $environmentText -Allocations $allocations
 
-    $startupSize = [Runtime.InteropServices.Marshal]::SizeOf($types['STARTUPINFOEXW'])
-    $processInformationSize = [Runtime.InteropServices.Marshal]::SizeOf($types['PROCESS_INFORMATION'])
+    $startupSize = Get-SharnouMarshalSize -NativeType $types['STARTUPINFOEXW']
+    $processInformationSize = Get-SharnouMarshalSize -NativeType $types['PROCESS_INFORMATION']
     if ($startupSize -ne 112 -or $processInformationSize -ne 24) {
         throw ("Process startup ABI mismatch: STARTUPINFOEXW={0}; PROCESS_INFORMATION={1}." -f $startupSize,$processInformationSize)
     }

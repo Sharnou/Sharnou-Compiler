@@ -190,3 +190,18 @@ function New-SharnouTrackedUnicodeString {
     $Allocations.Add($pointer)
     return $pointer
 }
+
+
+function Get-SharnouMarshalSize {
+    param([type] $NativeType)
+    $method = [Runtime.InteropServices.Marshal].GetMethod('SizeOf',[type[]]@([type]))
+    if ($null -eq $method) { throw 'Marshal.SizeOf(Type) overload is unavailable.' }
+    return [int]$method.Invoke($null,[object[]]@($NativeType))
+}
+
+function Get-SharnouMarshalOffset {
+    param([type] $NativeType,[string] $FieldName)
+    $method = [Runtime.InteropServices.Marshal].GetMethod('OffsetOf',[type[]]@([type],[string]))
+    if ($null -eq $method) { throw 'Marshal.OffsetOf(Type,String) overload is unavailable.' }
+    return [int64]$method.Invoke($null,[object[]]@($NativeType,$FieldName)).ToInt64()
+}

@@ -33,7 +33,7 @@ foreach ($structure in $manifest.structureLayouts) {
     $name = [string]$structure.name
     $type = $types[$name]
     if ($null -eq $type) { throw "Runtime structure type was not emitted: $name." }
-    $actualSize = [Runtime.InteropServices.Marshal]::SizeOf($type)
+    $actualSize = Get-SharnouMarshalSize -NativeType $type
     $expectedSize = [int]$structure.size
     if ($actualSize -ne $expectedSize) {
         throw ("Marshal.SizeOf mismatch for {0}: expected {1}, actual {2}." -f $name,$expectedSize,$actualSize)
@@ -42,7 +42,7 @@ foreach ($structure in $manifest.structureLayouts) {
     foreach ($field in $structure.fields) {
         $fieldName = [string]$field[0]
         $expectedOffset = [Int64]$field[2]
-        $actualOffset = [Runtime.InteropServices.Marshal]::OffsetOf($type,$fieldName).ToInt64()
+        $actualOffset = Get-SharnouMarshalOffset -NativeType $type -FieldName $fieldName
         if ($actualOffset -ne $expectedOffset) {
             throw ("Marshal.OffsetOf mismatch for {0}.{1}: expected {2}, actual {3}." -f $name,$fieldName,$expectedOffset,$actualOffset)
         }
@@ -51,13 +51,13 @@ foreach ($structure in $manifest.structureLayouts) {
 }
 
 # These three structures are consumed directly by the Phase 2B.2 API calls.
-if ([Runtime.InteropServices.Marshal]::SizeOf($types['SECURITY_CAPABILITIES']) -ne 24) {
+if (Get-SharnouMarshalSize -NativeType $types['SECURITY_CAPABILITIES'] -ne 24) {
     throw 'SECURITY_CAPABILITIES runtime size is not 24 bytes.'
 }
-if ([Runtime.InteropServices.Marshal]::OffsetOf($types['STARTUPINFOEXW'],'lpAttributeList').ToInt64() -ne 104) {
+if (Get-SharnouMarshalOffset -NativeType $types['STARTUPINFOEXW'] -FieldName 'lpAttributeList' -ne 104) {
     throw 'STARTUPINFOEXW.lpAttributeList runtime offset is not 104.'
 }
-if ([Runtime.InteropServices.Marshal]::SizeOf($types['PROCESS_INFORMATION']) -ne 24) {
+if (Get-SharnouMarshalSize -NativeType $types['PROCESS_INFORMATION'] -ne 24) {
     throw 'PROCESS_INFORMATION runtime size is not 24 bytes.'
 }
 
@@ -67,3 +67,6 @@ Write-Host ("Runtime structure sizes checked: {0}" -f $sizeChecks)
 Write-Host ("Runtime field offsets checked: {0}" -f $offsetChecks)
 Write-Host 'Critical API layouts: SECURITY_CAPABILITIES=24, STARTUPINFOEXW=112, PROCESS_INFORMATION=24'
 Write-Host 'Measurement source: CLR unmanaged interop marshaler at runtime; no C/C++ compiler or external toolchain was invoked.'
+Write-Host ("Windows version: {0}; PowerShell: {1}" -f [Environment]::OSVersion.Version.ToString(),$PSVersionTable.PSVersion.ToString())
+Write-Host ("Source SHA-256: {0}" -f (Get-FileHash -LiteralPath $PSCommandPath -Algorithm SHA256).Hash)
+Write-Host ("Manifest SHA-256: {0}" -f (Get-FileHash -LiteralPath $manifestPath -Algorithm SHA256).Hash)
