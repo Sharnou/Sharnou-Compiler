@@ -224,21 +224,26 @@ try {
             throw "Low-integrity mandatory-label implementation is missing: $required"
         }
     }
-    $brokerEmitterLines = $brokerEmitterSource -split '\r?\n'
-    $workspaceAclLine = $brokerEmitterLines | Where-Object { $_.Contains('Emit-DevBrokerUpdateAcl -PathSlot $workspaceRootSlot') } | Select-Object -First 1
-    $buildAclLine = $brokerEmitterLines | Where-Object { $_.Contains('Emit-DevBrokerUpdateAcl -PathSlot $buildPathSlot') } | Select-Object -First 1
-    $brokerBuildAclLine = $brokerEmitterLines | Where-Object { $_.Contains('Emit-DevBrokerUpdateAcl -PathSlot $brokerDirectorySlot') } | Select-Object -First 1
-    if ([string]::IsNullOrWhiteSpace($workspaceAclLine) -or
-        [string]::IsNullOrWhiteSpace($buildAclLine) -or
-        [string]::IsNullOrWhiteSpace($brokerBuildAclLine)) {
-        throw 'Expected workspace, Build, and Build\\DevAgentBroker ACL grants were not all found.'
+    # Distinguish the migration-time REVOKE_ACCESS calls from the actual grant
+    # calls. The positive grants must occur after the durable journal commit.
+    $journalCommitOffset = $brokerEmitterSource.IndexOf('Emit-DevBrokerWriteAclJournal', [StringComparison]::Ordinal)
+    if ($journalCommitOffset -lt 0) { throw 'Durable ACL snapshot/commit call is missing.' }
+    $postJournalAclSource = $brokerEmitterSource.Substring($journalCommitOffset)
+    $grantLines = @($postJournalAclSource -split '\r?\n' | Where-Object { $_.Contains('Emit-DevBrokerUpdateAcl') })
+    $workspaceGrant = $grantLines | Where-Object { $_.Contains('-PathSlot $workspaceRootSlot') -and $_.Contains('-AccessMode 2') } | Select-Object -First 1
+    $buildGrant = $grantLines | Where-Object { $_.Contains('-PathSlot $buildPathSlot') -and $_.Contains('-AccessMode 2') } | Select-Object -First 1
+    $brokerBuildGrant = $grantLines | Where-Object { $_.Contains('-PathSlot $brokerDirectorySlot') -and $_.Contains('-AccessMode 2') } | Select-Object -First 1
+    if ([string]::IsNullOrWhiteSpace($workspaceGrant) -or
+        [string]::IsNullOrWhiteSpace($buildGrant) -or
+        [string]::IsNullOrWhiteSpace($brokerBuildGrant)) {
+        throw 'Expected post-journal workspace, Build, and Build\\DevAgentBroker ACL grants were not all found.'
     }
-    if ($workspaceAclLine.Contains('-SetLowIntegrityLabel')) {
+    if ($workspaceGrant.Contains('-SetLowIntegrityLabel')) {
         throw 'The workspace source root must not be relabeled Low IL.'
     }
-    if (-not $buildAclLine.Contains('-SetLowIntegrityLabel $true') -or
-        -not $brokerBuildAclLine.Contains('-SetLowIntegrityLabel $true')) {
-        throw 'Both writable Build directories must receive the Low IL mandatory label.'
+    if (-not $buildGrant.Contains('-SetLowIntegrityLabel $true') -or
+        -not $brokerBuildGrant.Contains('-SetLowIntegrityLabel $true')) {
+        throw 'Both writable Build directories must receive the Low IL mandatory label after the durable journal commit.'
     }
     if (-not $brokerEmitterSource.Contains('mainCapReadReady') -or
         -not $brokerEmitterSource.Contains('finalCapReadReady') -or
