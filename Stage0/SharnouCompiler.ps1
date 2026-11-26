@@ -2339,6 +2339,11 @@ function Emit-DevRunTool {
     Emit-DevBrokerBuildWorkspacePath -RootSlot $workspaceRootSlot -RootLengthSlot $rootLengthSlot -SuffixItem $compilerSuffixItem -SuffixLength $compilerSuffixLength -DestinationSlot $pathScratchSlot
     Emit-DevBrokerPathCheck -FrameSlot $pathScratchSlot -IsDirectory $false -FailureLabel $directoryFailCompiler
 
+    # pathScratchSlot aliases journalPathSlot. The descendant checks above use
+    # it as a temporary buffer, so reconstruct the durable journal destination
+    # after those checks and before the next transaction writes its snapshot.
+    Emit-DevBrokerBuildWorkspacePath -RootSlot $workspaceRootSlot -RootLengthSlot $rootLengthSlot -SuffixItem $journalSuffixItem -SuffixLength $journalSuffixLength -DestinationSlot $journalPathSlot
+
     Emit-LeaRaxFrame -SlotPosition $workspaceRootSlot
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1))
     Emit-Win64CallIat -TargetRva ([UInt32]0x3220) -StackArguments @() # SetCurrentDirectoryA
