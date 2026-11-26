@@ -184,6 +184,45 @@ try {
     if (-not $brokerEmitterSource.Contains('CreatePipe') -or -not $brokerEmitterSource.Contains('PeekNamedPipe') -or -not $brokerEmitterSource.Contains('0x100000')) {
         throw 'Broker does not provide the hard-capped native output drain.'
     }
+
+    # Mandatory Integrity Control is evaluated before the DACL. A low-IL
+    # AppContainer therefore needs an inheritable Low IL label on the writable
+    # Build subtree; the source workspace must not receive that label.
+    foreach ($required in @(
+        'SYSTEM_MANDATORY_LABEL_ACE',
+        'LABEL_SECURITY_INFORMATION',
+        'WRITE_OWNER',
+        'S-1-16-4096',
+        '0x00001000',
+        '0x00000001001C0002',
+        '0x00140311'
+    )) {
+        if (-not $compilerSource.Contains($required)) {
+            throw "Low-integrity mandatory-label implementation is missing: $required"
+        }
+    }
+    $workspaceAclLine = [regex]::Match($brokerEmitterSource, '(?m)^\\s*Emit-DevBrokerUpdateAcl -PathSlot \\$workspaceRootSlot[^\\r\\n]*').Value
+    $buildAclLine = [regex]::Match($brokerEmitterSource, '(?m)^\\s*Emit-DevBrokerUpdateAcl -PathSlot \\$buildPathSlot[^\\r\\n]*').Value
+    $brokerBuildAclLine = [regex]::Match($brokerEmitterSource, '(?m)^\\s*Emit-DevBrokerUpdateAcl -PathSlot \\$brokerDirectorySlot[^\\r\\n]*').Value
+    if ([string]::IsNullOrWhiteSpace($workspaceAclLine) -or
+        [string]::IsNullOrWhiteSpace($buildAclLine) -or
+        [string]::IsNullOrWhiteSpace($brokerBuildAclLine)) {
+        throw 'Expected workspace, Build, and Build\\DevAgentBroker ACL grants were not all found.'
+    }
+    if ($workspaceAclLine.Contains('-SetLowIntegrityLabel')) {
+        throw 'The workspace source root must not be relabeled Low IL.'
+    }
+    if (-not $buildAclLine.Contains('-SetLowIntegrityLabel $true') -or
+        -not $brokerBuildAclLine.Contains('-SetLowIntegrityLabel $true')) {
+        throw 'Both writable Build directories must receive the Low IL mandatory label.'
+    }
+    if (-not $brokerEmitterSource.Contains('mainCapReadReady') -or
+        -not $brokerEmitterSource.Contains('finalCapReadReady') -or
+        -not $brokerEmitterSource.Contains('read only the remaining capacity')) {
+        throw 'Output capture must consume up to exactly 1 MiB before reporting overflow.'
+    }
+    Write-Host 'PASS: Low IL is applied only to writable Build staging; the source workspace keeps its existing integrity label' -ForegroundColor Green
+    Write-Host 'PASS: capture reads the remaining 1 MiB capacity before classifying subsequent bytes as overflow' -ForegroundColor Green
     Write-Host 'PASS: broker source declares restricted-token, AppContainer, handle-based ACL and bounded-output runtime gates' -ForegroundColor Green
 
     New-Item -ItemType Directory -Path $buildRoot -Force | Out-Null
