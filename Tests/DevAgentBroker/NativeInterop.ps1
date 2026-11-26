@@ -85,12 +85,12 @@ function Add-SharnouPInvokeMethod {
     if ($SetLastError) {
         $attributeType = [System.Runtime.InteropServices.DllImportAttribute]
         $constructor = $attributeType.GetConstructor([type[]]@([string]))
-        $property = $attributeType.GetProperty('SetLastError')
-        $exactSpellingProperty = $attributeType.GetProperty('ExactSpelling')
+        $setLastErrorField = $attributeType.GetField('SetLastError')
+        $exactSpellingField = $attributeType.GetField('ExactSpelling')
         $customAttribute = [System.Reflection.Emit.CustomAttributeBuilder]::new(
             $constructor,
             [object[]]@($DllName),
-            [System.Reflection.PropertyInfo[]]@($property,$exactSpellingProperty),
+            [System.Reflection.FieldInfo[]]@($setLastErrorField,$exactSpellingField),
             [object[]]@($true,$true)
         )
         $method.SetCustomAttribute($customAttribute)
