@@ -1485,7 +1485,6 @@ function Emit-DevRunTool {
     if ([int]$manifest.version -ne 1 -or @($manifest.tools).Count -ne $fixedToolPaths.Count) {
         throw 'Pinned DevAgent tool manifest version or fixed tool count is invalid.'
     }
-    $commandItems = @()
     foreach ($fixedTool in $fixedToolPaths) {
         $entry = @($manifest.tools | Where-Object { [int]$_.id -eq $fixedTool.Id })
         $toolPath = Join-Path $PSScriptRoot ('..\' + $fixedTool.Path)
@@ -1494,14 +1493,22 @@ function Emit-DevRunTool {
         if ($entry.Count -ne 1 -or [string]$entry[0].path -cne $fixedTool.Path -or [string]$entry[0].sha256 -cne $toolHash) {
             throw "Pinned DevAgent tool manifest path/hash mismatch for tool ID $($fixedTool.Id)."
         }
-        $commandCode = '$ErrorActionPreference=''Stop'';$p=''.\{0}'';$global:SHARNOU_TOOL_EXIT_CODE=$null;try{{& $p;if($null -ne $global:SHARNOU_TOOL_EXIT_CODE){{exit [int]$global:SHARNOU_TOOL_EXIT_CODE}};if(-not $?) {{exit 1}};exit 0}}catch{{[Console]::Error.WriteLine([string]$_);exit 1}}' -f $fixedTool.Path
-        $commandText = 'powershell.exe -NoLogo -NoProfile -NonInteractive -Command "' + $commandCode + '"'
-        $commandLength = [System.Text.Encoding]::ASCII.GetByteCount($commandText)
-        if ($commandLength -ge 0x220) { throw "Pinned DevAgent command for tool ID $($fixedTool.Id) exceeds its fixed buffer." }
-        $commandItems += [pscustomobject]@{ Id = $fixedTool.Id; Item = (Register-DataConstant -Value $commandText); Length = $commandLength }
         $fixedTool | Add-Member -NotePropertyName Sha256 -NotePropertyValue ([string]$entry[0].sha256) -Force
         $fixedTool | Add-Member -NotePropertyName SuffixItem -NotePropertyValue (Register-DataConstant -Value ('\' + $fixedTool.Path)) -Force
         $fixedTool | Add-Member -NotePropertyName SuffixLength -NotePropertyValue ([System.Text.Encoding]::ASCII.GetByteCount('\' + $fixedTool.Path)) -Force
+    }
+
+    # Construct a bounded command line around the selected absolute path only after
+    # it is canonicalized and hash-verified. The child never resolves a CWD-relative script.
+    $commandPrefix = 'powershell.exe -NoLogo -NoProfile -NonInteractive -Command "$ErrorActionPreference=''Stop'';& '''
+    $commandSuffix = ''';if($null -ne $global:SHARNOU_TOOL_EXIT_CODE){exit [int]$global:SHARNOU_TOOL_EXIT_CODE}"'
+    $commandPrefixItem = Register-DataConstant -Value $commandPrefix
+    $commandSuffixItem = Register-DataConstant -Value $commandSuffix
+    $commandPrefixLength = [System.Text.Encoding]::ASCII.GetByteCount($commandPrefix)
+    $commandSuffixLength = [System.Text.Encoding]::ASCII.GetByteCount($commandSuffix)
+    $maxToolSuffixLength = [int](($fixedToolPaths | Measure-Object -Property SuffixLength -Maximum).Maximum)
+    if (($commandPrefixLength + 200 + $maxToolSuffixLength + $commandSuffixLength) -ge 0x220) {
+        throw 'Absolute-path DevAgent command exceeds the fixed STARTUPINFO command buffer.'
     }
 
     # REP MOVSB uses nonvolatile RSI/RDI; preserve both for the Sharnou caller.
@@ -1523,9 +1530,8 @@ function Emit-DevRunTool {
         Emit-JumpConditional -ConditionCode 0x84 -Label $toolLabels[$i]
     }
     Emit-Jump -Label $unknownTool
-    for ($i = 0; $i -lt $commandItems.Count; $i++) {
+    for ($i = 0; $i -lt $fixedToolPaths.Count; $i++) {
         Mark-CodeLabel -Label $toolLabels[$i]
-        Emit-CopyDataConstantToFrame -DataItem $commandItems[$i].Item -SlotPosition $commandLineSlot -Length $commandItems[$i].Length
         Emit-Jump -Label $commandReady
     }
     Mark-CodeLabel -Label $unknownTool
@@ -1630,6 +1636,10 @@ function Emit-DevRunTool {
     for ($i = 0; $i -lt $fixedToolPaths.Count; $i++) {
         Mark-CodeLabel -Label $verifyLabels[$i]
         Emit-DevBrokerBuildWorkspacePath -RootSlot $workspaceRootSlot -RootLengthSlot $rootLengthSlot -SuffixItem $fixedToolPaths[$i].SuffixItem -SuffixLength $fixedToolPaths[$i].SuffixLength -DestinationSlot $pathScratchSlot
+        Emit-LoadEaxFrame -SlotPosition $rootLengthSlot
+        Emit-Bytes -Bytes ([byte[]]@(0x05))
+        Emit-I32 -Value $fixedToolPaths[$i].SuffixLength
+        Emit-StoreEaxFrame -SlotPosition $modulePathLengthSlot
         Emit-DevBrokerVerifyScript -FrameSlot $pathScratchSlot -ExpectedSha256 $fixedToolPaths[$i].Sha256 -PersistentFileHandleSlot $hashFileHandleSlot -FailureLabel $hashFail
         Emit-Jump -Label $hashVerified
     }
@@ -1638,6 +1648,34 @@ function Emit-DevRunTool {
     Emit-StoreEaxFrame -SlotPosition $resultSlot
     Emit-Jump -Label $cleanup
     Mark-CodeLabel -Label $hashVerified
+
+    # Build commandLineSlot = fixed prefix + the exact SHA-256-verified absolute script path + suffix.
+    Emit-DataAddress -DataItem $commandPrefixItem
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC6)) # RSI = command prefix
+    Emit-LeaRaxFrame -SlotPosition $commandLineSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC7)) # RDI = command buffer
+    Emit-Bytes -Bytes ([byte[]]@(0xB9))
+    Emit-I32 -Value $commandPrefixLength
+    Emit-Bytes -Bytes ([byte[]]@(0xFC, 0xF3, 0xA4)) # CLD; copy prefix
+
+    Emit-LeaRaxFrame -SlotPosition $pathScratchSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC6)) # RSI = verified absolute path
+    Emit-LeaRaxFrame -SlotPosition $commandLineSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC7, 0x48, 0x81, 0xC7))
+    Emit-I32 -Value $commandPrefixLength # RDI = command buffer + prefix length
+    Emit-LoadEaxFrame -SlotPosition $modulePathLengthSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x89, 0xC1, 0xFC, 0xF3, 0xA4)) # copy exact path bytes (no NUL)
+
+    Emit-DataAddress -DataItem $commandSuffixItem
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC6)) # RSI = command suffix
+    Emit-LeaRaxFrame -SlotPosition $commandLineSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC7, 0x48, 0x81, 0xC7))
+    Emit-I32 -Value $commandPrefixLength
+    Emit-LoadEaxFrame -SlotPosition $modulePathLengthSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x63, 0xC0, 0x48, 0x01, 0xC7)) # RDI += absolute path length
+    Emit-Bytes -Bytes ([byte[]]@(0xB9))
+    Emit-I32 -Value $commandSuffixLength
+    Emit-Bytes -Bytes ([byte[]]@(0xFC, 0xF3, 0xA4, 0xC6, 0x07, 0x00)) # copy suffix + NUL
 
     # Serialize AppContainer ACL updates and output-file creation across broker instances.
     $mutexNameItem = Register-DataConstant -Value 'Local\SharnouDevAgentBroker.Sandbox.v3'

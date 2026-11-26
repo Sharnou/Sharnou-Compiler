@@ -105,9 +105,9 @@ try {
     if ($brokerEmitterSource.Contains('GetCurrentDirectoryA')) {
         throw 'Broker must not trust the inherited current directory as its workspace root.'
     }
-    $relativeScriptToken = ([string][char]36) + "p=''" + [string][char]46 + [string][char]92 + "{0}''"
-    if (-not $brokerEmitterSource.Contains($relativeScriptToken)) {
-        throw 'Fixed PowerShell script invocation must use an explicit current-directory relative path (dot-slash).'
+    if (-not $brokerEmitterSource.Contains('BuildWorkspacePath -RootSlot $workspaceRootSlot') -or
+        -not $brokerEmitterSource.Contains('Build commandLineSlot = fixed prefix + the exact SHA-256-verified absolute script path + suffix')) {
+        throw 'PowerShell command must be constructed from the hash-verified absolute workspace script path.'
     }
     if (-not $compilerSource.Contains('BCryptOpenAlgorithmProvider') -or -not $compilerSource.Contains('BCryptHash') -or -not $compilerSource.Contains('BCryptCloseAlgorithmProvider')) {
         throw 'Native Windows CNG SHA-256 verification is missing.'
