@@ -455,7 +455,7 @@ try {
     if ((Test-Path -LiteralPath $journalPath) -or (Test-Path -LiteralPath $journalTempPath)) {
         throw 'A successful broker invocation left an ACL journal or temporary file behind.'
     }
-    $aclPaths = @($repoRoot, $buildRoot, (Join-Path $buildRoot 'DevAgentBroker'))
+    $aclPaths = @($repoRoot, (Join-Path $repoRoot 'Build'), $buildRoot)
     $aclBaseline = @{}
     foreach ($aclPath in $aclPaths) { $aclBaseline[$aclPath] = Get-BrokerDaclSddl -Path $aclPath }
 
