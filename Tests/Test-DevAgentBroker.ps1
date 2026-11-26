@@ -189,6 +189,24 @@ try {
         throw 'Broker does not provide the hard-capped native output drain.'
     }
 
+    foreach ($aclSlot in @('$workspaceAclGrantedSlot', '$buildAclGrantedSlot', '$brokerAclGrantedSlot')) {
+        if (-not $brokerEmitterSource.Contains($aclSlot)) {
+            throw "Broker does not track successful DACL grant state: $aclSlot"
+        }
+    }
+    $aclRevokeMarker = $brokerEmitterSource.IndexOf('Revoke package-SID DACL grants only after the Job Object has been confirmed empty', [StringComparison]::Ordinal)
+    $aclFreeSidMarker = $brokerEmitterSource.IndexOf('# FreeSid', [StringComparison]::Ordinal)
+    $aclReleaseMutexMarker = $brokerEmitterSource.IndexOf('# ReleaseMutex', [StringComparison]::Ordinal)
+    if ($aclRevokeMarker -lt 0 -or $aclFreeSidMarker -le $aclRevokeMarker -or $aclReleaseMutexMarker -le $aclRevokeMarker) {
+        throw 'Package DACL revocation must precede SID release and mutex release.'
+    }
+    if (-not $brokerEmitterSource.Contains('-AccessMode 4 -FailureLabel $brokerAclRevokeFailed') -or
+        -not $brokerEmitterSource.Contains('-AccessMode 4 -FailureLabel $buildAclRevokeFailed') -or
+        -not $brokerEmitterSource.Contains('-AccessMode 4 -FailureLabel $workspaceAclRevokeFailed')) {
+        throw 'Broker must revoke all three package-SID DACL grants on normal cleanup.'
+    }
+    Write-Host 'PASS: package-SID DACL revocation is emitted in reverse order after job drain and before SID/mutex release (static assertion)' -ForegroundColor Green
+
     # Mandatory Integrity Control is evaluated before the DACL. A low-IL
     # AppContainer therefore needs an inheritable Low IL label on the writable
     # Build subtree; the source workspace must not receive that label.

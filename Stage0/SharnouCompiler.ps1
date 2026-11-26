@@ -1371,6 +1371,9 @@ function Emit-DevRunTool {
     $mutexAcquiredSlot = $scratch + 0xAF8
     $attributeListReadySlot = $scratch + 0xAFC
     $childActiveSlot = $scratch + 0xB00
+    $workspaceAclGrantedSlot = $scratch + 0xB20
+    $buildAclGrantedSlot = $scratch + 0xB24
+    $brokerAclGrantedSlot = $scratch + 0xB28
     $sourceTokenSlot = $scratch + 0xB08
     $restrictedTokenSlot = $scratch + 0xB10
     $childTokenSlot = $scratch + 0xB18
@@ -1399,7 +1402,8 @@ function Emit-DevRunTool {
     foreach ($slot in @(
         $mutexAcquiredSlot, $attributeListReadySlot, $childActiveSlot,
         $outputCountSlot, $availableSlot, $readCountSlot, $remainingMsSlot,
-        $outputWrittenSlot, $pipeClosedSlot
+        $outputWrittenSlot, $pipeClosedSlot, $workspaceAclGrantedSlot,
+        $buildAclGrantedSlot, $brokerAclGrantedSlot
     )) { Emit-StoreBits32Frame -SlotPosition $slot -Value 0 }
     Emit-StoreBits32Frame -SlotPosition $resultSlot -Value 0
     Emit-StoreZero64Frame -SlotPosition $tokenLengthSlot
@@ -1701,8 +1705,11 @@ function Emit-DevRunTool {
     # workspace root = read/execute; Build and its broker subdirectory = read/write/execute.
     Emit-DevBrokerEnsureAppContainerSid -SidSlot $appContainerSidSlot -FailureLabel $appContainerFail
     Emit-DevBrokerUpdateAcl -PathSlot $workspaceRootSlot -SidSlot $appContainerSidSlot -AccessMask ([UInt32]0x001200A9) -AccessMode 2 -FailureLabel $aclFail
+    Emit-StoreBits32Frame -SlotPosition $workspaceAclGrantedSlot -Value 1
     Emit-DevBrokerUpdateAcl -PathSlot $buildPathSlot -SidSlot $appContainerSidSlot -AccessMask ([UInt32]0x001201FF) -AccessMode 2 -SetLowIntegrityLabel $true -FailureLabel $aclFail
+    Emit-StoreBits32Frame -SlotPosition $buildAclGrantedSlot -Value 1
     Emit-DevBrokerUpdateAcl -PathSlot $brokerDirectorySlot -SidSlot $appContainerSidSlot -AccessMask ([UInt32]0x001201FF) -AccessMode 2 -SetLowIntegrityLabel $true -FailureLabel $aclFail
+    Emit-StoreBits32Frame -SlotPosition $brokerAclGrantedSlot -Value 1
 
     # Create a new exclusive capture file before launch. CREATE_NEW cannot reopen an old
     # reparse point or hard link; the held non-inheritable handle is reused for persistence.
@@ -2315,6 +2322,53 @@ function Emit-DevRunTool {
     Emit-StoreEaxFrame -SlotPosition $resultSlot
     Mark-CodeLabel -Label $outputLengthOk
     Mark-CodeLabel -Label $skipPersist
+
+    # Revoke package-SID DACL grants only after the Job Object has been confirmed empty.
+    # Reverse grant order; retain the mutex until every revocation attempt has completed.
+    $skipAllAclRevokes = New-UniqueLabel -Prefix 'dev_tool_skip_acl_revokes_active_child'
+    Emit-LoadEaxFrame -SlotPosition $childActiveSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
+    Emit-JumpConditional -ConditionCode 0x85 -Label $skipAllAclRevokes
+
+    $skipBrokerAclRevoke = New-UniqueLabel -Prefix 'dev_tool_skip_broker_acl_revoke'
+    $brokerAclRevokeFailed = New-UniqueLabel -Prefix 'dev_tool_broker_acl_revoke_failed'
+    Emit-LoadEaxFrame -SlotPosition $brokerAclGrantedSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
+    Emit-JumpConditional -ConditionCode 0x84 -Label $skipBrokerAclRevoke
+    Emit-DevBrokerUpdateAcl -PathSlot $brokerDirectorySlot -SidSlot $appContainerSidSlot -AccessMask ([UInt32]0x001201FF) -AccessMode 4 -FailureLabel $brokerAclRevokeFailed
+    Emit-StoreBits32Frame -SlotPosition $brokerAclGrantedSlot -Value 0
+    Emit-Jump -Label $skipBrokerAclRevoke
+    Mark-CodeLabel -Label $brokerAclRevokeFailed
+    Emit-Bytes -Bytes ([byte[]]@(0xB8, 0x8A, 0xFF, 0xFF, 0xFF)) # -118: package ACL revocation failed
+    Emit-StoreEaxFrame -SlotPosition $resultSlot
+    Mark-CodeLabel -Label $skipBrokerAclRevoke
+
+    $skipBuildAclRevoke = New-UniqueLabel -Prefix 'dev_tool_skip_build_acl_revoke'
+    $buildAclRevokeFailed = New-UniqueLabel -Prefix 'dev_tool_build_acl_revoke_failed'
+    Emit-LoadEaxFrame -SlotPosition $buildAclGrantedSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
+    Emit-JumpConditional -ConditionCode 0x84 -Label $skipBuildAclRevoke
+    Emit-DevBrokerUpdateAcl -PathSlot $buildPathSlot -SidSlot $appContainerSidSlot -AccessMask ([UInt32]0x001201FF) -AccessMode 4 -FailureLabel $buildAclRevokeFailed
+    Emit-StoreBits32Frame -SlotPosition $buildAclGrantedSlot -Value 0
+    Emit-Jump -Label $skipBuildAclRevoke
+    Mark-CodeLabel -Label $buildAclRevokeFailed
+    Emit-Bytes -Bytes ([byte[]]@(0xB8, 0x8A, 0xFF, 0xFF, 0xFF))
+    Emit-StoreEaxFrame -SlotPosition $resultSlot
+    Mark-CodeLabel -Label $skipBuildAclRevoke
+
+    $skipWorkspaceAclRevoke = New-UniqueLabel -Prefix 'dev_tool_skip_workspace_acl_revoke'
+    $workspaceAclRevokeFailed = New-UniqueLabel -Prefix 'dev_tool_workspace_acl_revoke_failed'
+    Emit-LoadEaxFrame -SlotPosition $workspaceAclGrantedSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
+    Emit-JumpConditional -ConditionCode 0x84 -Label $skipWorkspaceAclRevoke
+    Emit-DevBrokerUpdateAcl -PathSlot $workspaceRootSlot -SidSlot $appContainerSidSlot -AccessMask ([UInt32]0x001200A9) -AccessMode 4 -FailureLabel $workspaceAclRevokeFailed
+    Emit-StoreBits32Frame -SlotPosition $workspaceAclGrantedSlot -Value 0
+    Emit-Jump -Label $skipWorkspaceAclRevoke
+    Mark-CodeLabel -Label $workspaceAclRevokeFailed
+    Emit-Bytes -Bytes ([byte[]]@(0xB8, 0x8A, 0xFF, 0xFF, 0xFF))
+    Emit-StoreEaxFrame -SlotPosition $resultSlot
+    Mark-CodeLabel -Label $skipWorkspaceAclRevoke
+    Mark-CodeLabel -Label $skipAllAclRevokes
 
     # Close every acquired handle and release the serialization mutex last.
     foreach ($slot in @($pipeReadSlot, $pipeWriteSlot, $nulHandleSlot, $outputFileHandleSlot)) {
