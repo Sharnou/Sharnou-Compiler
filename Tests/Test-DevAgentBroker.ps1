@@ -282,6 +282,14 @@ try {
     if ($restoreSuccessCheck -lt 0 -or $restoreFailureCheck -le $restoreSuccessCheck) {
         throw 'ACL restore helper must distinguish successful SetSecurityInfo from its fail-closed path.'
     }
+    if (-not $restoreHelper.Contains('DACL_SECURITY_INFORMATION only; root label is never changed') -or
+        -not $restoreHelper.Contains('DACL_SECURITY_INFORMATION | LABEL_SECURITY_INFORMATION')) {
+        throw 'ACL rollback must restore only the components modified at each path: root DACL, child DACL plus mandatory label.'
+    }
+    if (-not $brokerEmitterSource.Contains('-RestoreLabel $true -FailureLabel $aclRollbackBuildFail') -or
+        -not $brokerEmitterSource.Contains('-RestoreLabel $true -FailureLabel $aclRollbackBrokerFail')) {
+        throw 'Build and broker directory rollback must restore their temporary Low IL labels.'
+    }
     foreach ($restoreStage in 1..6) {
         if (-not $restoreHelper.Contains("-Value $restoreStage")) {
             throw "ACL restore diagnostic stage $restoreStage is missing."
