@@ -1423,6 +1423,14 @@ function Emit-DevRunTool {
     $hashFail = New-UniqueLabel -Prefix 'dev_tool_hash_fail'
     $pathFail = New-UniqueLabel -Prefix 'dev_tool_path_fail'
     $directoryFail = New-UniqueLabel -Prefix 'dev_tool_directory_fail'
+    # Temporary fail-site codes isolate the repeated-invocation path preflight.
+    $directoryFailImage = New-UniqueLabel -Prefix 'dev_tool_directory_fail_image'
+    $directoryFailRoot = New-UniqueLabel -Prefix 'dev_tool_directory_fail_root'
+    $directoryFailCwd = New-UniqueLabel -Prefix 'dev_tool_directory_fail_cwd'
+    $directoryFailBuild = New-UniqueLabel -Prefix 'dev_tool_directory_fail_build'
+    $directoryFailBroker = New-UniqueLabel -Prefix 'dev_tool_directory_fail_broker'
+    $directoryFailFixed = New-UniqueLabel -Prefix 'dev_tool_directory_fail_fixed'
+    $directoryFailCompiler = New-UniqueLabel -Prefix 'dev_tool_directory_fail_compiler'
     $mutexFail = New-UniqueLabel -Prefix 'dev_tool_mutex_fail'
     $appContainerFail = New-UniqueLabel -Prefix 'dev_tool_appcontainer_fail'
     $aclFail = New-UniqueLabel -Prefix 'dev_tool_acl_fail'
@@ -1567,14 +1575,14 @@ function Emit-DevRunTool {
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC2, 0x41, 0xB8, 0x04, 0x01, 0x00, 0x00))
     Emit-Win64CallIat -TargetRva ([UInt32]0x3218) -StackArguments @() # GetModuleFileNameA
     Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
-    Emit-JumpConditional -ConditionCode 0x84 -Label $directoryFail
+    Emit-JumpConditional -ConditionCode 0x84 -Label $directoryFailImage
     Emit-Bytes -Bytes ([byte[]]@(0x3D))
     Emit-I32 -Value 259
-    Emit-JumpConditional -ConditionCode 0x87 -Label $directoryFail
+    Emit-JumpConditional -ConditionCode 0x87 -Label $directoryFailImage
     Emit-StoreEaxFrame -SlotPosition $modulePathLengthSlot
     Emit-Bytes -Bytes ([byte[]]@(0x3D))
     Emit-I32 -Value $imageSuffixLength
-    Emit-JumpConditional -ConditionCode 0x82 -Label $directoryFail
+    Emit-JumpConditional -ConditionCode 0x82 -Label $directoryFailImage
 
     # Require the exact \Build\DevAgentBroker\DevAgentBroker.exe suffix.
     Emit-LeaRaxFrame -SlotPosition $workspaceRootSlot
@@ -1587,7 +1595,7 @@ function Emit-DevRunTool {
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC6, 0xB9))
     Emit-I32 -Value $imageSuffixLength
     Emit-Bytes -Bytes ([byte[]]@(0xFC, 0xF3, 0xA6)) # CLD; REPE CMPSB
-    Emit-JumpConditional -ConditionCode 0x85 -Label $directoryFail
+    Emit-JumpConditional -ConditionCode 0x85 -Label $directoryFailImage
     Emit-LoadEaxFrame -SlotPosition $modulePathLengthSlot
     Emit-Bytes -Bytes ([byte[]]@(0x2D))
     Emit-I32 -Value $imageSuffixLength
@@ -1597,31 +1605,31 @@ function Emit-DevRunTool {
     Emit-Bytes -Bytes ([byte[]]@(0x00)) # terminate workspace root
 
     # Reject non-drive, UNC/device, ADS and reparse ancestors before building any child path.
-    Emit-DevBrokerCheckDirectoryChain -PathSlot $workspaceRootSlot -FailureLabel $directoryFail
-    Emit-DevBrokerPathCheck -FrameSlot $workspaceRootSlot -IsDirectory $true -FailureLabel $directoryFail
+    Emit-DevBrokerCheckDirectoryChain -PathSlot $workspaceRootSlot -FailureLabel $directoryFailRoot
+    Emit-DevBrokerPathCheck -FrameSlot $workspaceRootSlot -IsDirectory $true -FailureLabel $directoryFailRoot
     Emit-LeaRaxFrame -SlotPosition $workspaceRootSlot
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1))
     Emit-Win64CallIat -TargetRva ([UInt32]0x3220) -StackArguments @() # SetCurrentDirectoryA
     Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
-    Emit-JumpConditional -ConditionCode 0x84 -Label $directoryFail
+    Emit-JumpConditional -ConditionCode 0x84 -Label $directoryFailCwd
 
     # Construct canonical absolute paths using only the checked workspace root.
     Emit-DevBrokerBuildWorkspacePath -RootSlot $workspaceRootSlot -RootLengthSlot $rootLengthSlot -SuffixItem $buildSuffixItem -SuffixLength $buildSuffixLength -DestinationSlot $buildPathSlot
     Emit-DevBrokerBuildWorkspacePath -RootSlot $workspaceRootSlot -RootLengthSlot $rootLengthSlot -SuffixItem $brokerSuffixItem -SuffixLength $brokerSuffixLength -DestinationSlot $brokerDirectorySlot
     Emit-DevBrokerBuildWorkspacePath -RootSlot $workspaceRootSlot -RootLengthSlot $rootLengthSlot -SuffixItem $captureSuffixItem -SuffixLength $captureSuffixLength -DestinationSlot $outputPathSlot
-    Emit-DevBrokerPathCheck -FrameSlot $buildPathSlot -IsDirectory $true -FailureLabel $directoryFail
-    Emit-DevBrokerPathCheck -FrameSlot $brokerDirectorySlot -IsDirectory $true -FailureLabel $directoryFail
+    Emit-DevBrokerPathCheck -FrameSlot $buildPathSlot -IsDirectory $true -FailureLabel $directoryFailBuild
+    Emit-DevBrokerPathCheck -FrameSlot $brokerDirectorySlot -IsDirectory $true -FailureLabel $directoryFailBroker
 
     foreach ($directorySuffix in @('\Stage0', '\Tests', '\Tests\BaselineM6', '\Tests\DevAgentBroker')) {
         $directoryItem = Register-DataConstant -Value $directorySuffix
         $directoryLength = [System.Text.Encoding]::ASCII.GetByteCount($directorySuffix)
         Emit-DevBrokerBuildWorkspacePath -RootSlot $workspaceRootSlot -RootLengthSlot $rootLengthSlot -SuffixItem $directoryItem -SuffixLength $directoryLength -DestinationSlot $pathScratchSlot
-        Emit-DevBrokerPathCheck -FrameSlot $pathScratchSlot -IsDirectory $true -FailureLabel $directoryFail
+        Emit-DevBrokerPathCheck -FrameSlot $pathScratchSlot -IsDirectory $true -FailureLabel $directoryFailFixed
     }
     $compilerSuffixItem = Register-DataConstant -Value '\Stage0\SharnouCompiler.ps1'
     $compilerSuffixLength = [System.Text.Encoding]::ASCII.GetByteCount('\Stage0\SharnouCompiler.ps1')
     Emit-DevBrokerBuildWorkspacePath -RootSlot $workspaceRootSlot -RootLengthSlot $rootLengthSlot -SuffixItem $compilerSuffixItem -SuffixLength $compilerSuffixLength -DestinationSlot $pathScratchSlot
-    Emit-DevBrokerPathCheck -FrameSlot $pathScratchSlot -IsDirectory $false -FailureLabel $directoryFail
+    Emit-DevBrokerPathCheck -FrameSlot $pathScratchSlot -IsDirectory $false -FailureLabel $directoryFailCompiler
 
     # Hash only the selected immutable script by absolute path; keep its opened file handle.
     $verifyLabels = @()
@@ -2270,7 +2278,28 @@ function Emit-DevRunTool {
     Emit-Jump -Label $cleanup
 
     Mark-CodeLabel -Label $directoryFail
-    Emit-Bytes -Bytes ([byte[]]@(0xB8, 0x99, 0xFF, 0xFF, 0xFF)) # -103: workspace path/reparse validation failed
+    Emit-Bytes -Bytes ([byte[]]@(0xB8, 0x99, 0xFF, 0xFF, 0xFF)) # -103: legacy/default workspace path failure
+    Emit-StoreEaxFrame -SlotPosition $resultSlot
+    Emit-Jump -Label $cleanup
+
+    # Diagnostic-only statuses: -121 image, -122 root, -123 CWD,
+    # -124 Build, -125 broker directory, -126 fixed test dirs, -127 compiler script.
+    foreach ($failure in @(
+        @{ Label = $directoryFailImage; Code = -121 },
+        @{ Label = $directoryFailRoot; Code = -122 },
+        @{ Label = $directoryFailCwd; Code = -123 },
+        @{ Label = $directoryFailBuild; Code = -124 },
+        @{ Label = $directoryFailBroker; Code = -125 },
+        @{ Label = $directoryFailFixed; Code = -126 },
+        @{ Label = $directoryFailCompiler; Code = -127 }
+    )) {
+        Mark-CodeLabel -Label $failure.Label
+        $failureValue = [Int32]$failure.Code
+        $failureBytes = [BitConverter]::GetBytes($failureValue)
+        Emit-Bytes -Bytes ([byte[]]@(0xB8) + $failureBytes)
+        Emit-StoreEaxFrame -SlotPosition $resultSlot
+        Emit-Jump -Label $cleanup
+    }
     Emit-StoreEaxFrame -SlotPosition $resultSlot
     Emit-Jump -Label $cleanup
 
