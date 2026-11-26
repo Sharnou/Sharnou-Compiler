@@ -2215,32 +2215,19 @@ function Emit-DevRunTool {
     Emit-I32 -Value (Get-FrameDisp -SlotPosition $workspaceRootSlot)
     Emit-Bytes -Bytes ([byte[]]@(0x00)) # terminate workspace root
 
-    # Reject non-drive, UNC/device, ADS and reparse ancestors before building any child path.
+    # Validate only the broker image's workspace root before recovery. A previous
+    # execution can be interrupted after narrowing descendant directory DACLs;
+    # validating Build/Tests here would then block the very rollback needed to
+    # restore those directories. Descendant checks are deliberately post-recovery.
     Emit-DevBrokerCheckDirectoryChain -PathSlot $workspaceRootSlot -FailureLabel $directoryFailRoot
     Emit-DevBrokerPathCheck -FrameSlot $workspaceRootSlot -IsDirectory $true -FailureLabel $directoryFailRoot
-    Emit-LeaRaxFrame -SlotPosition $workspaceRootSlot
-    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1))
-    Emit-Win64CallIat -TargetRva ([UInt32]0x3220) -StackArguments @() # SetCurrentDirectoryA
-    Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
-    Emit-JumpConditional -ConditionCode 0x84 -Label $directoryFailCwd
 
-    # Construct canonical absolute paths using only the checked workspace root.
+    # Construct absolute child paths from the checked root without opening the
+    # descendants. The recovery helper uses handle-based OPEN_REPARSE_POINT checks
+    # and the durable snapshot before any ordinary descendant preflight occurs.
     Emit-DevBrokerBuildWorkspacePath -RootSlot $workspaceRootSlot -RootLengthSlot $rootLengthSlot -SuffixItem $buildSuffixItem -SuffixLength $buildSuffixLength -DestinationSlot $buildPathSlot
     Emit-DevBrokerBuildWorkspacePath -RootSlot $workspaceRootSlot -RootLengthSlot $rootLengthSlot -SuffixItem $brokerSuffixItem -SuffixLength $brokerSuffixLength -DestinationSlot $brokerDirectorySlot
     Emit-DevBrokerBuildWorkspacePath -RootSlot $workspaceRootSlot -RootLengthSlot $rootLengthSlot -SuffixItem $captureSuffixItem -SuffixLength $captureSuffixLength -DestinationSlot $outputPathSlot
-    Emit-DevBrokerPathCheck -FrameSlot $buildPathSlot -IsDirectory $true -FailureLabel $directoryFailBuild
-    Emit-DevBrokerPathCheck -FrameSlot $brokerDirectorySlot -IsDirectory $true -FailureLabel $directoryFailBroker
-
-    foreach ($directorySuffix in @('\Stage0', '\Tests', '\Tests\BaselineM6', '\Tests\DevAgentBroker')) {
-        $directoryItem = Register-DataConstant -Value $directorySuffix
-        $directoryLength = [System.Text.Encoding]::ASCII.GetByteCount($directorySuffix)
-        Emit-DevBrokerBuildWorkspacePath -RootSlot $workspaceRootSlot -RootLengthSlot $rootLengthSlot -SuffixItem $directoryItem -SuffixLength $directoryLength -DestinationSlot $pathScratchSlot
-        Emit-DevBrokerPathCheck -FrameSlot $pathScratchSlot -IsDirectory $true -FailureLabel $directoryFailFixed
-    }
-    $compilerSuffixItem = Register-DataConstant -Value '\Stage0\SharnouCompiler.ps1'
-    $compilerSuffixLength = [System.Text.Encoding]::ASCII.GetByteCount('\Stage0\SharnouCompiler.ps1')
-    Emit-DevBrokerBuildWorkspacePath -RootSlot $workspaceRootSlot -RootLengthSlot $rootLengthSlot -SuffixItem $compilerSuffixItem -SuffixLength $compilerSuffixLength -DestinationSlot $pathScratchSlot
-    Emit-DevBrokerPathCheck -FrameSlot $pathScratchSlot -IsDirectory $false -FailureLabel $directoryFailCompiler
 
     # Hash only the selected immutable script by absolute path; keep its opened file handle.
     $verifyLabels = @()
@@ -2334,6 +2321,29 @@ function Emit-DevRunTool {
 
     Mark-CodeLabel -Label $mutexReady
     Emit-DevBrokerRecoverAclJournal -JournalPathSlot $journalPathSlot -TempPathSlot $journalTempPathSlot -WorkspaceRootSlot $workspaceRootSlot -BuildPathSlot $buildPathSlot -BrokerDirectorySlot $brokerDirectorySlot -JournalHandleSlot $journalHandleSlot -JournalReadCountSlot $journalReadCountSlot -HeaderSlot $journalHeaderSlot -JournalBufferSlot $journalBufferSlot -RootLengthSlot $rootDescriptorLengthSlot -BuildLengthSlot $buildDescriptorLengthSlot -BrokerLengthSlot $brokerDescriptorLengthSlot -RootDescriptorSlot $rootDescriptorSlot -BuildDescriptorSlot $buildDescriptorSlot -BrokerDescriptorSlot $brokerDescriptorSlot -FailureLabel $aclRecoveryFail
+
+    # Recovery has restored the pre-run descriptors, so descendant path checks
+    # can now execute without being blocked by a crashed AppContainer's stale
+    # temporary ACL. The recovery helper already failed closed if any opened
+    # directory was missing, a reparse point, or could not be restored.
+    Emit-DevBrokerPathCheck -FrameSlot $buildPathSlot -IsDirectory $true -FailureLabel $directoryFailBuild
+    Emit-DevBrokerPathCheck -FrameSlot $brokerDirectorySlot -IsDirectory $true -FailureLabel $directoryFailBroker
+    foreach ($directorySuffix in @('\Stage0', '\Tests', '\Tests\BaselineM6', '\Tests\DevAgentBroker')) {
+        $directoryItem = Register-DataConstant -Value $directorySuffix
+        $directoryLength = [System.Text.Encoding]::ASCII.GetByteCount($directorySuffix)
+        Emit-DevBrokerBuildWorkspacePath -RootSlot $workspaceRootSlot -RootLengthSlot $rootLengthSlot -SuffixItem $directoryItem -SuffixLength $directoryLength -DestinationSlot $pathScratchSlot
+        Emit-DevBrokerPathCheck -FrameSlot $pathScratchSlot -IsDirectory $true -FailureLabel $directoryFailFixed
+    }
+    $compilerSuffixItem = Register-DataConstant -Value '\Stage0\SharnouCompiler.ps1'
+    $compilerSuffixLength = [System.Text.Encoding]::ASCII.GetByteCount('\Stage0\SharnouCompiler.ps1')
+    Emit-DevBrokerBuildWorkspacePath -RootSlot $workspaceRootSlot -RootLengthSlot $rootLengthSlot -SuffixItem $compilerSuffixItem -SuffixLength $compilerSuffixLength -DestinationSlot $pathScratchSlot
+    Emit-DevBrokerPathCheck -FrameSlot $pathScratchSlot -IsDirectory $false -FailureLabel $directoryFailCompiler
+
+    Emit-LeaRaxFrame -SlotPosition $workspaceRootSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1))
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3220) -StackArguments @() # SetCurrentDirectoryA
+    Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
+    Emit-JumpConditional -ConditionCode 0x84 -Label $directoryFailCwd
 
     # Retire grants written by the pre-journal broker. REVOKE_ACCESS only narrows
     # access; no permission expansion is allowed until a durable snapshot commits.
