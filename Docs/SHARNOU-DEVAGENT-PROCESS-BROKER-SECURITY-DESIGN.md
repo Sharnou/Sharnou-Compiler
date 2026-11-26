@@ -183,3 +183,6 @@ Phase 2A implementation hardening notes:
 
 
 Windows CI finding and correction (2026-11-26): the first adversarial runner reached the journal transition and exposed that .NET Framework File.Replace rejects a null backup path. The journal writer now supplies a unique same-directory backup filename, deletes it after a successful swap, and recovery reclaims a leftover backup only while holding the execution lease. The adversarial suite seeds a simulated interrupted-replace backup and verifies recovery removes it. This correction is committed for a fresh Windows replay; it is not considered validated until that replay completes.
+
+
+Second Windows parser finding (2026-11-26): the first backup-cleanup implementation contained a malformed PowerShell regular-expression literal. The recovery validator has been simplified to a strict filename-prefix check, exact suffix length, and Guid.ParseExact validation. The next Actions replay must validate both parsing and runtime behavior; neither is assumed to pass based on source inspection.
