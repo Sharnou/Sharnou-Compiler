@@ -19,10 +19,10 @@ A string matching the AppContainer SID namespace (S-1-15-2-...) is not proof tha
 Use the documented Windows process-attribute route:
 
 1. Create a unique per-execution profile with `CreateAppContainerProfile`. Use a bounded compiler-owned profile moniker containing a fixed product prefix and cryptographically random execution identifier. Never accept a profile name or SID from model output.
-2. Retain the returned package SID and validate it as a real SID. Do not synthesize or accept a string-only SID. A pre-existing profile is not silently adopted: the execution must prove ownership and recover its exact profile lifecycle record, or fail closed.
+2. Retain the returned package SID and validate it as a real SID. Do not synthesize or accept a string-only SID. A unique profile-name collision returning HRESULT_FROM_WIN32(ERROR_ALREADY_EXISTS) fails closed; this execution does not adopt or delete that profile.
 3. Construct `SECURITY_CAPABILITIES` with that package SID and an empty capability list. No network, filesystem, device, location, microphone, camera, or other capability is granted by default.
 4. Build `STARTUPINFOEXW` and a process attribute list. Add `PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES` using `UpdateProcThreadAttribute`. Use the correct attribute-list size probe / allocation / initialization / deletion lifecycle.
-5. Launch the absolute System32 PowerShell image with `CreateProcessW`, an explicit immutable wide-character command line, `EXTENDED_STARTUPINFO_PRESENT | CREATE_SUSPENDED | CREATE_UNICODE_ENVIRONMENT`, and an explicitly constructed clean environment block. Do not search PATH and do not inherit the caller environment.
+5. Launch the absolute System32 PowerShell image with `CreateProcessW`, a writable per-call wide-character command-line buffer copied from an immutable compiler-owned argument template, `EXTENDED_STARTUPINFO_PRESENT | CREATE_SUSPENDED | CREATE_UNICODE_ENVIRONMENT`, and an explicitly constructed clean environment block. `CreateProcessW` may modify the command-line buffer in place. Do not search PATH and do not inherit the caller environment.
 6. Keep the child suspended. Assign it to the already-configured Job Object. If any operation fails, terminate the child/job and close all acquired handles before returning.
 7. Verify the actual process token before resume: `TokenIsAppContainer == TRUE`, `TokenAppContainerSid` exactly equals the profile SID, and the integrity level is no higher than the configured low-integrity policy. Any mismatch is fatal.
 8. Resume only after the AppContainer identity, workspace ACL, Job Object, handle list, and process policy have all been verified.
@@ -70,9 +70,9 @@ Avoid duplicate import entries for APIs already present in the PE import table. 
 
 AppContainer integration does not complete the broker by itself. Before any model-facing enablement:
 
-- Replace the current `bInheritHandles=FALSE` arrangement only when a STARTUPINFOEX handle allowlist is ready.
-- Use `PROC_THREAD_ATTRIBUTE_HANDLE_LIST` to inherit exactly the child-side stdout/stderr write handles; parent read handles remain non-inheritable.
-- Set stdout and stderr to the approved pipe handles in `STARTUPINFOEXW.StartupInfo`.
+- Keep `bInheritHandles=FALSE` when no child handles are required.
+- When `PROC_THREAD_ATTRIBUTE_HANDLE_LIST` is supplied, `CreateProcessW` MUST receive `bInheritHandles=TRUE`; Microsoft documents this as a requirement. Every listed handle must be inheritable. The allowlist must contain only child-side stdout/stderr write handles; parent read handles and unrelated handles must remain non-inheritable. Never combine the handle-list attribute with `bInheritHandles=FALSE`.
+- Set `STARTF_USESTDHANDLES` in `STARTUPINFOEXW.StartupInfo.dwFlags` and bind stdout/stderr to the approved pipe handles.
 - Drain both streams concurrently while the child runs; enforce a combined hard byte cap and terminate the whole job on overflow.
 - Never buffer unbounded output in memory, write child output to an untrusted path, or interpret output as instructions.
 - Close the attribute list and every pipe/process/thread/job/token/SID/profile handle/resource on every success and failure path.
@@ -115,3 +115,46 @@ Stop immediately if the required USERENV/ADVAPI32 imports or Windows SDK declara
 - UpdateProcThreadAttribute: https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-updateprocthreadattribute
 - Restricted Tokens: https://learn.microsoft.com/en-us/windows/win32/secauthz/restricted-tokens
 - CreateRestrictedToken: https://learn.microsoft.com/en-us/windows/win32/api/securitybaseapi/nf-securitybaseapi-createrestrictedtoken
+
+
+## 10. Phase 2B.1 - native API and x64 ABI contract
+
+Status: CONTRACT IMPLEMENTED; WINDOWS SDK / IMPORT-MAP VALIDATION PENDING. No native imports or process-creation emitter instructions have been added in this phase.
+
+Candidate artifacts:
+- `Tests/DevAgentBroker/native-abi-manifest.json`: observed import-table groups, planned Win32 API-to-DLL map, API signatures, token information class IDs, process-attribute constants, and x64 structure field/offset/size expectations.
+- `Tests/Test-DevAgentNativeAbi.ps1`: compares the manifest to the compiler's actual existing import descriptor and IAT maps; checks planned API declarations and structure field order against the installed Windows SDK; computes expected x64 layouts using pointer size 8 and default packing 8.
+- `.github/workflows/devagent-native-abi-contract.yml`: Windows x64 SDK contract workflow.
+
+Evidence boundary: this phase checks consistency of the ABI model against the installed SDK declarations and the compiler's current import map. It does not perform native `sizeof`/`offsetof` execution, does not compile C/C++, does not create a PE, does not modify the compiler's PE import table, and does not create a process or AppContainer. Phase 2B.2 must add a native runtime layout probe or an equally authoritative native ABI measurement before any emitter consumes these offsets.
+
+Two correctness constraints were elevated into the contract:
+1. `CreateProcessW` may modify its command-line buffer. The broker must pass a writable per-call buffer copied from a compiler-owned immutable argument template; read-only storage is unsafe.
+2. If `PROC_THREAD_ATTRIBUTE_HANDLE_LIST` is supplied, `CreateProcessW` requires `bInheritHandles=TRUE`. This is not compatible with the current no-inheritance setting. The future output-capture implementation must explicitly create inheritable child write handles, keep all other handles non-inheritable, and pass an exact handle list. With no inherited handles, keep `bInheritHandles=FALSE`.
+
+Windows token verification contract:
+- `TokenIsAppContainer` is class 29 and must return DWORD 1.
+- `TokenAppContainerSid` is class 31 and returns `TOKEN_APPCONTAINER_INFORMATION`; its non-null SID must be valid and equal to the SID returned for this execution's newly created profile.
+- `TokenIntegrityLevel` is class 25 and must be no higher than `SECURITY_MANDATORY_LOW_RID` (0x1000).
+- Open the child process token with `OpenProcessToken(processHandle, TOKEN_QUERY)`; the process handle must support `PROCESS_QUERY_LIMITED_INFORMATION`.
+- Do not call `FreeSid` on the SID pointer contained in a `GetTokenInformation` result buffer. Only free the profile SID allocation returned by `CreateAppContainerProfile`.
+
+Profile ownership contract:
+- `CreateAppContainerProfile` returning `S_OK` is the only path that establishes profile ownership for this execution.
+- `HRESULT_FROM_WIN32(ERROR_ALREADY_EXISTS)` is not ownership. This execution must fail closed, must not silently adopt the profile, and must never delete it.
+- The returned profile SID is allocated by the API and must be released with `FreeSid` after its final use.
+
+Attribute-list initialization contract:
+- Call `InitializeProcThreadAttributeList` once with a NULL list to obtain the required size. The expected first result is failure with `GetLastError()==ERROR_INSUFFICIENT_BUFFER`; an unexpected error is a hard failure.
+- Bound the returned size, allocate from `GetProcessHeap`, initialize the list, add each required attribute using `UpdateProcThreadAttribute`, and call `DeleteProcThreadAttributeList` only after successful initialization. Release the allocation with `HeapFree` on every path.
+- `STARTUPINFOEXW.StartupInfo.cb` must equal `sizeof(STARTUPINFOEXW)` (112 bytes on x64), not `sizeof(STARTUPINFOW)` (104 bytes).
+- `SECURITY_CAPABILITIES` must reference the real package SID and use `Capabilities=NULL`, `CapabilityCount=0`, `Reserved=0` unless a reviewed capability is separately approved.
+
+Source references:
+- AppContainer launch: https://learn.microsoft.com/en-us/windows/win32/secauthz/implementing-an-appcontainer
+- CreateAppContainerProfile ownership and result semantics: https://learn.microsoft.com/en-us/windows/win32/api/userenv/nf-userenv-createappcontainerprofile
+- STARTUPINFOEXW layout: https://learn.microsoft.com/en-us/windows/win32/api/winbase/ns-winbase-startupinfoexw
+- Attribute-list sizing/initialization: https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-initializeprocthreadattributelist
+- Handle-list inheritance requirement: https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-updateprocthreadattribute
+- Writable CreateProcessW command line: https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-createprocessw
+- Token information and AppContainer SID: https://learn.microsoft.com/en-us/windows/win32/api/securitybaseapi/nf-securitybaseapi-gettokeninformation

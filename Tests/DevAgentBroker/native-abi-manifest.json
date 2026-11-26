@@ -1,0 +1,833 @@
+{
+  "schemaVersion": 1,
+  "status": "PHASE_2B_1_ABI_CONTRACT_ONLY",
+  "target": {
+    "architecture": "x86-64",
+    "pointerSize": 8,
+    "defaultPacking": 8,
+    "minimumWindowsClient": "Windows 10"
+  },
+  "evidence": {
+    "level": "Windows SDK header declaration and field-order verification plus deterministic x64 layout computation",
+    "notProven": "No native sizeof/offsetof execution, no native compiler invocation, no generated PE, no process creation, and no sandbox proof.",
+    "note": "SDK field order and the arithmetic x64 ABI model are statically cross-checked. This is not an executed compiler sizeof/offsetof probe, and must not be used alone to ship native structure offsets."
+  },
+  "currentImportTable": {
+    "descriptorBase": "0xA00",
+    "directorySize": "0x104",
+    "descriptorCount": 12,
+    "groups": [
+      {
+        "descriptor": "0x00",
+        "lookup": "0x700",
+        "iat": "0x70",
+        "dll": "KERNEL32.dll",
+        "names": [
+          "GetStdHandle",
+          "WriteFile",
+          "ExitProcess"
+        ]
+      },
+      {
+        "descriptor": "0x14",
+        "lookup": "0x720",
+        "iat": "0x90",
+        "dll": "USER32.dll",
+        "names": [
+          "wsprintfA"
+        ]
+      },
+      {
+        "descriptor": "0x28",
+        "lookup": "0x730",
+        "iat": "0xA0",
+        "dll": "KERNEL32.dll",
+        "names": [
+          "CreateFileA",
+          "GetFileSizeEx",
+          "ReadFile",
+          "CloseHandle",
+          "GetModuleHandleA",
+          "CreateThread",
+          "WaitForSingleObject",
+          "CreateMutexA",
+          "ReleaseMutex"
+        ]
+      },
+      {
+        "descriptor": "0x3C",
+        "lookup": "0x780",
+        "iat": "0xF0",
+        "dll": "USER32.dll",
+        "names": [
+          "CreateWindowExA",
+          "ShowWindow",
+          "UpdateWindow",
+          "PeekMessageA",
+          "TranslateMessage",
+          "DispatchMessageA",
+          "DestroyWindow"
+        ]
+      },
+      {
+        "descriptor": "0x50",
+        "lookup": "0x7C0",
+        "iat": "0x130",
+        "dll": "D3D11.dll",
+        "names": [
+          "D3D11CreateDeviceAndSwapChain"
+        ]
+      },
+      {
+        "descriptor": "0x64",
+        "lookup": "0x7D0",
+        "iat": "0x140",
+        "dll": "DXGI.dll",
+        "names": [
+          "CreateDXGIFactory"
+        ]
+      },
+      {
+        "descriptor": "0x78",
+        "lookup": "0x7E0",
+        "iat": "0x150",
+        "dll": "KERNEL32.dll",
+        "names": [
+          "QueryPerformanceCounter",
+          "QueryPerformanceFrequency"
+        ]
+      },
+      {
+        "descriptor": "0x8C",
+        "lookup": "0x800",
+        "iat": "0x168",
+        "dll": "USER32.dll",
+        "names": [
+          "IsWindow"
+        ]
+      },
+      {
+        "descriptor": "0xA0",
+        "lookup": "0x810",
+        "iat": "0x178",
+        "dll": "KERNEL32.dll",
+        "names": [
+          "GetSystemDirectoryA",
+          "GetCurrentDirectoryA",
+          "CreateProcessA",
+          "CreateJobObjectA",
+          "SetInformationJobObject",
+          "AssignProcessToJobObject",
+          "ResumeThread",
+          "TerminateJobObject",
+          "GetExitCodeProcess",
+          "TerminateProcess",
+          "GetFileAttributesA",
+          "VirtualAlloc",
+          "VirtualFree"
+        ]
+      },
+      {
+        "descriptor": "0xB4",
+        "lookup": "0x880",
+        "iat": "0x1E8",
+        "dll": "BCRYPT.dll",
+        "names": [
+          "BCryptOpenAlgorithmProvider",
+          "BCryptHash",
+          "BCryptCloseAlgorithmProvider"
+        ]
+      },
+      {
+        "descriptor": "0xC8",
+        "lookup": "0x8A0",
+        "iat": "0x200",
+        "dll": "KERNEL32.dll",
+        "names": [
+          "GetFileInformationByHandle"
+        ]
+      },
+      {
+        "descriptor": "0xDC",
+        "lookup": "0x8C0",
+        "iat": "0x208",
+        "dll": "KERNEL32.dll",
+        "names": [
+          "GetModuleFileNameA",
+          "SetCurrentDirectoryA"
+        ]
+      }
+    ]
+  },
+  "plannedImports": [
+    {
+      "dll": "KERNEL32.dll",
+      "header": "um/processthreadsapi.h",
+      "names": [
+        "InitializeProcThreadAttributeList",
+        "UpdateProcThreadAttribute",
+        "DeleteProcThreadAttributeList",
+        "CreateProcessW"
+      ]
+    },
+    {
+      "dll": "KERNEL32.dll",
+      "header": "um/heapapi.h",
+      "names": [
+        "GetProcessHeap",
+        "HeapAlloc",
+        "HeapFree"
+      ]
+    },
+    {
+      "dll": "KERNEL32.dll",
+      "header": "um/errhandlingapi.h",
+      "names": [
+        "GetLastError"
+      ]
+    },
+    {
+      "dll": "USERENV.dll",
+      "header": "um/userenv.h",
+      "names": [
+        "CreateAppContainerProfile",
+        "DeleteAppContainerProfile"
+      ]
+    },
+    {
+      "dll": "ADVAPI32.dll",
+      "header": "um/processthreadsapi.h",
+      "names": [
+        "OpenProcessToken"
+      ]
+    },
+    {
+      "dll": "ADVAPI32.dll",
+      "header": "um/securitybaseapi.h",
+      "names": [
+        "GetTokenInformation",
+        "FreeSid",
+        "IsValidSid",
+        "EqualSid",
+        "GetSidSubAuthorityCount",
+        "GetSidSubAuthority"
+      ]
+    }
+  ],
+  "tokenInformation": [
+    {
+      "name": "TokenIntegrityLevel",
+      "value": 25,
+      "bufferType": "TOKEN_MANDATORY_LABEL",
+      "minimumBytes": 16,
+      "bufferSemantics": "Variable-length result: ReturnLength is authoritative and includes the TOKEN_MANDATORY_LABEL header plus the SID data referenced by Label.Sid; never treat the 16-byte header alone as a sufficient output buffer."
+    },
+    {
+      "name": "TokenIsAppContainer",
+      "value": 29,
+      "bufferType": "DWORD",
+      "minimumBytes": 4
+    },
+    {
+      "name": "TokenAppContainerSid",
+      "value": 31,
+      "bufferType": "TOKEN_APPCONTAINER_INFORMATION",
+      "minimumBytes": 8,
+      "bufferSemantics": "Variable-length result: ReturnLength is authoritative and includes the TOKEN_APPCONTAINER_INFORMATION header plus the SID data referenced by TokenAppContainer; compare the pointer while the result buffer remains allocated and do not FreeSid it."
+    }
+  ],
+  "constants": {
+    "TOKEN_QUERY": "0x0008",
+    "ERROR_INSUFFICIENT_BUFFER": 122,
+    "ERROR_ALREADY_EXISTS": 183,
+    "HRESULT_FROM_WIN32_ERROR_ALREADY_EXISTS": "0x800700B7",
+    "PROC_THREAD_ATTRIBUTE_HANDLE_LIST": "0x00020002",
+    "PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES": "0x00020009",
+    "EXTENDED_STARTUPINFO_PRESENT": "0x00080000",
+    "CREATE_SUSPENDED": "0x00000004",
+    "CREATE_UNICODE_ENVIRONMENT": "0x00000400",
+    "STARTF_USESTDHANDLES": "0x00000100",
+    "SECURITY_MANDATORY_LOW_RID": "0x00001000",
+    "PROCESS_QUERY_LIMITED_INFORMATION": "0x1000",
+    "HEAP_ZERO_MEMORY": "0x00000008",
+    "S_OK": "0x00000000"
+  },
+  "structureLayouts": [
+    {
+      "name": "SID_AND_ATTRIBUTES",
+      "header": "shared/winnt.h",
+      "size": 16,
+      "alignment": 8,
+      "fields": [
+        [
+          "Sid",
+          "PTR",
+          0
+        ],
+        [
+          "Attributes",
+          "DWORD",
+          8
+        ]
+      ]
+    },
+    {
+      "name": "SECURITY_CAPABILITIES",
+      "header": "shared/winnt.h",
+      "size": 24,
+      "alignment": 8,
+      "fields": [
+        [
+          "AppContainerSid",
+          "PTR",
+          0
+        ],
+        [
+          "Capabilities",
+          "PTR",
+          8
+        ],
+        [
+          "CapabilityCount",
+          "DWORD",
+          16
+        ],
+        [
+          "Reserved",
+          "DWORD",
+          20
+        ]
+      ]
+    },
+    {
+      "name": "TOKEN_APPCONTAINER_INFORMATION",
+      "header": "shared/winnt.h",
+      "size": 8,
+      "alignment": 8,
+      "fields": [
+        [
+          "TokenAppContainer",
+          "PTR",
+          0
+        ]
+      ]
+    },
+    {
+      "name": "TOKEN_MANDATORY_LABEL",
+      "header": "shared/winnt.h",
+      "size": 16,
+      "alignment": 8,
+      "fields": [
+        [
+          "Label",
+          "SID_AND_ATTRIBUTES",
+          0
+        ]
+      ]
+    },
+    {
+      "name": "STARTUPINFOW",
+      "header": "um/winbase.h",
+      "size": 104,
+      "alignment": 8,
+      "fields": [
+        [
+          "cb",
+          "DWORD",
+          0
+        ],
+        [
+          "lpReserved",
+          "PTR",
+          8
+        ],
+        [
+          "lpDesktop",
+          "PTR",
+          16
+        ],
+        [
+          "lpTitle",
+          "PTR",
+          24
+        ],
+        [
+          "dwX",
+          "DWORD",
+          32
+        ],
+        [
+          "dwY",
+          "DWORD",
+          36
+        ],
+        [
+          "dwXSize",
+          "DWORD",
+          40
+        ],
+        [
+          "dwYSize",
+          "DWORD",
+          44
+        ],
+        [
+          "dwXCountChars",
+          "DWORD",
+          48
+        ],
+        [
+          "dwYCountChars",
+          "DWORD",
+          52
+        ],
+        [
+          "dwFillAttribute",
+          "DWORD",
+          56
+        ],
+        [
+          "dwFlags",
+          "DWORD",
+          60
+        ],
+        [
+          "wShowWindow",
+          "WORD",
+          64
+        ],
+        [
+          "cbReserved2",
+          "WORD",
+          66
+        ],
+        [
+          "lpReserved2",
+          "PTR",
+          72
+        ],
+        [
+          "hStdInput",
+          "PTR",
+          80
+        ],
+        [
+          "hStdOutput",
+          "PTR",
+          88
+        ],
+        [
+          "hStdError",
+          "PTR",
+          96
+        ]
+      ]
+    },
+    {
+      "name": "STARTUPINFOEXW",
+      "header": "um/winbase.h",
+      "size": 112,
+      "alignment": 8,
+      "fields": [
+        [
+          "StartupInfo",
+          "STARTUPINFOW",
+          0
+        ],
+        [
+          "lpAttributeList",
+          "PTR",
+          104
+        ]
+      ]
+    },
+    {
+      "name": "PROCESS_INFORMATION",
+      "header": "um/processthreadsapi.h",
+      "size": 24,
+      "alignment": 8,
+      "fields": [
+        [
+          "hProcess",
+          "PTR",
+          0
+        ],
+        [
+          "hThread",
+          "PTR",
+          8
+        ],
+        [
+          "dwProcessId",
+          "DWORD",
+          16
+        ],
+        [
+          "dwThreadId",
+          "DWORD",
+          20
+        ]
+      ]
+    },
+    {
+      "name": "JOBOBJECT_BASIC_LIMIT_INFORMATION",
+      "header": "shared/winnt.h",
+      "size": 64,
+      "alignment": 8,
+      "fields": [
+        [
+          "PerProcessUserTimeLimit",
+          "I64",
+          0
+        ],
+        [
+          "PerJobUserTimeLimit",
+          "I64",
+          8
+        ],
+        [
+          "LimitFlags",
+          "DWORD",
+          16
+        ],
+        [
+          "MinimumWorkingSetSize",
+          "PTRSIZE",
+          24
+        ],
+        [
+          "MaximumWorkingSetSize",
+          "PTRSIZE",
+          32
+        ],
+        [
+          "ActiveProcessLimit",
+          "DWORD",
+          40
+        ],
+        [
+          "Affinity",
+          "PTRSIZE",
+          48
+        ],
+        [
+          "PriorityClass",
+          "DWORD",
+          56
+        ],
+        [
+          "SchedulingClass",
+          "DWORD",
+          60
+        ]
+      ]
+    },
+    {
+      "name": "IO_COUNTERS",
+      "header": "shared/winnt.h",
+      "size": 48,
+      "alignment": 8,
+      "fields": [
+        [
+          "ReadOperationCount",
+          "U64",
+          0
+        ],
+        [
+          "WriteOperationCount",
+          "U64",
+          8
+        ],
+        [
+          "OtherOperationCount",
+          "U64",
+          16
+        ],
+        [
+          "ReadTransferCount",
+          "U64",
+          24
+        ],
+        [
+          "WriteTransferCount",
+          "U64",
+          32
+        ],
+        [
+          "OtherTransferCount",
+          "U64",
+          40
+        ]
+      ]
+    },
+    {
+      "name": "JOBOBJECT_EXTENDED_LIMIT_INFORMATION",
+      "header": "shared/winnt.h",
+      "size": 144,
+      "alignment": 8,
+      "fields": [
+        [
+          "BasicLimitInformation",
+          "JOBOBJECT_BASIC_LIMIT_INFORMATION",
+          0
+        ],
+        [
+          "IoInfo",
+          "IO_COUNTERS",
+          64
+        ],
+        [
+          "ProcessMemoryLimit",
+          "PTRSIZE",
+          112
+        ],
+        [
+          "JobMemoryLimit",
+          "PTRSIZE",
+          120
+        ],
+        [
+          "PeakProcessMemoryUsed",
+          "PTRSIZE",
+          128
+        ],
+        [
+          "PeakJobMemoryUsed",
+          "PTRSIZE",
+          136
+        ]
+      ]
+    }
+  ],
+  "rules": [
+    "CreateAppContainerProfile must return S_OK before this execution claims profile ownership; ERROR_ALREADY_EXISTS fails closed and must never be deleted by this execution.",
+    "The PSID returned by CreateAppContainerProfile is released with FreeSid after all uses; do not FreeSid the TokenAppContainer pointer returned inside a GetTokenInformation output buffer.",
+    "Token verification requires TokenIsAppContainer == 1 AND a non-null, valid TokenAppContainerSid exactly equal to the newly created profile SID AND TokenIntegrityLevel RID <= SECURITY_MANDATORY_LOW_RID.",
+    "SECURITY_CAPABILITIES uses the real profile SID, Capabilities=NULL, CapabilityCount=0, Reserved=0.",
+    "InitializeProcThreadAttributeList size probe must fail with ERROR_INSUFFICIENT_BUFFER and a bounded nonzero byte count; allocate, initialize, update, delete, then free in reverse order.",
+    "STARTUPINFOEXW.StartupInfo.cb is sizeof(STARTUPINFOEXW), 112 bytes on x64, not sizeof(STARTUPINFOW).",
+    "CreateProcessW command-line storage must be writable because Windows may modify it; construct a mutable per-call copy from compiler-owned immutable data.",
+    "When PROC_THREAD_ATTRIBUTE_HANDLE_LIST is used, CreateProcess bInheritHandles MUST be TRUE and listed handles must be inheritable; without an explicit handle list keep bInheritHandles FALSE.",
+    "For every GetTokenInformation call, perform a NULL/zero-length size query, require ERROR_INSUFFICIENT_BUFFER and a nonzero bounded ReturnLength, allocate that size, then verify the returned length is within the allocation before reading fields or SIDs."
+  ],
+  "references": [
+    "https://learn.microsoft.com/en-us/windows/win32/secauthz/implementing-an-appcontainer",
+    "https://learn.microsoft.com/en-us/windows/win32/api/userenv/nf-userenv-createappcontainerprofile",
+    "https://learn.microsoft.com/en-us/windows/win32/api/winnt/ns-winnt-security_capabilities",
+    "https://learn.microsoft.com/en-us/windows/win32/api/winbase/ns-winbase-startupinfoexw",
+    "https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-initializeprocthreadattributelist",
+    "https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-updateprocthreadattribute",
+    "https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-createprocessw",
+    "https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-openprocesstoken",
+    "https://learn.microsoft.com/en-us/windows/win32/api/securitybaseapi/nf-securitybaseapi-gettokeninformation",
+    "https://learn.microsoft.com/en-us/windows/win32/api/securitybaseapi/nf-securitybaseapi-freesid"
+  ],
+  "callingConvention": "Microsoft x64 ABI: Windows x64 uses the unified x64 calling convention; arguments 1-4 use RCX/RDX/R8/R9, later arguments use the caller-provided stack argument area, and the caller provides 32 bytes of shadow space with 16-byte stack alignment at call boundaries.",
+  "plannedApiSignatures": [
+    {
+      "name": "InitializeProcThreadAttributeList",
+      "dll": "KERNEL32.dll",
+      "returnType": "BOOL",
+      "parameters": [
+        "LPPROC_THREAD_ATTRIBUTE_LIST",
+        "DWORD",
+        "DWORD",
+        "PSIZE_T"
+      ],
+      "header": "processthreadsapi.h",
+      "callingConvention": "WINAPI / Microsoft x64"
+    },
+    {
+      "name": "UpdateProcThreadAttribute",
+      "dll": "KERNEL32.dll",
+      "returnType": "BOOL",
+      "parameters": [
+        "LPPROC_THREAD_ATTRIBUTE_LIST",
+        "DWORD",
+        "DWORD_PTR",
+        "PVOID",
+        "SIZE_T",
+        "PVOID",
+        "PSIZE_T"
+      ],
+      "header": "processthreadsapi.h",
+      "callingConvention": "WINAPI / Microsoft x64"
+    },
+    {
+      "name": "DeleteProcThreadAttributeList",
+      "dll": "KERNEL32.dll",
+      "returnType": "VOID",
+      "parameters": [
+        "LPPROC_THREAD_ATTRIBUTE_LIST"
+      ],
+      "header": "processthreadsapi.h",
+      "callingConvention": "WINAPI / Microsoft x64"
+    },
+    {
+      "name": "CreateProcessW",
+      "dll": "KERNEL32.dll",
+      "returnType": "BOOL",
+      "parameters": [
+        "LPCWSTR",
+        "LPWSTR",
+        "LPSECURITY_ATTRIBUTES",
+        "LPSECURITY_ATTRIBUTES",
+        "BOOL",
+        "DWORD",
+        "LPVOID",
+        "LPCWSTR",
+        "LPSTARTUPINFOW",
+        "LPPROCESS_INFORMATION"
+      ],
+      "header": "processthreadsapi.h",
+      "callingConvention": "WINAPI / Microsoft x64"
+    },
+    {
+      "name": "GetProcessHeap",
+      "dll": "KERNEL32.dll",
+      "returnType": "HANDLE",
+      "parameters": [
+        "VOID"
+      ],
+      "header": "heapapi.h",
+      "callingConvention": "WINAPI / Microsoft x64"
+    },
+    {
+      "name": "HeapAlloc",
+      "dll": "KERNEL32.dll",
+      "returnType": "LPVOID",
+      "parameters": [
+        "HANDLE",
+        "DWORD",
+        "SIZE_T"
+      ],
+      "header": "heapapi.h",
+      "callingConvention": "WINAPI / Microsoft x64"
+    },
+    {
+      "name": "HeapFree",
+      "dll": "KERNEL32.dll",
+      "returnType": "BOOL",
+      "parameters": [
+        "HANDLE",
+        "DWORD",
+        "LPVOID"
+      ],
+      "header": "heapapi.h",
+      "callingConvention": "WINAPI / Microsoft x64"
+    },
+    {
+      "name": "GetLastError",
+      "dll": "KERNEL32.dll",
+      "returnType": "DWORD",
+      "parameters": [
+        "VOID"
+      ],
+      "header": "errhandlingapi.h",
+      "callingConvention": "WINAPI / Microsoft x64"
+    },
+    {
+      "name": "CreateAppContainerProfile",
+      "dll": "USERENV.dll",
+      "returnType": "HRESULT",
+      "parameters": [
+        "PCWSTR",
+        "PCWSTR",
+        "PCWSTR",
+        "PSID_AND_ATTRIBUTES",
+        "DWORD",
+        "PSID*"
+      ],
+      "header": "userenv.h",
+      "callingConvention": "WINAPI / Microsoft x64"
+    },
+    {
+      "name": "DeleteAppContainerProfile",
+      "dll": "USERENV.dll",
+      "returnType": "HRESULT",
+      "parameters": [
+        "PCWSTR"
+      ],
+      "header": "userenv.h",
+      "callingConvention": "WINAPI / Microsoft x64"
+    },
+    {
+      "name": "OpenProcessToken",
+      "dll": "ADVAPI32.dll",
+      "returnType": "BOOL",
+      "parameters": [
+        "HANDLE",
+        "DWORD",
+        "PHANDLE"
+      ],
+      "header": "processthreadsapi.h",
+      "callingConvention": "WINAPI / Microsoft x64"
+    },
+    {
+      "name": "GetTokenInformation",
+      "dll": "ADVAPI32.dll",
+      "returnType": "BOOL",
+      "parameters": [
+        "HANDLE",
+        "TOKEN_INFORMATION_CLASS",
+        "LPVOID",
+        "DWORD",
+        "PDWORD"
+      ],
+      "header": "securitybaseapi.h",
+      "callingConvention": "WINAPI / Microsoft x64"
+    },
+    {
+      "name": "FreeSid",
+      "dll": "ADVAPI32.dll",
+      "returnType": "PVOID",
+      "parameters": [
+        "PSID"
+      ],
+      "header": "securitybaseapi.h",
+      "callingConvention": "WINAPI / Microsoft x64"
+    },
+    {
+      "name": "IsValidSid",
+      "dll": "ADVAPI32.dll",
+      "returnType": "BOOL",
+      "parameters": [
+        "PSID"
+      ],
+      "header": "securitybaseapi.h",
+      "callingConvention": "WINAPI / Microsoft x64"
+    },
+    {
+      "name": "EqualSid",
+      "dll": "ADVAPI32.dll",
+      "returnType": "BOOL",
+      "parameters": [
+        "PSID",
+        "PSID"
+      ],
+      "header": "securitybaseapi.h",
+      "callingConvention": "WINAPI / Microsoft x64"
+    },
+    {
+      "name": "GetSidSubAuthorityCount",
+      "dll": "ADVAPI32.dll",
+      "returnType": "PUCHAR",
+      "parameters": [
+        "PSID"
+      ],
+      "header": "securitybaseapi.h",
+      "callingConvention": "WINAPI / Microsoft x64"
+    },
+    {
+      "name": "GetSidSubAuthority",
+      "dll": "ADVAPI32.dll",
+      "returnType": "PDWORD",
+      "parameters": [
+        "PSID",
+        "DWORD"
+      ],
+      "header": "securitybaseapi.h",
+      "callingConvention": "WINAPI / Microsoft x64"
+    }
+  ]
+}
