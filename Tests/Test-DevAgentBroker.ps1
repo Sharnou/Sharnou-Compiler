@@ -317,6 +317,12 @@ try {
         }
 
         if (-not (Test-Path -LiteralPath $childPidPath -PathType Leaf)) {
+            if (Test-Path -LiteralPath $capturedOutputPath -PathType Leaf) {
+                $timeoutDiagnosticBytes = [IO.File]::ReadAllBytes($capturedOutputPath)
+                $timeoutDiagnosticLength = [Math]::Min(8192, $timeoutDiagnosticBytes.Length)
+                $timeoutDiagnosticText = [Text.Encoding]::UTF8.GetString($timeoutDiagnosticBytes, 0, $timeoutDiagnosticLength)
+                Write-Host ("DEVAGENT_TIMEOUT_DIAGNOSTIC|length={0}|sample={1}" -f $timeoutDiagnosticBytes.Length, $timeoutDiagnosticText)
+            }
             throw 'Timeout probe did not publish the child PID before the broker timeout.'
         }
         $childPid = [int](Get-Content -LiteralPath $childPidPath -Raw)
