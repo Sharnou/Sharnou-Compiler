@@ -5,6 +5,7 @@ on:
     branches:
       - milestone-7a-control-flow
       - Sharnou-Compiler
+      - devagent-secure-process-broker-20261126
   pull_request:
     branches:
       - Sharnou-Compiler

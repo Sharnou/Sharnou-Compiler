@@ -1,6 +1,6 @@
 # Sharnou Compiler and Engine - Accepted Development Plan
 
-**Last maintained:** 2026-11-20 22:49 Africa/Cairo
+**Last maintained:** 2026-11-25
 **Repository:** `Sharnou/Sharnou-Compiler`  
 **Default branch observed:** `Sharnou-Compiler`  
 **Current focus:** Milestone 7A - native control flow  
@@ -112,7 +112,7 @@ Preserve the existing Windows x64 ABI, caller shadow store, stack alignment, fra
 
 Current documented subset restrictions must remain explicit until deliberately implemented and tested: chained comparisons, string comparisons, logical AND/OR, else-if shorthand, and return nested inside a control-flow block are rejected. Use nested if statements for nested logic.
 
-The branch currently contains a Stage 7A implementation and test runner. The current README identifies eight positive example cases and twelve negative parser/type cases, plus instruction-encoding checks. This does not by itself prove the user's Windows acceptance run; see the session-state and issue register.
+The branch currently contains a Stage 7A implementation and test runner. The current suite contains nine positive runtime cases, twelve negative parser/type cases, and three native instruction/branch checks (24 total). Test.ps1 also runs two Stage 5 collection-import regression cases. User-local Windows results are recorded in the session-state and issue register.
 
 ## 5. After 7A - planned self-hosting work
 
@@ -178,8 +178,8 @@ A milestone is complete only when all applicable evidence exists:
 |---|---|
 | Milestones 1-6 | User-reported Windows PASS; preserve history and exact baseline |
 | 83-case frozen repository baseline | Blocked until source suites/fixtures are restored or pinned and replayed on Windows |
-| Milestone 7A source implementation | Present on current repository branch; Windows acceptance status not yet confirmed in this session |
-| Milestone 7A full regression/ABI verification | Pending |
+| Milestone 7A source implementation | PR #16; Windows run `45705513598` passed on head `b1365dc17bb5aeaad74462633fadfdc29b56fa3e`; Stage 7A 24/24, Stage 5 imports 2/2, stack-probe/unwind 6/6 | WINDOWS CI PASS; user-local retest of PR #16 still pending |
+| Milestone 7A functional + stack-probe/unwind gates | Windows run `45705513598` passed Stage 7A 24/24, imports 2/2, ABI regression 6/6; PE verifier accepted six-section images | WINDOWS CI PASS; issue #1 remains open for nonvolatile-register/runtime RSP/argument probes and generic API marshalling |
 | Milestone 7B-7F self-hosting | Planned; do not begin until 7A and regression gates are accepted |
 | Post-M6 3D renderer | Long-term roadmap; clear/present is not full 3D rendering |
 | Sharnou IDE and Honour War integration | Later dependent work |
@@ -245,4 +245,33 @@ This is a separate requested product track, not a declaration that an AI agent e
 
 Dependency order: restore/pin the exact 83-case baseline and retain the ABI gates; then build a restricted process broker; then native search/read/download/quarantine and persistent evidence memory; then local model inference; then planner/subagents and validated agent manifests; then bounded self-correction and static reverse engineering; finally optional provider adapters. The default 7A/compiler scope and the self-hosting prerequisite are not bypassed by this parallel DevAgent track.
 
-Current status: ARCHITECTURE RECORDED; IMPLEMENTATION NOT STARTED; LOCAL INFERENCE NOT BUILT; AUTONOMOUS REPAIR NOT RUN. Acceptance requires offline operation without AI provider credentials, durable restart recovery, process isolation and timeouts, source-hash/evidence journals, passing security/rollback tests, and Windows runtime evidence.
+Current status: ABI PREREQUISITES WINDOWS CI PASS (PR #17); SECURE PROCESS BROKER DESIGN RECORDED BUT NATIVE IMPLEMENTATION NOT STARTED; LOCAL INFERENCE NOT BUILT; AUTONOMOUS REPAIR NOT RUN. Acceptance requires offline operation without AI provider credentials, durable restart recovery, process isolation and timeouts, source-hash/evidence journals, passing security/rollback tests, and Windows runtime evidence.
+## 2026-11-25 - stack-probe and unwind repair
+
+PR #16 implements the outstanding large-frame stack-probe and x64 unwind-table defects identified in issue #1. Windows Actions run [45705513598](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45705513598) passed on PR head `b1365dc17bb5aeaad74462633fadfdc29b56fa3e`:
+
+- Stage 7A: 24/24.
+- Stage 5 collection import regression: 2/2.
+- Stack probe and unwind regression: 6/6, including a native multi-page frame executable, both UWOP_ALLOC_LARGE encodings, function epilogue validation, and two fail-closed corrupted-metadata tests.
+- ASCII/no-BOM: PASS; combined result: PASS.
+
+The linker now emits `.pdata` / `.xdata`, a PE exception directory, and a private leaf stack-probe helper that touches each 4 KiB page before the fixed RSP allocation. The verifier validates the six-section layout, runtime-function ranges, unwind records and stack-probe code. PR #16 remains open/unmerged. These checks do not close the separate 83-case baseline gate or all ABI runtime probes; see issues #1 and #9.
+
+ 
+## 2026-11-26 - ABI gate passed; process broker next
+
+PR #17 now has Windows CI evidence for the runtime ABI tranche and frozen M1-M6 baseline on the same head: Stage 7A 24/24, collection imports 2/2, stack-probe/unwind 6/6, runtime ABI sentinel/alignment/argument/marshalling tests PASS, and M1-M6 83/83. Evidence: [45717111101](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45717111101) and [45717111040](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45717111040).
+
+The next dependency is the secure native process broker. The security contract is recorded in [SHARNOU-DEVAGENT-PROCESS-BROKER-SECURITY-DESIGN.md](SHARNOU-DEVAGENT-PROCESS-BROKER-SECURITY-DESIGN.md). The old raw-string `sh_dev_run_process(String)` prototype is explicitly rejected. The broker must use immutable tool IDs, exact script hashes, workspace confinement, a restricted token, suspended creation, Job Object process-tree containment, timeout/cancellation, bounded output, and adversarial tests. No model-controlled process execution is enabled.
+
+
+
+## 2026-11-26 - runtime ABI and broker phase 1 validated
+
+Integrated PR #18 head `7a15892a944c747f9563961d7c050c909dd3d3a4` passed Windows CI. Stage 7A 24/24, collection imports 2/2, stack-probe/unwind 6/6, Runtime ABI PASS, and the frozen M1-M6 suite 83/83. The ABI gate exercises all 16 supported integer arguments, RSP alignment, nonvolatile register sentinels, higher-arity Win32 APIs, and rejects arity 17.
+
+The native DevAgent test-tool process broker phase 1 is now implemented and validated: typed explicit-opt-in API, six fixed tool IDs, SHA-256-pinned manifest, native CNG script hashing, image-derived workspace path independent of CWD, reparse-point checks, suspended process creation, Job Object containment, memory/process limits, timeout, and descendant termination.
+
+Evidence: combined run [45772104864](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45772104864), frozen baseline run [45772104661](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45772104661). PR #18 remains draft/unmerged.
+
+Remaining work before any model-controlled execution: complete executable/workspace canonicalization and ADS/UNC/device rejection; restricted token/AppContainer and workspace-only ACLs; clean environment and DLL-search policy; bounded stdout/stderr capture with STARTUPINFOEX handle isolation; cancellation; durable tool evidence and restart recovery. Until those gates pass, the broker remains disabled for model-generated plans.

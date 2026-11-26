@@ -1,0 +1,47 @@
+name: Sharnou Compiler Milestone 6 Baseline
+
+on:
+  pull_request:
+    branches:
+      - Sharnou-Compiler
+  push:
+    branches:
+      - Sharnou-Compiler
+      - devagent-secure-process-broker-20261126
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: milestone6-baseline-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows-m6-83:
+    runs-on: windows-2025
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Verify baseline source encoding
+        shell: powershell
+        run: |
+          $files = Get-ChildItem -Recurse -File | Where-Object {
+            $_.Extension -in @('.ps1', '.sharnou', '.json', '.yml', '.b64')
+          }
+          foreach ($file in $files) {
+            $bytes = [IO.File]::ReadAllBytes($file.FullName)
+            if ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF) {
+              throw "UTF-8 BOM is not allowed: $($file.FullName)"
+            }
+            foreach ($byte in $bytes) {
+              if ($byte -gt 127) { throw "Non-ASCII byte found: $($file.FullName)" }
+            }
+          }
+          Write-Host 'PASS: ASCII source and UTF-8 without BOM.'
+
+      - name: Run frozen 83-case Milestone 6 baseline against current compiler
+        shell: powershell
+        run: .\Tests\BaselineM6\Test-Milestone6Baseline.ps1
