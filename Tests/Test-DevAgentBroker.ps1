@@ -109,6 +109,17 @@ try {
         -not $brokerEmitterSource.Contains('Build commandLineSlot = fixed prefix + the exact SHA-256-verified absolute script path + suffix')) {
         throw 'PowerShell command must be constructed from the hash-verified absolute workspace script path.'
     }
+
+    foreach ($moduleBootstrap in @(
+        '$env:PSModulePath',
+        'Microsoft.PowerShell.Management',
+        'Microsoft.PowerShell.Utility',
+        'ipmo'
+    )) {
+        if (-not $brokerEmitterSource.Contains($moduleBootstrap)) {
+            throw "Restricted PowerShell child is missing its explicit built-in module bootstrap: $moduleBootstrap"
+        }
+    }
     if (-not $compilerSource.Contains('BCryptOpenAlgorithmProvider') -or -not $compilerSource.Contains('BCryptHash') -or -not $compilerSource.Contains('BCryptCloseAlgorithmProvider')) {
         throw 'Native Windows CNG SHA-256 verification is missing.'
     }

@@ -1504,7 +1504,7 @@ function Emit-DevRunTool {
 
     # Construct a bounded command line around the selected absolute path only after
     # it is canonicalized and hash-verified. The child never resolves a CWD-relative script.
-    $commandPrefix = 'powershell.exe -NoLogo -NoProfile -NonInteractive -Command "$ErrorActionPreference=''Stop'';& '''
+    $commandPrefix = 'powershell.exe -NoProfile -NonInteractive -Command "$ErrorActionPreference=''Stop'';$env:PSModulePath=$PSHOME+''\Modules'';ipmo Microsoft.PowerShell.Management,Microsoft.PowerShell.Utility -ea Stop;& '''
     $commandSuffix = ''';if($null -ne $global:SHARNOU_TOOL_EXIT_CODE){exit [int]$global:SHARNOU_TOOL_EXIT_CODE}"'
     $commandPrefixItem = Register-DataConstant -Value $commandPrefix
     $commandSuffixItem = Register-DataConstant -Value $commandSuffix
