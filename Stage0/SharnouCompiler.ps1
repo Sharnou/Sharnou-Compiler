@@ -916,7 +916,7 @@ function Emit-DevBrokerVerifyScript {
     Emit-LoadRcxFrame -SlotPosition $PersistentFileHandleSlot
     Emit-LeaRaxFrame -SlotPosition $fileInformationSlot
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC2))
-    Emit-Win64CallIat -TargetRva ([UInt32]0x3200) -StackArguments @() # GetFileInformationByHandle
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3208) -StackArguments @() # GetFileInformationByHandle
     Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
     Emit-JumpConditional -ConditionCode 0x84 -Label $hashFail
     Emit-Bytes -Bytes ([byte[]]@(0x8B, 0x85))
@@ -1051,7 +1051,7 @@ function Emit-DevBrokerEnsureAppContainerSid {
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC2)) # RDX = display name
     Emit-DataAddress -DataItem $descriptionItem
     Emit-Bytes -Bytes ([byte[]]@(0x49, 0x89, 0xC0, 0x45, 0x33, 0xC9)) # R8 = description; R9 = no capabilities
-    Emit-Win64CallIat -TargetRva ([UInt32]0x3260) -StackArguments @(
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3278) -StackArguments @(
         @{ Kind = 'Immediate'; Value = 0 }, # zero capabilities
         @{ Kind = 'FrameAddress'; SlotPosition = $SidSlot }
     ) # CreateAppContainerProfile
@@ -1066,7 +1066,7 @@ function Emit-DevBrokerEnsureAppContainerSid {
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1))
     Emit-LeaRaxFrame -SlotPosition $SidSlot
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC2))
-    Emit-Win64CallIat -TargetRva ([UInt32]0x3268) -StackArguments @() # DeriveAppContainerSidFromAppContainerName
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3280) -StackArguments @() # DeriveAppContainerSidFromAppContainerName
     Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
     Emit-JumpConditional -ConditionCode 0x85 -Label $FailureLabel
     Mark-CodeLabel -Label $done
@@ -1117,7 +1117,7 @@ function Emit-DevBrokerUpdateAcl {
     Emit-LoadRcxFrame -SlotPosition $handleSlot
     Emit-LeaRaxFrame -SlotPosition $fileInfoSlot
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC2))
-    Emit-Win64CallIat -TargetRva ([UInt32]0x3200) -StackArguments @() # GetFileInformationByHandle
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3208) -StackArguments @() # GetFileInformationByHandle
     Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
     Emit-JumpConditional -ConditionCode 0x84 -Label $failed
     Emit-LoadEaxFrame -SlotPosition $fileInfoSlot
@@ -1129,7 +1129,7 @@ function Emit-DevBrokerUpdateAcl {
     # GetSecurityInfo(handle, SE_FILE_OBJECT, DACL_SECURITY_INFORMATION, NULL, NULL, &oldDacl, NULL, &sd).
     Emit-LoadRcxFrame -SlotPosition $handleSlot
     Emit-Bytes -Bytes ([byte[]]@(0xBA, 0x01, 0x00, 0x00, 0x00, 0x41, 0xB8, 0x04, 0x00, 0x00, 0x00, 0x45, 0x33, 0xC9))
-    Emit-Win64CallIat -TargetRva ([UInt32]0x32B0) -StackArguments @(
+    Emit-Win64CallIat -TargetRva ([UInt32]0x32C8) -StackArguments @(
         @{ Kind = 'Immediate'; Value = 0 }, # ppsidGroup
         @{ Kind = 'FrameAddress'; SlotPosition = $oldAclSlot },
         @{ Kind = 'Immediate'; Value = 0 }, # ppSacl
@@ -1158,14 +1158,14 @@ function Emit-DevBrokerUpdateAcl {
     Emit-LoadRaxFrame -SlotPosition $oldAclSlot
     Emit-Bytes -Bytes ([byte[]]@(0x49, 0x89, 0xC0)) # R8 = old DACL
     Emit-LeaR9Frame -SlotPosition $newAclSlot
-    Emit-Win64CallIat -TargetRva ([UInt32]0x3280) -StackArguments @() # SetEntriesInAclA
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3298) -StackArguments @() # SetEntriesInAclA
     Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
     Emit-JumpConditional -ConditionCode 0x85 -Label $failed
 
     # SetSecurityInfo changes only the DACL of the same validated handle; unrelated ACEs were merged.
     Emit-LoadRcxFrame -SlotPosition $handleSlot
     Emit-Bytes -Bytes ([byte[]]@(0xBA, 0x01, 0x00, 0x00, 0x00, 0x41, 0xB8, 0x04, 0x00, 0x00, 0x00, 0x45, 0x33, 0xC9))
-    Emit-Win64CallIat -TargetRva ([UInt32]0x32B8) -StackArguments @(
+    Emit-Win64CallIat -TargetRva ([UInt32]0x32D0) -StackArguments @(
         @{ Kind = 'Immediate'; Value = 0 }, # pSidGroup
         @{ Kind = 'FrameQword'; SlotPosition = $newAclSlot },
         @{ Kind = 'Immediate'; Value = 0 }  # pSacl
@@ -1184,7 +1184,7 @@ function Emit-DevBrokerUpdateAcl {
         Emit-LoadRcxFrame -SlotPosition $slot
         Emit-Bytes -Bytes ([byte[]]@(0x48, 0x85, 0xC9))
         Emit-JumpConditional -ConditionCode 0x84 -Label $skipFree
-        Emit-Win64CallIat -TargetRva ([UInt32]0x3248) -StackArguments @() # LocalFree
+        Emit-Win64CallIat -TargetRva ([UInt32]0x3260) -StackArguments @() # LocalFree
         Mark-CodeLabel -Label $skipFree
     }
     $skipClose = New-UniqueLabel -Prefix 'dev_acl_handle_skip_close'
@@ -1534,7 +1534,7 @@ function Emit-DevRunTool {
     Emit-Bytes -Bytes ([byte[]]@(0x33, 0xC9)) # HMODULE = NULL
     Emit-LeaRaxFrame -SlotPosition $workspaceRootSlot
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC2, 0x41, 0xB8, 0x04, 0x01, 0x00, 0x00))
-    Emit-Win64CallIat -TargetRva ([UInt32]0x3208) -StackArguments @() # GetModuleFileNameA
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3218) -StackArguments @() # GetModuleFileNameA
     Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
     Emit-JumpConditional -ConditionCode 0x84 -Label $directoryFail
     Emit-Bytes -Bytes ([byte[]]@(0x3D))
@@ -1570,7 +1570,7 @@ function Emit-DevRunTool {
     Emit-DevBrokerPathCheck -FrameSlot $workspaceRootSlot -IsDirectory $true -FailureLabel $directoryFail
     Emit-LeaRaxFrame -SlotPosition $workspaceRootSlot
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1))
-    Emit-Win64CallIat -TargetRva ([UInt32]0x3210) -StackArguments @() # SetCurrentDirectoryA
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3220) -StackArguments @() # SetCurrentDirectoryA
     Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
     Emit-JumpConditional -ConditionCode 0x84 -Label $directoryFail
 
@@ -1645,7 +1645,7 @@ function Emit-DevRunTool {
     # reparse point or hard link; the held non-inheritable handle is reused for persistence.
     Emit-LeaRaxFrame -SlotPosition $outputPathSlot
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1))
-    Emit-Win64CallIat -TargetRva ([UInt32]0x32D8) -StackArguments @() # DeleteFileA; stale files are removed only before CREATE_NEW
+    Emit-Win64CallIat -TargetRva ([UInt32]0x32F0) -StackArguments @() # DeleteFileA; stale files are removed only before CREATE_NEW
     Emit-LeaRaxFrame -SlotPosition $outputPathSlot
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1, 0xBA, 0x80, 0x00, 0x00, 0x40, 0x45, 0x33, 0xC0, 0x45, 0x33, 0xC9))
     Emit-Win64CallIat -TargetRva ([UInt32]0x30A0) -StackArguments @(
@@ -1662,7 +1662,7 @@ function Emit-DevRunTool {
     Emit-LoadRcxFrame -SlotPosition $outputFileHandleSlot
     Emit-LeaRaxFrame -SlotPosition $outputFileInfoSlot
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC2))
-    Emit-Win64CallIat -TargetRva ([UInt32]0x3200) -StackArguments @() # GetFileInformationByHandle
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3208) -StackArguments @() # GetFileInformationByHandle
     Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
     Emit-JumpConditional -ConditionCode 0x84 -Label $outputFail
     Emit-LoadEaxFrame -SlotPosition $outputFileInfoSlot
@@ -1677,12 +1677,12 @@ function Emit-DevRunTool {
     Emit-Bytes -Bytes ([byte[]]@(0xBA, 0x8B, 0x00, 0x00, 0x00)) # TOKEN_ASSIGN_PRIMARY|DUPLICATE|QUERY|ADJUST_DEFAULT
     Emit-LeaRaxFrame -SlotPosition $sourceTokenSlot
     Emit-Bytes -Bytes ([byte[]]@(0x49, 0x89, 0xC0))
-    Emit-Win64CallIat -TargetRva ([UInt32]0x3298) -StackArguments @() # OpenProcessToken
+    Emit-Win64CallIat -TargetRva ([UInt32]0x32B0) -StackArguments @() # OpenProcessToken
     Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
     Emit-JumpConditional -ConditionCode 0x84 -Label $tokenFail
     Emit-LoadRcxFrame -SlotPosition $sourceTokenSlot
     Emit-Bytes -Bytes ([byte[]]@(0xBA, 0x01, 0x00, 0x00, 0x00, 0x45, 0x33, 0xC0, 0x45, 0x33, 0xC9))
-    Emit-Win64CallIat -TargetRva ([UInt32]0x32A0) -StackArguments @(
+    Emit-Win64CallIat -TargetRva ([UInt32]0x32B8) -StackArguments @(
         @{ Kind = 'Immediate'; Value = 0 }, # DeletePrivilegeCount
         @{ Kind = 'Immediate'; Value = 0 }, # PrivilegesToDelete
         @{ Kind = 'Immediate'; Value = 0 }, # RestrictedSidCount
@@ -1711,12 +1711,12 @@ function Emit-DevRunTool {
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC2))
     Emit-LeaRaxFrame -SlotPosition $pipeSecuritySlot
     Emit-Bytes -Bytes ([byte[]]@(0x49, 0x89, 0xC0, 0x45, 0x33, 0xC9))
-    Emit-Win64CallIat -TargetRva ([UInt32]0x3218) -StackArguments @() # CreatePipe
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3230) -StackArguments @() # CreatePipe
     Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
     Emit-JumpConditional -ConditionCode 0x84 -Label $pipeFail
     Emit-LoadRcxFrame -SlotPosition $pipeReadSlot
     Emit-Bytes -Bytes ([byte[]]@(0xBA, 0x01, 0x00, 0x00, 0x00, 0x45, 0x33, 0xC0))
-    Emit-Win64CallIat -TargetRva ([UInt32]0x3220) -StackArguments @() # SetHandleInformation(read, HANDLE_FLAG_INHERIT, 0)
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3238) -StackArguments @() # SetHandleInformation(read, HANDLE_FLAG_INHERIT, 0)
     Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
     Emit-JumpConditional -ConditionCode 0x84 -Label $pipeFail
 
@@ -1751,7 +1751,7 @@ function Emit-DevRunTool {
     Emit-LoadRcxFrame -SlotPosition $attributeListSlot
     Emit-Bytes -Bytes ([byte[]]@(0xBA, 0x02, 0x00, 0x00, 0x00, 0x45, 0x33, 0xC0))
     Emit-LeaR9Frame -SlotPosition $attributeSizeSlot
-    Emit-Win64CallIat -TargetRva ([UInt32]0x3230) -StackArguments @() # InitializeProcThreadAttributeList
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3248) -StackArguments @() # InitializeProcThreadAttributeList
     Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
     Emit-JumpConditional -ConditionCode 0x84 -Label $attributeFail
     Emit-StoreBits32Frame -SlotPosition $attributeListReadySlot -Value 1
@@ -1762,7 +1762,7 @@ function Emit-DevRunTool {
     Emit-LoadRcxFrame -SlotPosition $attributeListSlot
     Emit-Bytes -Bytes ([byte[]]@(0x33, 0xD2, 0x41, 0xB8, 0x09, 0x00, 0x02, 0x00))
     Emit-LeaR9Frame -SlotPosition $securityCapabilitiesSlot
-    Emit-Win64CallIat -TargetRva ([UInt32]0x3238) -StackArguments @(
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3250) -StackArguments @(
         @{ Kind = 'Immediate'; Value = 24 }, # sizeof(SECURITY_CAPABILITIES)
         @{ Kind = 'Immediate'; Value = 0 },
         @{ Kind = 'Immediate'; Value = 0 }
@@ -1778,7 +1778,7 @@ function Emit-DevRunTool {
     Emit-LoadRcxFrame -SlotPosition $attributeListSlot
     Emit-Bytes -Bytes ([byte[]]@(0x33, 0xD2, 0x41, 0xB8, 0x02, 0x00, 0x02, 0x00))
     Emit-LeaR9Frame -SlotPosition $handleListSlot
-    Emit-Win64CallIat -TargetRva ([UInt32]0x3238) -StackArguments @(
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3250) -StackArguments @(
         @{ Kind = 'Immediate'; Value = 16 }, # sizeof(HANDLE[2])
         @{ Kind = 'Immediate'; Value = 0 },
         @{ Kind = 'Immediate'; Value = 0 }
@@ -1826,7 +1826,7 @@ function Emit-DevRunTool {
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC2)) # RDX = absolute System32 powershell.exe
     Emit-LeaRaxFrame -SlotPosition $commandLineSlot
     Emit-Bytes -Bytes ([byte[]]@(0x49, 0x89, 0xC0, 0x45, 0x33, 0xC9)) # R8 = command line; R9 = NULL process attrs
-    Emit-Win64CallIat -TargetRva ([UInt32]0x32A8) -StackArguments @(
+    Emit-Win64CallIat -TargetRva ([UInt32]0x32C0) -StackArguments @(
         @{ Kind = 'Immediate'; Value = 0 }, # lpThreadAttributes
         @{ Kind = 'Immediate'; Value = 1 }, # bInheritHandles TRUE, constrained by HANDLE_LIST
         @{ Kind = 'Immediate'; Value = 0x00080004 }, # EXTENDED_STARTUPINFO_PRESENT | CREATE_SUSPENDED
@@ -1859,7 +1859,7 @@ function Emit-DevRunTool {
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1, 0xBA, 0x08, 0x00, 0x00, 0x00))
     Emit-LeaRaxFrame -SlotPosition $childTokenSlot
     Emit-Bytes -Bytes ([byte[]]@(0x49, 0x89, 0xC0))
-    Emit-Win64CallIat -TargetRva ([UInt32]0x3298) -StackArguments @() # OpenProcessToken(TOKEN_QUERY)
+    Emit-Win64CallIat -TargetRva ([UInt32]0x32B0) -StackArguments @() # OpenProcessToken(TOKEN_QUERY)
     Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
     Emit-JumpConditional -ConditionCode 0x84 -Label $tokenFail
 
@@ -1870,7 +1870,7 @@ function Emit-DevRunTool {
     Emit-Bytes -Bytes ([byte[]]@(0xBA, 0x1D, 0x00, 0x00, 0x00)) # TokenIsAppContainer = 29
     Emit-LeaRaxFrame -SlotPosition $tokenInformationSlot
     Emit-Bytes -Bytes ([byte[]]@(0x49, 0x89, 0xC0, 0x41, 0xB9, 0x04, 0x00, 0x00, 0x00))
-    Emit-Win64CallIat -TargetRva ([UInt32]0x32C0) -StackArguments @(
+    Emit-Win64CallIat -TargetRva ([UInt32]0x32D8) -StackArguments @(
         @{ Kind = 'FrameAddress'; SlotPosition = $tokenLengthSlot }
     ) # GetTokenInformation
     Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
@@ -1886,7 +1886,7 @@ function Emit-DevRunTool {
     Emit-Bytes -Bytes ([byte[]]@(0xBA, 0x15, 0x00, 0x00, 0x00)) # TokenHasRestrictions = 21
     Emit-LeaRaxFrame -SlotPosition $tokenInformationSlot
     Emit-Bytes -Bytes ([byte[]]@(0x49, 0x89, 0xC0, 0x41, 0xB9, 0x04, 0x00, 0x00, 0x00))
-    Emit-Win64CallIat -TargetRva ([UInt32]0x32C0) -StackArguments @(
+    Emit-Win64CallIat -TargetRva ([UInt32]0x32D8) -StackArguments @(
         @{ Kind = 'FrameAddress'; SlotPosition = $tokenLengthSlot }
     )
     Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
@@ -1902,7 +1902,7 @@ function Emit-DevRunTool {
     Emit-Bytes -Bytes ([byte[]]@(0xBA, 0x1E, 0x00, 0x00, 0x00)) # TokenCapabilities = 30
     Emit-LeaRaxFrame -SlotPosition $tokenInformationSlot
     Emit-Bytes -Bytes ([byte[]]@(0x49, 0x89, 0xC0, 0x41, 0xB9, 0x40, 0x00, 0x00, 0x00))
-    Emit-Win64CallIat -TargetRva ([UInt32]0x32C0) -StackArguments @(
+    Emit-Win64CallIat -TargetRva ([UInt32]0x32D8) -StackArguments @(
         @{ Kind = 'FrameAddress'; SlotPosition = $tokenLengthSlot }
     )
     Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
@@ -1985,7 +1985,7 @@ function Emit-DevRunTool {
     Emit-Jump -Label $captureLoop
 
     Mark-CodeLabel -Label $capturePipeEof
-    Emit-Win64CallIat -TargetRva ([UInt32]0x3250) -StackArguments @() # GetLastError
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3268) -StackArguments @() # GetLastError
     Emit-Bytes -Bytes ([byte[]]@(0x3D, 0x6D, 0x00, 0x00, 0x00)) # ERROR_BROKEN_PIPE = 109
     Emit-JumpConditional -ConditionCode 0x85 -Label $waitFail
     Emit-StoreBits32Frame -SlotPosition $pipeClosedSlot -Value 1
@@ -2053,7 +2053,7 @@ function Emit-DevRunTool {
     Emit-Jump -Label $finalDrain
 
     Mark-CodeLabel -Label $finalPipeEof
-    Emit-Win64CallIat -TargetRva ([UInt32]0x3250) -StackArguments @() # GetLastError
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3268) -StackArguments @() # GetLastError
     Emit-Bytes -Bytes ([byte[]]@(0x3D, 0x6D, 0x00, 0x00, 0x00)) # ERROR_BROKEN_PIPE = 109
     Emit-JumpConditional -ConditionCode 0x85 -Label $outputFail
     Emit-Jump -Label $captureDone
@@ -2248,7 +2248,7 @@ function Emit-DevRunTool {
     $skipDeleteAttributes = New-UniqueLabel -Prefix 'dev_tool_skip_delete_attributes'
     Emit-JumpConditional -ConditionCode 0x84 -Label $skipDeleteAttributes
     Emit-LoadRcxFrame -SlotPosition $attributeListSlot
-    Emit-Win64CallIat -TargetRva ([UInt32]0x3240) -StackArguments @() # DeleteProcThreadAttributeList
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3258) -StackArguments @() # DeleteProcThreadAttributeList
     Mark-CodeLabel -Label $skipDeleteAttributes
 
     foreach ($slot in @($attributeListSlot, $outputBufferSlot)) {
@@ -2265,7 +2265,7 @@ function Emit-DevRunTool {
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x85, 0xC9))
     $skipFreeSid = New-UniqueLabel -Prefix 'dev_tool_skip_free_sid'
     Emit-JumpConditional -ConditionCode 0x84 -Label $skipFreeSid
-    Emit-Win64CallIat -TargetRva ([UInt32]0x3290) -StackArguments @() # FreeSid
+    Emit-Win64CallIat -TargetRva ([UInt32]0x32A8) -StackArguments @() # FreeSid
     Mark-CodeLabel -Label $skipFreeSid
 
     Emit-LoadEaxFrame -SlotPosition $mutexAcquiredSlot
@@ -3245,12 +3245,12 @@ $importSets = @(
     [pscustomobject]@{ Descriptor = 0x8C; Lookup = 0xCF8; Iat = 0x168; Dll = 'USER32.dll'; Names = @('IsWindow') },
     [pscustomobject]@{ Descriptor = 0xA0; Lookup = 0xD08; Iat = 0x178; Dll = 'KERNEL32.dll'; Names = @('GetSystemDirectoryA', 'GetCurrentDirectoryA', 'CreateProcessA', 'CreateJobObjectA', 'SetInformationJobObject', 'AssignProcessToJobObject', 'ResumeThread', 'TerminateJobObject', 'GetExitCodeProcess', 'TerminateProcess', 'GetFileAttributesA', 'VirtualAlloc', 'VirtualFree') },
     [pscustomobject]@{ Descriptor = 0xB4; Lookup = 0xD78; Iat = 0x1E8; Dll = 'BCRYPT.dll'; Names = @('BCryptOpenAlgorithmProvider', 'BCryptHash', 'BCryptCloseAlgorithmProvider') },
-    [pscustomobject]@{ Descriptor = 0xC8; Lookup = 0xD98; Iat = 0x200; Dll = 'KERNEL32.dll'; Names = @('GetFileInformationByHandle') },
-    [pscustomobject]@{ Descriptor = 0xDC; Lookup = 0xDA8; Iat = 0x208; Dll = 'KERNEL32.dll'; Names = @('GetModuleFileNameA', 'SetCurrentDirectoryA') },
-    [pscustomobject]@{ Descriptor = 0xF0; Lookup = 0xDC0; Iat = 0x218; Dll = 'KERNEL32.dll'; Names = @('CreatePipe', 'SetHandleInformation', 'PeekNamedPipe', 'InitializeProcThreadAttributeList', 'UpdateProcThreadAttribute', 'DeleteProcThreadAttributeList', 'LocalFree', 'GetLastError') },
-    [pscustomobject]@{ Descriptor = 0x104; Lookup = 0xE08; Iat = 0x260; Dll = 'USERENV.dll'; Names = @('CreateAppContainerProfile', 'DeriveAppContainerSidFromAppContainerName') },
-    [pscustomobject]@{ Descriptor = 0x118; Lookup = 0xE20; Iat = 0x278; Dll = 'ADVAPI32.dll'; Names = @('GetNamedSecurityInfoA', 'SetEntriesInAclA', 'SetNamedSecurityInfoA', 'FreeSid', 'OpenProcessToken', 'CreateRestrictedToken', 'CreateProcessAsUserA', 'GetSecurityInfo', 'SetSecurityInfo', 'GetTokenInformation') },
-    [pscustomobject]@{ Descriptor = 0x12C; Lookup = 0xE78; Iat = 0x2D0; Dll = 'KERNEL32.dll'; Names = @('GetFullPathNameA', 'DeleteFileA') }
+    [pscustomobject]@{ Descriptor = 0xC8; Lookup = 0xD98; Iat = 0x208; Dll = 'KERNEL32.dll'; Names = @('GetFileInformationByHandle') },
+    [pscustomobject]@{ Descriptor = 0xDC; Lookup = 0xDA8; Iat = 0x218; Dll = 'KERNEL32.dll'; Names = @('GetModuleFileNameA', 'SetCurrentDirectoryA') },
+    [pscustomobject]@{ Descriptor = 0xF0; Lookup = 0xDC0; Iat = 0x230; Dll = 'KERNEL32.dll'; Names = @('CreatePipe', 'SetHandleInformation', 'PeekNamedPipe', 'InitializeProcThreadAttributeList', 'UpdateProcThreadAttribute', 'DeleteProcThreadAttributeList', 'LocalFree', 'GetLastError') },
+    [pscustomobject]@{ Descriptor = 0x104; Lookup = 0xE08; Iat = 0x278; Dll = 'USERENV.dll'; Names = @('CreateAppContainerProfile', 'DeriveAppContainerSidFromAppContainerName') },
+    [pscustomobject]@{ Descriptor = 0x118; Lookup = 0xE20; Iat = 0x290; Dll = 'ADVAPI32.dll'; Names = @('GetNamedSecurityInfoA', 'SetEntriesInAclA', 'SetNamedSecurityInfoA', 'FreeSid', 'OpenProcessToken', 'CreateRestrictedToken', 'CreateProcessAsUserA', 'GetSecurityInfo', 'SetSecurityInfo', 'GetTokenInformation') },
+    [pscustomobject]@{ Descriptor = 0x12C; Lookup = 0xE78; Iat = 0x2E8; Dll = 'KERNEL32.dll'; Names = @('GetFullPathNameA', 'DeleteFileA') }
 )
 $apiNameRvas = @{}
 $nameCursor = 0x300
@@ -3308,14 +3308,14 @@ $script:StdLibIatOffsets = @{
     'ResumeThread' = [UInt32]0x1A8; 'TerminateJobObject' = [UInt32]0x1B0; 'GetExitCodeProcess' = [UInt32]0x1B8; 'TerminateProcess' = [UInt32]0x1C0; 'GetFileAttributesA' = [UInt32]0x1C8
     'VirtualAlloc' = [UInt32]0x1D0; 'VirtualFree' = [UInt32]0x1D8
     'BCryptOpenAlgorithmProvider' = [UInt32]0x1E8; 'BCryptHash' = [UInt32]0x1F0; 'BCryptCloseAlgorithmProvider' = [UInt32]0x1F8
-    'GetFileInformationByHandle' = [UInt32]0x200
-    'GetModuleFileNameA' = [UInt32]0x208; 'SetCurrentDirectoryA' = [UInt32]0x210
-    'CreatePipe' = [UInt32]0x218; 'SetHandleInformation' = [UInt32]0x220; 'PeekNamedPipe' = [UInt32]0x228
-    'InitializeProcThreadAttributeList' = [UInt32]0x230; 'UpdateProcThreadAttribute' = [UInt32]0x238; 'DeleteProcThreadAttributeList' = [UInt32]0x240; 'LocalFree' = [UInt32]0x248; 'GetLastError' = [UInt32]0x250
-    'CreateAppContainerProfile' = [UInt32]0x260; 'DeriveAppContainerSidFromAppContainerName' = [UInt32]0x268
-    'GetNamedSecurityInfoA' = [UInt32]0x278; 'SetEntriesInAclA' = [UInt32]0x280; 'SetNamedSecurityInfoA' = [UInt32]0x288; 'FreeSid' = [UInt32]0x290
-    'OpenProcessToken' = [UInt32]0x298; 'CreateRestrictedToken' = [UInt32]0x2A0; 'CreateProcessAsUserA' = [UInt32]0x2A8; 'GetSecurityInfo' = [UInt32]0x2B0; 'SetSecurityInfo' = [UInt32]0x2B8; 'GetTokenInformation' = [UInt32]0x2C0
-    'GetFullPathNameA' = [UInt32]0x2D0; 'DeleteFileA' = [UInt32]0x2D8
+    'GetFileInformationByHandle' = [UInt32]0x208
+    'GetModuleFileNameA' = [UInt32]0x218; 'SetCurrentDirectoryA' = [UInt32]0x220
+    'CreatePipe' = [UInt32]0x230; 'SetHandleInformation' = [UInt32]0x238; 'PeekNamedPipe' = [UInt32]0x240
+    'InitializeProcThreadAttributeList' = [UInt32]0x248; 'UpdateProcThreadAttribute' = [UInt32]0x250; 'DeleteProcThreadAttributeList' = [UInt32]0x258; 'LocalFree' = [UInt32]0x260; 'GetLastError' = [UInt32]0x268
+    'CreateAppContainerProfile' = [UInt32]0x278; 'DeriveAppContainerSidFromAppContainerName' = [UInt32]0x280
+    'GetNamedSecurityInfoA' = [UInt32]0x290; 'SetEntriesInAclA' = [UInt32]0x298; 'SetNamedSecurityInfoA' = [UInt32]0x2A0; 'FreeSid' = [UInt32]0x2A8
+    'OpenProcessToken' = [UInt32]0x2B0; 'CreateRestrictedToken' = [UInt32]0x2B8; 'CreateProcessAsUserA' = [UInt32]0x2C0; 'GetSecurityInfo' = [UInt32]0x2C8; 'SetSecurityInfo' = [UInt32]0x2D0; 'GetTokenInformation' = [UInt32]0x2D8
+    'GetFullPathNameA' = [UInt32]0x2E8; 'DeleteFileA' = [UInt32]0x2F0
 }
 
 # One DIR64 relocation patches the absolute image-base + entry-point pointer at the dynamic .rdata RVA.
@@ -3356,7 +3356,7 @@ Set-U32 -Buffer $image -Offset ($opt + 104) -Value 0; Set-U32 -Buffer $image -Of
 Set-U32 -Buffer $image -Offset ($opt + 120) -Value ([UInt32]([long]$idataRva + [long]$descriptorBase)); Set-U32 -Buffer $image -Offset ($opt + 124) -Value $importDirectorySize
 Set-U32 -Buffer $image -Offset ($opt + 136) -Value $pdataRva; Set-U32 -Buffer $image -Offset ($opt + 140) -Value $pdataBytes.Length
 Set-U32 -Buffer $image -Offset ($opt + 152) -Value $relocRva; Set-U32 -Buffer $image -Offset ($opt + 156) -Value 12
-Set-U32 -Buffer $image -Offset ($opt + 208) -Value ([UInt32]([long]$idataRva + 0x70)); Set-U32 -Buffer $image -Offset ($opt + 212) -Value 0x270
+Set-U32 -Buffer $image -Offset ($opt + 208) -Value ([UInt32]([long]$idataRva + 0x70)); Set-U32 -Buffer $image -Offset ($opt + 212) -Value 0x288
 $sectionText = 0x188
 Set-Ascii -Buffer $image -Offset $sectionText -Value '.text'; Set-U32 -Buffer $image -Offset ($sectionText + 8) -Value $codeBytes.Length; Set-U32 -Buffer $image -Offset ($sectionText + 12) -Value $textRva; Set-U32 -Buffer $image -Offset ($sectionText + 16) -Value $textRawSize; Set-U32 -Buffer $image -Offset ($sectionText + 20) -Value $textRawPointer; Set-U32 -Buffer $image -Offset ($sectionText + 36) -Value 0x60000020
 $sectionData = 0x1B0
