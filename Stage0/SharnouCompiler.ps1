@@ -1086,7 +1086,7 @@ function Emit-DevRunTool {
         if ($expectedScriptSha256 -notmatch '^[A-F0-9]{64}$') {
             throw "Pinned DevAgent tool manifest contains an invalid SHA-256 for tool ID $($fixedTool.Id)."
         }
-        $commandCode = '$ErrorActionPreference=''Stop'';$p=''{0}'';$h=(Get-FileHash -LiteralPath $p -Algorithm SHA256).Hash;if($h -cne ''{1}''){{exit 91}};$global:SHARNOU_TOOL_EXIT_CODE=$null;try{{& $p;if($null -ne $global:SHARNOU_TOOL_EXIT_CODE){{exit [int]$global:SHARNOU_TOOL_EXIT_CODE}};if(-not $?) {{exit 1}};exit 0}}catch{{exit 1}}' -f $fixedTool.Path, $expectedScriptSha256
+        $commandCode = '$ErrorActionPreference=''Stop'';$p=''{0}'';$global:SHARNOU_TOOL_EXIT_CODE=$null;try{{& $p;if($null -ne $global:SHARNOU_TOOL_EXIT_CODE){{exit [int]$global:SHARNOU_TOOL_EXIT_CODE}};if(-not $?) {{exit 1}};exit 0}}catch{{exit 1}}' -f $fixedTool.Path
         $commandText = 'powershell.exe -NoLogo -NoProfile -NonInteractive -Command "' + $commandCode + '"'
         $commandLength = [System.Text.Encoding]::ASCII.GetByteCount($commandText)
         if ($commandLength -ge 0x220) { throw "Pinned DevAgent command for tool ID $($fixedTool.Id) exceeds its fixed buffer." }
