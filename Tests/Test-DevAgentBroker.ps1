@@ -284,6 +284,12 @@ try {
         $actual = ($numericLines -join $nl).TrimEnd([char[]]@([char]13, [char]10))
         if ($exitCode -ne 0) { throw "Broker fixture process exited with code $exitCode. Output=[$actual]." }
         if (-not [string]::Equals($actual, $expected, [StringComparison]::Ordinal)) {
+            if (Test-Path -LiteralPath $capturedOutputPath -PathType Leaf) {
+                $diagnosticBytes = [IO.File]::ReadAllBytes($capturedOutputPath)
+                $diagnosticLength = [Math]::Min(4096, $diagnosticBytes.Length)
+                $diagnosticText = [Text.Encoding]::UTF8.GetString($diagnosticBytes, 0, $diagnosticLength)
+                Write-Host ("DEVAGENT_CAPTURE_DIAGNOSTIC|length={0}|sample={1}" -f $diagnosticBytes.Length, $diagnosticText)
+            }
             throw "Broker fixture output mismatch. Expected=[$expected] Actual=[$actual]."
         }
         if (-not (Test-Path -LiteralPath $sandboxMarkerPath -PathType Leaf)) {
