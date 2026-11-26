@@ -112,7 +112,7 @@ $sdkVersions=@(Get-ChildItem -LiteralPath $sdkInclude -Directory | Where-Object 
 Assert-Contract ($sdkVersions.Count -gt 0) 'No versioned Windows SDK include directory was found.'
 $sdkVersion=$sdkVersions[0].Name
 $headerCache=@{}
-$headerPaths=@('shared\winnt.h','um\winbase.h','um\processthreadsapi.h','um\userenv.h','um\securitybaseapi.h','um\heapapi.h','um\errhandlingapi.h')
+$headerPaths=@('um\winnt.h','um\winbase.h','um\processthreadsapi.h','um\userenv.h','um\securitybaseapi.h','um\heapapi.h','um\errhandlingapi.h')
 foreach($relative in $headerPaths){
     $full=Join-Path (Join-Path $sdkInclude $sdkVersion) $relative
     Assert-Contract (Test-Path -LiteralPath $full -PathType Leaf) ("Required Windows SDK header is missing: {0}" -f $relative)

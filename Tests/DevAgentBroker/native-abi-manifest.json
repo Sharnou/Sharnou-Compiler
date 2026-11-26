@@ -255,7 +255,7 @@
   "structureLayouts": [
     {
       "name": "SID_AND_ATTRIBUTES",
-      "header": "shared/winnt.h",
+      "header": "um/winnt.h",
       "size": 16,
       "alignment": 8,
       "fields": [
@@ -273,7 +273,7 @@
     },
     {
       "name": "SECURITY_CAPABILITIES",
-      "header": "shared/winnt.h",
+      "header": "um/winnt.h",
       "size": 24,
       "alignment": 8,
       "fields": [
@@ -301,7 +301,7 @@
     },
     {
       "name": "TOKEN_APPCONTAINER_INFORMATION",
-      "header": "shared/winnt.h",
+      "header": "um/winnt.h",
       "size": 8,
       "alignment": 8,
       "fields": [
@@ -314,7 +314,7 @@
     },
     {
       "name": "TOKEN_MANDATORY_LABEL",
-      "header": "shared/winnt.h",
+      "header": "um/winnt.h",
       "size": 16,
       "alignment": 8,
       "fields": [
@@ -471,7 +471,7 @@
     },
     {
       "name": "JOBOBJECT_BASIC_LIMIT_INFORMATION",
-      "header": "shared/winnt.h",
+      "header": "um/winnt.h",
       "size": 64,
       "alignment": 8,
       "fields": [
@@ -524,7 +524,7 @@
     },
     {
       "name": "IO_COUNTERS",
-      "header": "shared/winnt.h",
+      "header": "um/winnt.h",
       "size": 48,
       "alignment": 8,
       "fields": [
@@ -562,7 +562,7 @@
     },
     {
       "name": "JOBOBJECT_EXTENDED_LIMIT_INFORMATION",
-      "header": "shared/winnt.h",
+      "header": "um/winnt.h",
       "size": 144,
       "alignment": 8,
       "fields": [
