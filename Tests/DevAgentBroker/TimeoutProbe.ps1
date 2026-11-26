@@ -15,7 +15,7 @@ try {
     [IO.File]::WriteAllText($markerPath, [string]$PID, [Text.Encoding]::ASCII)
     [IO.File]::WriteAllText($diagnosticPath, ('STARTED|PID={0}|ROOT={1}' -f $PID, $repoRoot), [Text.Encoding]::UTF8)
     [Console]::WriteLine('timeout-probe-started')
-    Start-Sleep -Seconds 30
+    [Threading.Thread]::Sleep(30000)
     [IO.File]::WriteAllText($diagnosticPath, ('UNEXPECTED_COMPLETION|PID={0}' -f $PID), [Text.Encoding]::UTF8)
     $global:SHARNOU_TOOL_EXIT_CODE = 95
     exit 95
