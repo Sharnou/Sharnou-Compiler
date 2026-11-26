@@ -219,7 +219,7 @@ try {
     }
     if (-not $brokerEmitterSource.Contains('mainCapReadReady') -or
         -not $brokerEmitterSource.Contains('finalCapReadReady') -or
-        -not $brokerEmitterSource.Contains('read only the remaining capacity')) {
+        ($brokerEmitterSource.IndexOf('read only the remaining capacity', [StringComparison]::OrdinalIgnoreCase) -lt 0)) {
         throw 'Output capture must consume up to exactly 1 MiB before reporting overflow.'
     }
     Write-Host 'PASS: Low IL is applied only to writable Build staging; the source workspace keeps its existing integrity label' -ForegroundColor Green
