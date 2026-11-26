@@ -2635,25 +2635,25 @@ $descriptorBase = 0xA00
 $importDirectorySize = 0x154
 if (($descriptorBase + $importDirectorySize) -gt $idata.Length) { throw 'Import descriptor table exceeds .idata storage.' }
 $importSets = @(
-    [pscustomobject]@{ Descriptor = 0x00; Lookup = 0x700; Iat = 0x70; Dll = 'KERNEL32.dll'; Names = @('GetStdHandle', 'WriteFile', 'ExitProcess') },
-    [pscustomobject]@{ Descriptor = 0x14; Lookup = 0x720; Iat = 0x90; Dll = 'USER32.dll'; Names = @('wsprintfA') },
-    [pscustomobject]@{ Descriptor = 0x28; Lookup = 0x730; Iat = 0xA0; Dll = 'KERNEL32.dll'; Names = @('CreateFileA', 'GetFileSizeEx', 'ReadFile', 'CloseHandle', 'GetModuleHandleA', 'CreateThread', 'WaitForSingleObject', 'CreateMutexA', 'ReleaseMutex') },
-    [pscustomobject]@{ Descriptor = 0x3C; Lookup = 0x780; Iat = 0xF0; Dll = 'USER32.dll'; Names = @('CreateWindowExA', 'ShowWindow', 'UpdateWindow', 'PeekMessageA', 'TranslateMessage', 'DispatchMessageA', 'DestroyWindow') },
-    [pscustomobject]@{ Descriptor = 0x50; Lookup = 0x7C0; Iat = 0x130; Dll = 'D3D11.dll'; Names = @('D3D11CreateDeviceAndSwapChain') },
-    [pscustomobject]@{ Descriptor = 0x64; Lookup = 0x7D0; Iat = 0x140; Dll = 'DXGI.dll'; Names = @('CreateDXGIFactory') },
-    [pscustomobject]@{ Descriptor = 0x78; Lookup = 0x7E0; Iat = 0x150; Dll = 'KERNEL32.dll'; Names = @('QueryPerformanceCounter', 'QueryPerformanceFrequency') },
-    [pscustomobject]@{ Descriptor = 0x8C; Lookup = 0x800; Iat = 0x168; Dll = 'USER32.dll'; Names = @('IsWindow') },
-    [pscustomobject]@{ Descriptor = 0xA0; Lookup = 0x810; Iat = 0x178; Dll = 'KERNEL32.dll'; Names = @('GetSystemDirectoryA', 'GetCurrentDirectoryA', 'CreateProcessA', 'CreateJobObjectA', 'SetInformationJobObject', 'AssignProcessToJobObject', 'ResumeThread', 'TerminateJobObject', 'GetExitCodeProcess', 'TerminateProcess', 'GetFileAttributesA', 'VirtualAlloc', 'VirtualFree') },
-    [pscustomobject]@{ Descriptor = 0xB4; Lookup = 0x880; Iat = 0x1E8; Dll = 'BCRYPT.dll'; Names = @('BCryptOpenAlgorithmProvider', 'BCryptHash', 'BCryptCloseAlgorithmProvider') },
-    [pscustomobject]@{ Descriptor = 0xC8; Lookup = 0x8A0; Iat = 0x200; Dll = 'KERNEL32.dll'; Names = @('GetFileInformationByHandle') },
-    [pscustomobject]@{ Descriptor = 0xDC; Lookup = 0x8C0; Iat = 0x208; Dll = 'KERNEL32.dll'; Names = @('GetModuleFileNameA', 'SetCurrentDirectoryA') },
-    [pscustomobject]@{ Descriptor = 0xF0; Lookup = 0x900; Iat = 0x218; Dll = 'KERNEL32.dll'; Names = @('CreatePipe', 'SetHandleInformation', 'PeekNamedPipe', 'InitializeProcThreadAttributeList', 'UpdateProcThreadAttribute', 'DeleteProcThreadAttributeList', 'LocalFree', 'GetLastError') },
-    [pscustomobject]@{ Descriptor = 0x104; Lookup = 0x940; Iat = 0x260; Dll = 'USERENV.dll'; Names = @('CreateAppContainerProfile', 'DeriveAppContainerSidFromAppContainerName') },
-    [pscustomobject]@{ Descriptor = 0x118; Lookup = 0x960; Iat = 0x278; Dll = 'ADVAPI32.dll'; Names = @('GetNamedSecurityInfoA', 'SetEntriesInAclA', 'SetNamedSecurityInfoA', 'FreeSid', 'OpenProcessToken', 'CreateRestrictedToken', 'CreateProcessAsUserA') },
-    [pscustomobject]@{ Descriptor = 0x12C; Lookup = 0x9A0; Iat = 0x2B8; Dll = 'KERNEL32.dll'; Names = @('GetFullPathNameA') }
+    [pscustomobject]@{ Descriptor = 0x00; Lookup = 0xC00; Iat = 0x70; Dll = 'KERNEL32.dll'; Names = @('GetStdHandle', 'WriteFile', 'ExitProcess') },
+    [pscustomobject]@{ Descriptor = 0x14; Lookup = 0xC20; Iat = 0x90; Dll = 'USER32.dll'; Names = @('wsprintfA') },
+    [pscustomobject]@{ Descriptor = 0x28; Lookup = 0xC30; Iat = 0xA0; Dll = 'KERNEL32.dll'; Names = @('CreateFileA', 'GetFileSizeEx', 'ReadFile', 'CloseHandle', 'GetModuleHandleA', 'CreateThread', 'WaitForSingleObject', 'CreateMutexA', 'ReleaseMutex') },
+    [pscustomobject]@{ Descriptor = 0x3C; Lookup = 0xC80; Iat = 0xF0; Dll = 'USER32.dll'; Names = @('CreateWindowExA', 'ShowWindow', 'UpdateWindow', 'PeekMessageA', 'TranslateMessage', 'DispatchMessageA', 'DestroyWindow') },
+    [pscustomobject]@{ Descriptor = 0x50; Lookup = 0xCC0; Iat = 0x130; Dll = 'D3D11.dll'; Names = @('D3D11CreateDeviceAndSwapChain') },
+    [pscustomobject]@{ Descriptor = 0x64; Lookup = 0xCD0; Iat = 0x140; Dll = 'DXGI.dll'; Names = @('CreateDXGIFactory') },
+    [pscustomobject]@{ Descriptor = 0x78; Lookup = 0xCE0; Iat = 0x150; Dll = 'KERNEL32.dll'; Names = @('QueryPerformanceCounter', 'QueryPerformanceFrequency') },
+    [pscustomobject]@{ Descriptor = 0x8C; Lookup = 0xCF8; Iat = 0x168; Dll = 'USER32.dll'; Names = @('IsWindow') },
+    [pscustomobject]@{ Descriptor = 0xA0; Lookup = 0xD08; Iat = 0x178; Dll = 'KERNEL32.dll'; Names = @('GetSystemDirectoryA', 'GetCurrentDirectoryA', 'CreateProcessA', 'CreateJobObjectA', 'SetInformationJobObject', 'AssignProcessToJobObject', 'ResumeThread', 'TerminateJobObject', 'GetExitCodeProcess', 'TerminateProcess', 'GetFileAttributesA', 'VirtualAlloc', 'VirtualFree') },
+    [pscustomobject]@{ Descriptor = 0xB4; Lookup = 0xD78; Iat = 0x1E8; Dll = 'BCRYPT.dll'; Names = @('BCryptOpenAlgorithmProvider', 'BCryptHash', 'BCryptCloseAlgorithmProvider') },
+    [pscustomobject]@{ Descriptor = 0xC8; Lookup = 0xD98; Iat = 0x200; Dll = 'KERNEL32.dll'; Names = @('GetFileInformationByHandle') },
+    [pscustomobject]@{ Descriptor = 0xDC; Lookup = 0xDA8; Iat = 0x208; Dll = 'KERNEL32.dll'; Names = @('GetModuleFileNameA', 'SetCurrentDirectoryA') },
+    [pscustomobject]@{ Descriptor = 0xF0; Lookup = 0xDC0; Iat = 0x218; Dll = 'KERNEL32.dll'; Names = @('CreatePipe', 'SetHandleInformation', 'PeekNamedPipe', 'InitializeProcThreadAttributeList', 'UpdateProcThreadAttribute', 'DeleteProcThreadAttributeList', 'LocalFree', 'GetLastError') },
+    [pscustomobject]@{ Descriptor = 0x104; Lookup = 0xE08; Iat = 0x260; Dll = 'USERENV.dll'; Names = @('CreateAppContainerProfile', 'DeriveAppContainerSidFromAppContainerName') },
+    [pscustomobject]@{ Descriptor = 0x118; Lookup = 0xE20; Iat = 0x278; Dll = 'ADVAPI32.dll'; Names = @('GetNamedSecurityInfoA', 'SetEntriesInAclA', 'SetNamedSecurityInfoA', 'FreeSid', 'OpenProcessToken', 'CreateRestrictedToken', 'CreateProcessAsUserA', 'GetSecurityInfo', 'SetSecurityInfo', 'GetTokenInformation') },
+    [pscustomobject]@{ Descriptor = 0x12C; Lookup = 0xE78; Iat = 0x2D0; Dll = 'KERNEL32.dll'; Names = @('GetFullPathNameA', 'DeleteFileA') }
 )
 $apiNameRvas = @{}
-$nameCursor = 0x2D0
+$nameCursor = 0x300
 foreach ($set in $importSets) {
     foreach ($apiName in $set.Names) {
         if (-not $apiNameRvas.ContainsKey($apiName)) {
@@ -2665,22 +2665,22 @@ foreach ($set in $importSets) {
         }
     }
 }
-Set-AsciiZ -Buffer $idata -Offset 0x250 -Value 'KERNEL32.dll'
-Set-AsciiZ -Buffer $idata -Offset 0x25D -Value 'USER32.dll'
-Set-AsciiZ -Buffer $idata -Offset 0x268 -Value 'D3D11.dll'
-Set-AsciiZ -Buffer $idata -Offset 0x272 -Value 'DXGI.dll'
-Set-AsciiZ -Buffer $idata -Offset 0x27B -Value 'BCRYPT.dll'
-Set-AsciiZ -Buffer $idata -Offset 0x286 -Value 'USERENV.dll'
-Set-AsciiZ -Buffer $idata -Offset 0x292 -Value 'ADVAPI32.dll'
+Set-AsciiZ -Buffer $idata -Offset 0xF00 -Value 'KERNEL32.dll'
+Set-AsciiZ -Buffer $idata -Offset 0xF10 -Value 'USER32.dll'
+Set-AsciiZ -Buffer $idata -Offset 0xF20 -Value 'D3D11.dll'
+Set-AsciiZ -Buffer $idata -Offset 0xF30 -Value 'DXGI.dll'
+Set-AsciiZ -Buffer $idata -Offset 0xF40 -Value 'BCRYPT.dll'
+Set-AsciiZ -Buffer $idata -Offset 0xF50 -Value 'USERENV.dll'
+Set-AsciiZ -Buffer $idata -Offset 0xF60 -Value 'ADVAPI32.dll'
 foreach ($set in $importSets) {
     switch ($set.Dll) {
-        'KERNEL32.dll' { $nameOffset = 0x250 }
-        'USER32.dll' { $nameOffset = 0x25D }
-        'D3D11.dll' { $nameOffset = 0x268 }
-        'DXGI.dll' { $nameOffset = 0x272 }
-        'BCRYPT.dll' { $nameOffset = 0x27B }
-        'USERENV.dll' { $nameOffset = 0x286 }
-        'ADVAPI32.dll' { $nameOffset = 0x292 }
+        'KERNEL32.dll' { $nameOffset = 0xF00 }
+        'USER32.dll' { $nameOffset = 0xF10 }
+        'D3D11.dll' { $nameOffset = 0xF20 }
+        'DXGI.dll' { $nameOffset = 0xF30 }
+        'BCRYPT.dll' { $nameOffset = 0xF40 }
+        'USERENV.dll' { $nameOffset = 0xF50 }
+        'ADVAPI32.dll' { $nameOffset = 0xF60 }
         default { throw "Internal linker error: unsupported import DLL '$($set.Dll)'" }
     }
         $descriptorOffset = [int]($descriptorBase + $set.Descriptor)
@@ -2714,7 +2714,8 @@ $script:StdLibIatOffsets = @{
     'InitializeProcThreadAttributeList' = [UInt32]0x230; 'UpdateProcThreadAttribute' = [UInt32]0x238; 'DeleteProcThreadAttributeList' = [UInt32]0x240; 'LocalFree' = [UInt32]0x248; 'GetLastError' = [UInt32]0x250
     'CreateAppContainerProfile' = [UInt32]0x260; 'DeriveAppContainerSidFromAppContainerName' = [UInt32]0x268
     'GetNamedSecurityInfoA' = [UInt32]0x278; 'SetEntriesInAclA' = [UInt32]0x280; 'SetNamedSecurityInfoA' = [UInt32]0x288; 'FreeSid' = [UInt32]0x290
-    'OpenProcessToken' = [UInt32]0x298; 'CreateRestrictedToken' = [UInt32]0x2A0; 'CreateProcessAsUserA' = [UInt32]0x2A8; 'GetFullPathNameA' = [UInt32]0x2B8
+    'OpenProcessToken' = [UInt32]0x298; 'CreateRestrictedToken' = [UInt32]0x2A0; 'CreateProcessAsUserA' = [UInt32]0x2A8; 'GetSecurityInfo' = [UInt32]0x2B0; 'SetSecurityInfo' = [UInt32]0x2B8; 'GetTokenInformation' = [UInt32]0x2C0
+    'GetFullPathNameA' = [UInt32]0x2D0; 'DeleteFileA' = [UInt32]0x2D8
 }
 
 # One DIR64 relocation patches the absolute image-base + entry-point pointer at the dynamic .rdata RVA.
@@ -2755,7 +2756,7 @@ Set-U32 -Buffer $image -Offset ($opt + 104) -Value 0; Set-U32 -Buffer $image -Of
 Set-U32 -Buffer $image -Offset ($opt + 120) -Value ([UInt32]([long]$idataRva + [long]$descriptorBase)); Set-U32 -Buffer $image -Offset ($opt + 124) -Value $importDirectorySize
 Set-U32 -Buffer $image -Offset ($opt + 136) -Value $pdataRva; Set-U32 -Buffer $image -Offset ($opt + 140) -Value $pdataBytes.Length
 Set-U32 -Buffer $image -Offset ($opt + 152) -Value $relocRva; Set-U32 -Buffer $image -Offset ($opt + 156) -Value 12
-Set-U32 -Buffer $image -Offset ($opt + 208) -Value ([UInt32]([long]$idataRva + 0x70)); Set-U32 -Buffer $image -Offset ($opt + 212) -Value 0x250
+Set-U32 -Buffer $image -Offset ($opt + 208) -Value ([UInt32]([long]$idataRva + 0x70)); Set-U32 -Buffer $image -Offset ($opt + 212) -Value 0x270
 $sectionText = 0x188
 Set-Ascii -Buffer $image -Offset $sectionText -Value '.text'; Set-U32 -Buffer $image -Offset ($sectionText + 8) -Value $codeBytes.Length; Set-U32 -Buffer $image -Offset ($sectionText + 12) -Value $textRva; Set-U32 -Buffer $image -Offset ($sectionText + 16) -Value $textRawSize; Set-U32 -Buffer $image -Offset ($sectionText + 20) -Value $textRawPointer; Set-U32 -Buffer $image -Offset ($sectionText + 36) -Value 0x60000020
 $sectionData = 0x1B0
