@@ -2071,7 +2071,7 @@ $textRva = [UInt32]0x1000
 $textVirtualSpan = Align-Up -Value $codeBytes.Length -Alignment 0x1000
 if ($script:DataLength -gt 0x1000) { throw "Generated .rdata section is too large: $($script:DataLength) bytes; maximum is 4096." }
 $dataVirtualSpan = Align-Up -Value ([Math]::Max(8, $script:DataLength)) -Alignment 0x1000
-$idataVirtualSpan = Align-Up -Value 0x800 -Alignment 0x1000
+$idataVirtualSpan = Align-Up -Value 0x1000 -Alignment 0x1000
 $relocVirtualSpan = Align-Up -Value 12 -Alignment 0x1000
 $pdataVirtualSpan = Align-Up -Value $pdataLength -Alignment 0x1000
 $xdataVirtualSpan = Align-Up -Value $xdataLength -Alignment 0x1000
@@ -2120,25 +2120,26 @@ $dataRawSize = Align-Up -Value $dataBytes.Length -Alignment 0x200
 # Milestone 5 import builder. Existing IAT offsets (0x70, 0x78, 0x80, and 0x90)
 # stay stable within .idata. Lookup tables use the disjoint 0x500-0x610 range;
 # no lookup table may overlap any IAT slot or import-by-name string. Emit-CallIat rebases target RVAs after section placement.
-$idata = [byte[]]::new(0x800)
-# Keep the eight 20-byte IMAGE_IMPORT_DESCRIPTOR rows and null terminator above 0x700.
-# The fixed IAT slots occupy 0x70..0x178, so descriptor storage must not overlap them.
-$descriptorBase = 0x700
-$importDirectorySize = 0xC8
+$idata = [byte[]]::new(0x1000)
+# Lookup tables occupy 0x700..0x8A0. Keep ten import descriptors and the null terminator
+# in a separate 0xA00..0xADC range.
+$descriptorBase = 0xA00
+$importDirectorySize = 0xDC
 if (($descriptorBase + $importDirectorySize) -gt $idata.Length) { throw 'Import descriptor table exceeds .idata storage.' }
 $importSets = @(
-    [pscustomobject]@{ Descriptor = 0x00; Lookup = 0x540; Iat = 0x70; Dll = 'KERNEL32.dll'; Names = @('GetStdHandle', 'WriteFile', 'ExitProcess') },
-    [pscustomobject]@{ Descriptor = 0x14; Lookup = 0x560; Iat = 0x90; Dll = 'USER32.dll'; Names = @('wsprintfA') },
-    [pscustomobject]@{ Descriptor = 0x28; Lookup = 0x570; Iat = 0xA0; Dll = 'KERNEL32.dll'; Names = @('CreateFileA', 'GetFileSizeEx', 'ReadFile', 'CloseHandle', 'GetModuleHandleA', 'CreateThread', 'WaitForSingleObject', 'CreateMutexA', 'ReleaseMutex') },
-    [pscustomobject]@{ Descriptor = 0x3C; Lookup = 0x5C0; Iat = 0xF0; Dll = 'USER32.dll'; Names = @('CreateWindowExA', 'ShowWindow', 'UpdateWindow', 'PeekMessageA', 'TranslateMessage', 'DispatchMessageA', 'DestroyWindow') },
-    [pscustomobject]@{ Descriptor = 0x50; Lookup = 0x600; Iat = 0x130; Dll = 'D3D11.dll'; Names = @('D3D11CreateDeviceAndSwapChain') },
-    [pscustomobject]@{ Descriptor = 0x64; Lookup = 0x610; Iat = 0x140; Dll = 'DXGI.dll'; Names = @('CreateDXGIFactory') },
-    [pscustomobject]@{ Descriptor = 0x78; Lookup = 0x620; Iat = 0x150; Dll = 'KERNEL32.dll'; Names = @('QueryPerformanceCounter', 'QueryPerformanceFrequency') },
-    [pscustomobject]@{ Descriptor = 0x8C; Lookup = 0x640; Iat = 0x168; Dll = 'USER32.dll'; Names = @('IsWindow') },
-    [pscustomobject]@{ Descriptor = 0xA0; Lookup = 0x650; Iat = 0x178; Dll = 'KERNEL32.dll'; Names = @('GetSystemDirectoryA', 'GetCurrentDirectoryA', 'CreateProcessA', 'CreateJobObjectA', 'SetInformationJobObject', 'AssignProcessToJobObject', 'ResumeThread', 'TerminateJobObject', 'GetExitCodeProcess', 'TerminateProcess', 'GetFileAttributesA') }
+    [pscustomobject]@{ Descriptor = 0x00; Lookup = 0x700; Iat = 0x70; Dll = 'KERNEL32.dll'; Names = @('GetStdHandle', 'WriteFile', 'ExitProcess') },
+    [pscustomobject]@{ Descriptor = 0x14; Lookup = 0x720; Iat = 0x90; Dll = 'USER32.dll'; Names = @('wsprintfA') },
+    [pscustomobject]@{ Descriptor = 0x28; Lookup = 0x730; Iat = 0xA0; Dll = 'KERNEL32.dll'; Names = @('CreateFileA', 'GetFileSizeEx', 'ReadFile', 'CloseHandle', 'GetModuleHandleA', 'CreateThread', 'WaitForSingleObject', 'CreateMutexA', 'ReleaseMutex') },
+    [pscustomobject]@{ Descriptor = 0x3C; Lookup = 0x780; Iat = 0xF0; Dll = 'USER32.dll'; Names = @('CreateWindowExA', 'ShowWindow', 'UpdateWindow', 'PeekMessageA', 'TranslateMessage', 'DispatchMessageA', 'DestroyWindow') },
+    [pscustomobject]@{ Descriptor = 0x50; Lookup = 0x7C0; Iat = 0x130; Dll = 'D3D11.dll'; Names = @('D3D11CreateDeviceAndSwapChain') },
+    [pscustomobject]@{ Descriptor = 0x64; Lookup = 0x7D0; Iat = 0x140; Dll = 'DXGI.dll'; Names = @('CreateDXGIFactory') },
+    [pscustomobject]@{ Descriptor = 0x78; Lookup = 0x7E0; Iat = 0x150; Dll = 'KERNEL32.dll'; Names = @('QueryPerformanceCounter', 'QueryPerformanceFrequency') },
+    [pscustomobject]@{ Descriptor = 0x8C; Lookup = 0x800; Iat = 0x168; Dll = 'USER32.dll'; Names = @('IsWindow') },
+    [pscustomobject]@{ Descriptor = 0xA0; Lookup = 0x810; Iat = 0x178; Dll = 'KERNEL32.dll'; Names = @('GetSystemDirectoryA', 'GetCurrentDirectoryA', 'CreateProcessA', 'CreateJobObjectA', 'SetInformationJobObject', 'AssignProcessToJobObject', 'ResumeThread', 'TerminateJobObject', 'GetExitCodeProcess', 'TerminateProcess', 'GetFileAttributesA', 'VirtualAlloc', 'VirtualFree') },
+    [pscustomobject]@{ Descriptor = 0xB4; Lookup = 0x880; Iat = 0x1E8; Dll = 'BCRYPT.dll'; Names = @('BCryptOpenAlgorithmProvider', 'BCryptHash', 'BCryptCloseAlgorithmProvider') }
 )
 $apiNameRvas = @{}
-$nameCursor = 0x280
+$nameCursor = 0x290
 foreach ($set in $importSets) {
     foreach ($apiName in $set.Names) {
         if (-not $apiNameRvas.ContainsKey($apiName)) {
@@ -2154,12 +2155,14 @@ Set-AsciiZ -Buffer $idata -Offset 0x250 -Value 'KERNEL32.dll'
 Set-AsciiZ -Buffer $idata -Offset 0x25D -Value 'USER32.dll'
 Set-AsciiZ -Buffer $idata -Offset 0x268 -Value 'D3D11.dll'
 Set-AsciiZ -Buffer $idata -Offset 0x272 -Value 'DXGI.dll'
+Set-AsciiZ -Buffer $idata -Offset 0x27A -Value 'BCRYPT.dll'
 foreach ($set in $importSets) {
     switch ($set.Dll) {
         'KERNEL32.dll' { $nameOffset = 0x250 }
         'USER32.dll' { $nameOffset = 0x25D }
         'D3D11.dll' { $nameOffset = 0x268 }
         'DXGI.dll' { $nameOffset = 0x272 }
+        'BCRYPT.dll' { $nameOffset = 0x27A }
         default { throw "Internal linker error: unsupported import DLL '$($set.Dll)'" }
     }
         $descriptorOffset = [int]($descriptorBase + $set.Descriptor)
@@ -2185,6 +2188,8 @@ $script:StdLibIatOffsets = @{
     'GetSystemDirectoryA' = [UInt32]0x178; 'GetCurrentDirectoryA' = [UInt32]0x180; 'CreateProcessA' = [UInt32]0x188
     'CreateJobObjectA' = [UInt32]0x190; 'SetInformationJobObject' = [UInt32]0x198; 'AssignProcessToJobObject' = [UInt32]0x1A0
     'ResumeThread' = [UInt32]0x1A8; 'TerminateJobObject' = [UInt32]0x1B0; 'GetExitCodeProcess' = [UInt32]0x1B8; 'TerminateProcess' = [UInt32]0x1C0; 'GetFileAttributesA' = [UInt32]0x1C8
+    'VirtualAlloc' = [UInt32]0x1D0; 'VirtualFree' = [UInt32]0x1D8
+    'BCryptOpenAlgorithmProvider' = [UInt32]0x1E8; 'BCryptHash' = [UInt32]0x1F0; 'BCryptCloseAlgorithmProvider' = [UInt32]0x1F8
 }
 
 # One DIR64 relocation patches the absolute image-base + entry-point pointer at the dynamic .rdata RVA.
@@ -2225,7 +2230,7 @@ Set-U32 -Buffer $image -Offset ($opt + 104) -Value 0; Set-U32 -Buffer $image -Of
 Set-U32 -Buffer $image -Offset ($opt + 120) -Value ([UInt32]([long]$idataRva + [long]$descriptorBase)); Set-U32 -Buffer $image -Offset ($opt + 124) -Value $importDirectorySize
 Set-U32 -Buffer $image -Offset ($opt + 136) -Value $pdataRva; Set-U32 -Buffer $image -Offset ($opt + 140) -Value $pdataBytes.Length
 Set-U32 -Buffer $image -Offset ($opt + 152) -Value $relocRva; Set-U32 -Buffer $image -Offset ($opt + 156) -Value 12
-Set-U32 -Buffer $image -Offset ($opt + 208) -Value ([UInt32]([long]$idataRva + 0x70)); Set-U32 -Buffer $image -Offset ($opt + 212) -Value 0x168
+Set-U32 -Buffer $image -Offset ($opt + 208) -Value ([UInt32]([long]$idataRva + 0x70)); Set-U32 -Buffer $image -Offset ($opt + 212) -Value 0x198
 $sectionText = 0x188
 Set-Ascii -Buffer $image -Offset $sectionText -Value '.text'; Set-U32 -Buffer $image -Offset ($sectionText + 8) -Value $codeBytes.Length; Set-U32 -Buffer $image -Offset ($sectionText + 12) -Value $textRva; Set-U32 -Buffer $image -Offset ($sectionText + 16) -Value $textRawSize; Set-U32 -Buffer $image -Offset ($sectionText + 20) -Value $textRawPointer; Set-U32 -Buffer $image -Offset ($sectionText + 36) -Value 0x60000020
 $sectionData = 0x1B0
