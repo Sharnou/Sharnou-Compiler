@@ -105,7 +105,7 @@ try {
     if ($brokerEmitterSource.Contains('GetCurrentDirectoryA')) {
         throw 'Broker must not trust the inherited current directory as its workspace root.'
     }
-    if (-not $brokerEmitterSource.Contains("$p=''.\\{0}''")) {
+    if (-not $brokerEmitterSource.Contains('$p=''.\{0}''')) {
         throw 'Fixed PowerShell script invocation must use an explicit current-directory relative path (dot-slash).'
     }
     if (-not $compilerSource.Contains('BCryptOpenAlgorithmProvider') -or -not $compilerSource.Contains('BCryptHash') -or -not $compilerSource.Contains('BCryptCloseAlgorithmProvider')) {
