@@ -232,7 +232,11 @@ try {
     Assert-WorkspaceTest -Condition ($crashRecovery.Recovered -eq 1 -and $crashRecovery.Failed -eq 0 -and (Test-Path -LiteralPath $pendingWorkspace)) -Message 'crash recovery restores ACL and can retain the directory for inspection'
     Assert-WorkspaceTest -Condition ((Get-TestSddl -Path $pendingWorkspace) -ceq $expectedOriginal) -Message 'crash recovery restores the exact pre-execution owner/group/DACL descriptor'
     $finishRecovery = Recover-SharnouExecutionWorkspaces -WorkspaceRoot $workspaceRoot -JournalRoot $journalRoot -SupervisorSid $supervisorSid
-    Assert-WorkspaceTest -Condition ($finishRecovery.Recovered -eq 1 -and $finishRecovery.Deleted -eq 1 -and -not (Test-Path -LiteralPath $pendingWorkspace)) -Message 'second recovery safely deletes the restored workspace and finalizes the journal'
+    $finishRecoveryJson = ConvertTo-Json -InputObject $finishRecovery -Depth 5 -Compress
+    Write-Host ("DEBUG second recovery: " + $finishRecoveryJson)
+    Write-Host ("DEBUG pending workspace exists: " + (Test-Path -LiteralPath $pendingWorkspace))
+    Write-Host ("DEBUG pending journal exists: " + (Test-Path -LiteralPath $pendingJournal[0].FullName))
+    Assert-WorkspaceTest -Condition ($finishRecovery.Recovered -eq 1 -and $finishRecovery.Deleted -eq 1 -and -not (Test-Path -LiteralPath $pendingWorkspace)) -Message ('second recovery safely deletes the restored workspace and finalizes the journal; result=' + $finishRecoveryJson)
 
     # Abrupt death during active execution, with nested data and a junction that
     # points outside the workspace. Recovery must unlink the junction, not traverse it.
