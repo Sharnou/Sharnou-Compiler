@@ -4,10 +4,12 @@ on:
   pull_request:
     branches:
       - Sharnou-Compiler
+      - devagent-appcontainer-acl-output-20261126
   push:
     branches:
       - Sharnou-Compiler
       - devagent-secure-process-broker-20261126
+      - devagent-sandbox-runtime-20261126
   workflow_dispatch:
 
 permissions:

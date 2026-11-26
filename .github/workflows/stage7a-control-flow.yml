@@ -6,9 +6,11 @@ on:
       - milestone-7a-control-flow
       - Sharnou-Compiler
       - devagent-secure-process-broker-20261126
+      - devagent-sandbox-runtime-20261126
   pull_request:
     branches:
       - Sharnou-Compiler
+      - devagent-appcontainer-acl-output-20261126
 
 jobs:
   windows-stage7a:
