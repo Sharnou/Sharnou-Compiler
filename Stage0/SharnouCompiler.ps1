@@ -1691,11 +1691,26 @@ function Emit-DevRunTool {
     Emit-Win64CallIat -TargetRva ([UInt32]0x30D0) -StackArguments @() # WaitForSingleObject
     Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
     $mutexAcquired = New-UniqueLabel -Prefix 'dev_tool_mutex_acquired'
+    $mutexAbandoned = New-UniqueLabel -Prefix 'dev_tool_mutex_abandoned'
+    $mutexReady = New-UniqueLabel -Prefix 'dev_tool_mutex_ready'
     Emit-JumpConditional -ConditionCode 0x84 -Label $mutexAcquired
-    Emit-Bytes -Bytes ([byte[]]@(0x3D, 0x80, 0x00, 0x00, 0x00)) # WAIT_ABANDONED is also acquired
-    Emit-JumpConditional -ConditionCode 0x85 -Label $mutexFail
+    Emit-Bytes -Bytes ([byte[]]@(0x3D, 0x80, 0x00, 0x00, 0x00)) # WAIT_ABANDONED = prior owner terminated
+    Emit-JumpConditional -ConditionCode 0x84 -Label $mutexAbandoned
+    Emit-Jump -Label $mutexFail # WAIT_TIMEOUT / WAIT_FAILED / unexpected status
     Mark-CodeLabel -Label $mutexAcquired
     Emit-StoreBits32Frame -SlotPosition $mutexAcquiredSlot -Value 1
+    Emit-Jump -Label $mutexReady
+
+    # An abandoned mutex proves that the previous transaction may have died
+    # while AppContainer ACLs were installed. Do not reuse the stable package SID
+    # or launch another child until a durable ACL recovery transaction exists.
+    Mark-CodeLabel -Label $mutexAbandoned
+    Emit-StoreBits32Frame -SlotPosition $mutexAcquiredSlot -Value 1
+    Emit-Bytes -Bytes ([byte[]]@(0xB8, 0x8A, 0xFF, 0xFF, 0xFF)) # -118: ACL recovery required
+    Emit-StoreEaxFrame -SlotPosition $resultSlot
+    Emit-Jump -Label $cleanup # common cleanup releases the mutex; no SID/ACL/child work
+
+    Mark-CodeLabel -Label $mutexReady
 
     # A stable no-capability AppContainer SID receives persistent, idempotent ACLs:
     # workspace root = read/execute; Build and its broker subdirectory = read/write/execute.

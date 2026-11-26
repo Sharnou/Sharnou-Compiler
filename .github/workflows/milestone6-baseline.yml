@@ -11,6 +11,7 @@ on:
       - devagent-secure-process-broker-20261126
       - devagent-sandbox-runtime-20261126
       - devagent-sandbox-tool-order-diagnostics-20261126
+      - devagent-abandoned-mutex-failclosed-20261126
   workflow_dispatch:
 
 permissions:

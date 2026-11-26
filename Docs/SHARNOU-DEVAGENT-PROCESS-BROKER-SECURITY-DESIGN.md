@@ -188,3 +188,16 @@ Known hard gaps:
 - No model-generated plan may invoke this broker. It remains explicit-opt-in test tooling only.
 
 Status: **IMPLEMENTATION CANDIDATE / WINDOWS RUNTIME VALIDATION PENDING / NOT SECURITY-ACCEPTED**. No merge, release, or executable publication is authorized by this checkpoint.
+
+## 12. Abandoned ACL mutex: fail closed until recovery exists - 2026-11-26
+
+The broker previously treated `WAIT_ABANDONED (0x80)` as equivalent to `WAIT_OBJECT_0` and continued with the stable AppContainer SID. That is unsafe: Windows reports `WAIT_ABANDONED` when the prior owning thread terminated without releasing the mutex, and explicitly warns that persistent state protected by the mutex must be checked for consistency.
+
+The live emitter now distinguishes the two states:
+- `WAIT_OBJECT_0`: normal serialized execution may continue.
+- `WAIT_ABANDONED`: return broker status `-118` (ACL recovery required), release the mutex through common cleanup, and do not create/derive the AppContainer SID, mutate ACLs, or launch a child.
+- Timeout, failed wait, or unexpected wait return: fail as mutex acquisition failure.
+
+This is a fail-closed guard, **not** crash recovery. The package SID and ACL ACEs can still remain after an owner crash. The broker will refuse future executions when it detects the abandoned mutex; manual ACL/profile recovery is still needed until a protected write-ahead security-descriptor journal and startup recovery path are implemented and adversarially tested.
+
+A static regression assertion verifies the `WAIT_ABANDONED -> -118 -> cleanup` control flow precedes AppContainer SID creation. This does not substitute for a runtime abandoned-mutex test.

@@ -518,3 +518,9 @@ Residual hard blockers:
 5. Windows runtime CI has not yet passed on this branch.
 
 Status: **IMPLEMENTATION CANDIDATE / NOT SECURITY-ACCEPTED / NOT MODEL-ENABLED**. Keep the test broker behind explicit opt-in. Model-facing process execution stays DISABLED. Do not merge or release based on static checks alone.
+
+## 2026-11-26 abandoned ACL mutex guard
+
+The native broker no longer treats `WAIT_ABANDONED` as an ordinary lock acquisition. It returns `-118`, releases the mutex, and skips AppContainer SID creation, ACL mutation, and child process creation. A static regression assertion checks this branch ordering. This prevents another model tool from running on potentially inconsistent ACL state after a crashed broker.
+
+This is only fail-closed detection. It does not restore ACLs or remove stale package-SID ACEs. Durable ACL transaction journaling and startup recovery remain a security gate. No model-facing execution is enabled.
