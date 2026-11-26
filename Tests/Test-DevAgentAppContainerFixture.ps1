@@ -170,8 +170,10 @@ try {
     $applicationPointer = New-SharnouTrackedUnicodeString -Value $childImage -Allocations $allocations
     $commandLinePointer = New-SharnouTrackedUnicodeString -Value ('"' + $childImage + '"') -Allocations $allocations
     $currentDirectoryPointer = New-SharnouTrackedUnicodeString -Value $systemDirectory -Allocations $allocations
-    $environmentText = 'SystemRoot=' + $env:SystemRoot + [char]0 + 'WINDIR=' + $env:SystemRoot + [char]0
-    $environmentPointer = New-SharnouTrackedUnicodeString -Value $environmentText -Allocations $allocations
+    $environmentPointer = New-SharnouTrackedEnvironmentBlock -Entries @(
+        ('SystemRoot=' + $env:SystemRoot),
+        ('WINDIR=' + $env:SystemRoot)
+    ) -Allocations $allocations
 
     $startupSize = Get-SharnouMarshalSize -NativeType $types['STARTUPINFOEXW']
     $processInformationSize = Get-SharnouMarshalSize -NativeType $types['PROCESS_INFORMATION']

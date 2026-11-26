@@ -205,3 +205,30 @@ function Get-SharnouMarshalOffset {
     if ($null -eq $method) { throw 'Marshal.OffsetOf(Type,String) overload is unavailable.' }
     return [int64]$method.Invoke($null,[object[]]@($NativeType,$FieldName)).ToInt64()
 }
+
+
+function New-SharnouTrackedEnvironmentBlock {
+    param(
+        [string[]] $Entries,
+        [System.Collections.Generic.List[IntPtr]] $Allocations
+    )
+    if ($Entries.Count -lt 1 -or $Entries.Count -gt 64) {
+        throw 'Environment block entry count is outside the approved probe bounds.'
+    }
+    $ordered = [string[]]$Entries.Clone()
+    [Array]::Sort($ordered,[StringComparer]::OrdinalIgnoreCase)
+    foreach ($entry in $ordered) {
+        if ($entry -notmatch '^[^=]+=') { throw "Invalid environment block entry: $entry" }
+        if ($entry.IndexOf([char]0) -ge 0) { throw 'Environment block entry contains an embedded NUL.' }
+    }
+    $blockText = ($ordered -join [char]0) + [char]0 + [char]0
+    $bytes = [Text.Encoding]::Unicode.GetBytes($blockText)
+    if ($bytes.Length -lt 4 -or $bytes.Length -gt 32768 -or $bytes[$bytes.Length-1] -ne 0 -or $bytes[$bytes.Length-2] -ne 0 -or $bytes[$bytes.Length-3] -ne 0 -or $bytes[$bytes.Length-4] -ne 0) {
+        throw 'Environment block is not a bounded UTF-16 double-NUL-terminated block.'
+    }
+    $pointer = [Runtime.InteropServices.Marshal]::AllocHGlobal($bytes.Length)
+    if ($pointer -eq [IntPtr]::Zero) { throw 'AllocHGlobal returned NULL for the environment block.' }
+    [Runtime.InteropServices.Marshal]::Copy($bytes,0,$pointer,$bytes.Length)
+    $Allocations.Add($pointer)
+    return $pointer
+}
