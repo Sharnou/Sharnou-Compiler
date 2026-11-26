@@ -1169,16 +1169,53 @@ function Emit-DevRunTool {
     Emit-I32 -Value $suffixLength
     Emit-Bytes -Bytes ([byte[]]@(0xF3, 0xA4, 0xC6, 0x07, 0x00)) # append fixed PowerShell suffix and NUL
 
-    # Capture the caller's current directory as the fixed working directory.
-    Emit-Bytes -Bytes ([byte[]]@(0xB9, 0x04, 0x01, 0x00, 0x00)) # RCX = nBufferLength (260)
+    # Resolve the workspace from this broker image, never from inherited current-directory state.
+    # The broker is accepted only from Build\\DevAgentBroker\\DevAgentBroker.exe.
+    $modulePathLengthSlot = Get-TempSlotPosition -Depth ($BaseDepth + 8)
+    $imageSuffix = '\\Build\\DevAgentBroker\\DevAgentBroker.exe'
+    $imageSuffixLength = [System.Text.Encoding]::ASCII.GetByteCount($imageSuffix)
+    $imageSuffixItem = Register-DataConstant -Value $imageSuffix
+    Emit-Bytes -Bytes ([byte[]]@(0x31, 0xC9)) # RCX = NULL module handle
     Emit-LeaRaxFrame -SlotPosition $workingDirectorySlot
-    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC2)) # RDX = lpBuffer
-    Emit-Win64CallIat -TargetRva ([UInt32]0x3180) -StackArguments @() # GetCurrentDirectoryA
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC2, 0x41, 0xB8, 0x04, 0x01, 0x00, 0x00)) # RDX=buffer; R8D=260
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3208) -StackArguments @() # GetModuleFileNameA
     Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
     Emit-JumpConditional -ConditionCode 0x84 -Label $directoryFail
     Emit-Bytes -Bytes ([byte[]]@(0x3D))
-    Emit-I32 -Value 260
-    Emit-JumpConditional -ConditionCode 0x83 -Label $directoryFail
+    Emit-I32 -Value (260 - 1)
+    Emit-JumpConditional -ConditionCode 0x87 -Label $directoryFail
+    Emit-StoreEaxFrame -SlotPosition $modulePathLengthSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x3D))
+    Emit-I32 -Value $imageSuffixLength
+    Emit-JumpConditional -ConditionCode 0x82 -Label $directoryFail
+
+    # Compare the fixed image suffix against the returned module path.
+    Emit-LeaRaxFrame -SlotPosition $workingDirectorySlot
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC7)) # RDI = image path
+    Emit-LoadEaxFrame -SlotPosition $modulePathLengthSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x2D))
+    Emit-I32 -Value $imageSuffixLength
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x63, 0xC0, 0x48, 0x01, 0xC7)) # RDI = end - fixed suffix
+    Emit-DataAddress -DataItem $imageSuffixItem
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC6, 0xB9))
+    Emit-I32 -Value $imageSuffixLength
+    Emit-Bytes -Bytes ([byte[]]@(0xFC, 0xF3, 0xA6)) # CLD; REPE CMPSB
+    Emit-JumpConditional -ConditionCode 0x85 -Label $directoryFail
+
+    # Truncate the executable suffix in-place to obtain the canonical workspace root.
+    Emit-LoadEaxFrame -SlotPosition $modulePathLengthSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x2D))
+    Emit-I32 -Value $imageSuffixLength
+    Emit-Bytes -Bytes ([byte[]]@(0xC6, 0x84, 0x05)) # mov byte ptr [rbp+rax+disp32],0
+    Emit-I32 -Value (Get-FrameDisp -SlotPosition $workingDirectorySlot)
+    Emit-Bytes -Bytes ([byte[]]@(0x00))
+
+    # Set this process CWD to the image-derived root so all fixed relative checks resolve there.
+    Emit-LeaRaxFrame -SlotPosition $workingDirectorySlot
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1))
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3210) -StackArguments @() # SetCurrentDirectoryA
+    Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
+    Emit-JumpConditional -ConditionCode 0x84 -Label $directoryFail
 
     # Confine the broker to a recognizable workspace tree and reject reparse points.
     Emit-DevBrokerPathCheck -FrameSlot $workingDirectorySlot -IsDirectory $true -FailureLabel $directoryFail
@@ -2347,10 +2384,10 @@ $dataRawSize = Align-Up -Value $dataBytes.Length -Alignment 0x200
 # stay stable within .idata. Lookup tables use the disjoint 0x500-0x610 range;
 # no lookup table may overlap any IAT slot or import-by-name string. Emit-CallIat rebases target RVAs after section placement.
 $idata = [byte[]]::new(0x1000)
-# Lookup tables occupy 0x700..0x8B0. Keep eleven import descriptors and the null terminator
-# in a separate 0xA00..0xAF0 range.
+# Lookup tables occupy 0x700..0x8D0. Keep twelve import descriptors and the null terminator
+# in a separate 0xA00..0xB18 range.
 $descriptorBase = 0xA00
-$importDirectorySize = 0xF0
+$importDirectorySize = 0x104
 if (($descriptorBase + $importDirectorySize) -gt $idata.Length) { throw 'Import descriptor table exceeds .idata storage.' }
 $importSets = @(
     [pscustomobject]@{ Descriptor = 0x00; Lookup = 0x700; Iat = 0x70; Dll = 'KERNEL32.dll'; Names = @('GetStdHandle', 'WriteFile', 'ExitProcess') },
@@ -2363,7 +2400,8 @@ $importSets = @(
     [pscustomobject]@{ Descriptor = 0x8C; Lookup = 0x800; Iat = 0x168; Dll = 'USER32.dll'; Names = @('IsWindow') },
     [pscustomobject]@{ Descriptor = 0xA0; Lookup = 0x810; Iat = 0x178; Dll = 'KERNEL32.dll'; Names = @('GetSystemDirectoryA', 'GetCurrentDirectoryA', 'CreateProcessA', 'CreateJobObjectA', 'SetInformationJobObject', 'AssignProcessToJobObject', 'ResumeThread', 'TerminateJobObject', 'GetExitCodeProcess', 'TerminateProcess', 'GetFileAttributesA', 'VirtualAlloc', 'VirtualFree') },
     [pscustomobject]@{ Descriptor = 0xB4; Lookup = 0x880; Iat = 0x1E8; Dll = 'BCRYPT.dll'; Names = @('BCryptOpenAlgorithmProvider', 'BCryptHash', 'BCryptCloseAlgorithmProvider') },
-    [pscustomobject]@{ Descriptor = 0xC8; Lookup = 0x8A0; Iat = 0x200; Dll = 'KERNEL32.dll'; Names = @('GetFileInformationByHandle') }
+    [pscustomobject]@{ Descriptor = 0xC8; Lookup = 0x8A0; Iat = 0x200; Dll = 'KERNEL32.dll'; Names = @('GetFileInformationByHandle') },
+    [pscustomobject]@{ Descriptor = 0xDC; Lookup = 0x8C0; Iat = 0x208; Dll = 'KERNEL32.dll'; Names = @('GetModuleFileNameA', 'SetCurrentDirectoryA') }
 )
 $apiNameRvas = @{}
 $nameCursor = 0x290
@@ -2418,6 +2456,7 @@ $script:StdLibIatOffsets = @{
     'VirtualAlloc' = [UInt32]0x1D0; 'VirtualFree' = [UInt32]0x1D8
     'BCryptOpenAlgorithmProvider' = [UInt32]0x1E8; 'BCryptHash' = [UInt32]0x1F0; 'BCryptCloseAlgorithmProvider' = [UInt32]0x1F8
     'GetFileInformationByHandle' = [UInt32]0x200
+    'GetModuleFileNameA' = [UInt32]0x208; 'SetCurrentDirectoryA' = [UInt32]0x210
 }
 
 # One DIR64 relocation patches the absolute image-base + entry-point pointer at the dynamic .rdata RVA.
@@ -2458,7 +2497,7 @@ Set-U32 -Buffer $image -Offset ($opt + 104) -Value 0; Set-U32 -Buffer $image -Of
 Set-U32 -Buffer $image -Offset ($opt + 120) -Value ([UInt32]([long]$idataRva + [long]$descriptorBase)); Set-U32 -Buffer $image -Offset ($opt + 124) -Value $importDirectorySize
 Set-U32 -Buffer $image -Offset ($opt + 136) -Value $pdataRva; Set-U32 -Buffer $image -Offset ($opt + 140) -Value $pdataBytes.Length
 Set-U32 -Buffer $image -Offset ($opt + 152) -Value $relocRva; Set-U32 -Buffer $image -Offset ($opt + 156) -Value 12
-Set-U32 -Buffer $image -Offset ($opt + 208) -Value ([UInt32]([long]$idataRva + 0x70)); Set-U32 -Buffer $image -Offset ($opt + 212) -Value 0x1A0
+Set-U32 -Buffer $image -Offset ($opt + 208) -Value ([UInt32]([long]$idataRva + 0x70)); Set-U32 -Buffer $image -Offset ($opt + 212) -Value 0x1A8
 $sectionText = 0x188
 Set-Ascii -Buffer $image -Offset $sectionText -Value '.text'; Set-U32 -Buffer $image -Offset ($sectionText + 8) -Value $codeBytes.Length; Set-U32 -Buffer $image -Offset ($sectionText + 12) -Value $textRva; Set-U32 -Buffer $image -Offset ($sectionText + 16) -Value $textRawSize; Set-U32 -Buffer $image -Offset ($sectionText + 20) -Value $textRawPointer; Set-U32 -Buffer $image -Offset ($sectionText + 36) -Value 0x60000020
 $sectionData = 0x1B0
