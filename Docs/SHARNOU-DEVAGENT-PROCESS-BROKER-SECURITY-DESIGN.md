@@ -186,3 +186,6 @@ Windows CI finding and correction (2026-11-26): the first adversarial runner rea
 
 
 Second Windows parser finding (2026-11-26): the first backup-cleanup implementation contained a malformed PowerShell regular-expression literal. The recovery validator has been simplified to a strict filename-prefix check, exact suffix length, and Guid.ParseExact validation. The next Actions replay must validate both parsing and runtime behavior; neither is assumed to pass based on source inspection.
+
+
+Third Windows adversarial finding (2026-11-26): recovery initially serialized its normalized in-memory record with PascalCase fields and omitted the journal schema version. This made a retained RESTORED record fail on a second restart. The recovery projection now writes the same versioned lowercase journal schema as the transaction writer; a regression assertion checks the stored version, ID, state, and workspace path before a second recovery pass.

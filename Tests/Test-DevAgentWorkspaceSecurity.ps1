@@ -231,6 +231,8 @@ try {
     $crashRecovery = Recover-SharnouExecutionWorkspaces -WorkspaceRoot $workspaceRoot -JournalRoot $journalRoot -SupervisorSid $supervisorSid -KeepRestoredWorkspaces
     Assert-WorkspaceTest -Condition ($crashRecovery.Recovered -eq 1 -and $crashRecovery.Failed -eq 0 -and (Test-Path -LiteralPath $pendingWorkspace)) -Message 'crash recovery restores ACL and can retain the directory for inspection'
     Assert-WorkspaceTest -Condition ((Get-TestSddl -Path $pendingWorkspace) -ceq $expectedOriginal) -Message 'crash recovery restores the exact pre-execution owner/group/DACL descriptor'
+    $restoredJournalObject = Get-Content -LiteralPath $pendingJournal[0].FullName -Raw | ConvertFrom-Json
+    Assert-WorkspaceTest -Condition ($restoredJournalObject.version -eq 1 -and $restoredJournalObject.state -eq 'RESTORED' -and $restoredJournalObject.id -eq $pendingRecord.id -and $restoredJournalObject.workspacePath -eq $pendingRecord.workspacePath) -Message 'recovery preserves the versioned lowercase journal wire schema for repeated restarts'
     $finishRecovery = Recover-SharnouExecutionWorkspaces -WorkspaceRoot $workspaceRoot -JournalRoot $journalRoot -SupervisorSid $supervisorSid
     $finishRecoveryJson = ConvertTo-Json -InputObject $finishRecovery -Depth 5 -Compress
     Write-Host ("DEBUG second recovery: " + $finishRecoveryJson)

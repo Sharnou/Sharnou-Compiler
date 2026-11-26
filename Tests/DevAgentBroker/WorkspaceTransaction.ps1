@@ -279,16 +279,19 @@ function Assert-SharnouJournalRecord {
         throw 'A rollback-capable transaction state has no original security descriptor.'
     }
 
+    # Keep the persisted JSON schema stable across recovery/replay. Property
+    # lookup in PowerShell is case-insensitive, so the transaction code can still
+    # use PascalCase access while journal serialization retains these wire names.
     return [pscustomobject]@{
-        Id = $id.ToString('N')
-        State = [string]$Record.state
-        WorkspacePath = $actualWorkspace
-        JournalPath = $actualJournal
-        ExecutionSid = $executionSid.Value
-        SupervisorSid = $SupervisorSid
-        OriginalSddl = $sddl
-        CreatedUtc = [string]$Record.createdUtc
-        UpdatedUtc = [string]$Record.updatedUtc
+        version = 1
+        id = $id.ToString('N')
+        state = [string]$Record.state
+        workspacePath = $actualWorkspace
+        executionSid = $executionSid.Value
+        supervisorSid = $SupervisorSid
+        originalSddl = $sddl
+        createdUtc = [string]$Record.createdUtc
+        updatedUtc = [string]$Record.updatedUtc
     }
 }
 
