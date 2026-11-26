@@ -147,8 +147,8 @@ function New-Phase2B3AppContainerChild {
         if (-not $created) { throw ("CreateProcessW failed: Win32 error {0}." -f [Runtime.InteropServices.Marshal]::GetLastWin32Error()) }
         $process = [Runtime.InteropServices.Marshal]::ReadIntPtr($processInfo,0)
         $thread = [Runtime.InteropServices.Marshal]::ReadIntPtr($processInfo,8)
-        $pid = [Runtime.InteropServices.Marshal]::ReadInt32($processInfo,16)
-        if ($process -eq [IntPtr]::Zero -or $thread -eq [IntPtr]::Zero -or $pid -le 0) { throw 'CreateProcessW returned invalid process information.' }
+        $childProcessId = [Runtime.InteropServices.Marshal]::ReadInt32($processInfo,16)
+        if ($process -eq [IntPtr]::Zero -or $thread -eq [IntPtr]::Zero -or $childProcessId -le 0) { throw 'CreateProcessW returned invalid process information.' }
         if ($process -ne [IntPtr]::Zero) {
             $handles.Add($process)
             $script:childCreated = $true
@@ -194,7 +194,7 @@ function New-Phase2B3AppContainerChild {
             [Runtime.InteropServices.Marshal]::ReadInt32($exitCode) -ne 259) {
             throw 'The AppContainer probe child did not remain suspended.'
         }
-        return [pscustomobject]@{ Process=$process; Thread=$thread; Token=$primaryToken; ImpersonationToken=$impersonationToken; ProcessId=$pid; ProfileSid=$Profile.SidText }
+        return [pscustomobject]@{ Process=$process; Thread=$thread; Token=$primaryToken; ImpersonationToken=$impersonationToken; ProcessId=$childProcessId; ProfileSid=$Profile.SidText }
     }
     finally {
         if ($initialized) { [void](Invoke-Phase2B3Api 'DeleteProcThreadAttributeList' @($attributeList)) }
