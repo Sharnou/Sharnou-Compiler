@@ -2323,14 +2323,14 @@ Set-AsciiZ -Buffer $idata -Offset 0x250 -Value 'KERNEL32.dll'
 Set-AsciiZ -Buffer $idata -Offset 0x25D -Value 'USER32.dll'
 Set-AsciiZ -Buffer $idata -Offset 0x268 -Value 'D3D11.dll'
 Set-AsciiZ -Buffer $idata -Offset 0x272 -Value 'DXGI.dll'
-Set-AsciiZ -Buffer $idata -Offset 0x27A -Value 'BCRYPT.dll'
+Set-AsciiZ -Buffer $idata -Offset 0x27B -Value 'BCRYPT.dll'
 foreach ($set in $importSets) {
     switch ($set.Dll) {
         'KERNEL32.dll' { $nameOffset = 0x250 }
         'USER32.dll' { $nameOffset = 0x25D }
         'D3D11.dll' { $nameOffset = 0x268 }
         'DXGI.dll' { $nameOffset = 0x272 }
-        'BCRYPT.dll' { $nameOffset = 0x27A }
+        'BCRYPT.dll' { $nameOffset = 0x27B }
         default { throw "Internal linker error: unsupported import DLL '$($set.Dll)'" }
     }
         $descriptorOffset = [int]($descriptorBase + $set.Descriptor)
