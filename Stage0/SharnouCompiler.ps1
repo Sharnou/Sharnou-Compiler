@@ -1070,6 +1070,9 @@ function Emit-DevBrokerEnsureAppContainerSid {
     Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
     Emit-JumpConditional -ConditionCode 0x85 -Label $FailureLabel
     Mark-CodeLabel -Label $done
+    Emit-LoadRaxFrame -SlotPosition $SidSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x85, 0xC0))
+    Emit-JumpConditional -ConditionCode 0x84 -Label $FailureLabel # a successful HRESULT without a SID is not usable
 }
 function Emit-DevBrokerUpdateAcl {
     param(
@@ -1104,6 +1107,9 @@ function Emit-DevBrokerUpdateAcl {
     ) # GetNamedSecurityInfoA
     Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
     Emit-JumpConditional -ConditionCode 0x85 -Label $failed
+    Emit-LoadRaxFrame -SlotPosition $oldAclSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x85, 0xC0))
+    Emit-JumpConditional -ConditionCode 0x84 -Label $failed # NULL DACL: fail closed; never replace it
 
     # EXPLICIT_ACCESS_A (48 bytes), using the AppContainer package SID as TRUSTEE_IS_SID.
     Emit-StoreBits32Frame -SlotPosition $explicitSlot -Value $AccessMask
@@ -1183,8 +1189,6 @@ function Emit-DevBrokerCheckDirectoryChain {
     $scanComponents = New-UniqueLabel -Prefix 'dev_path_scan_components'
     $nextComponent = New-UniqueLabel -Prefix 'dev_path_next_component'
     $checkFinal = New-UniqueLabel -Prefix 'dev_path_check_final'
-    $checkRoot = New-UniqueLabel -Prefix 'dev_path_check_drive_root'
-    $rootChecked = New-UniqueLabel -Prefix 'dev_path_drive_root_checked'
 
     # Require a drive-qualified DOS absolute path. UNC/device paths fail closed.
     Emit-Bytes -Bytes ([byte[]]@(0x0F, 0xB6, 0x85))
@@ -1225,15 +1229,19 @@ function Emit-DevBrokerCheckDirectoryChain {
     Emit-Bytes -Bytes ([byte[]]@(0x8A, 0x06, 0x88, 0x06)) # save first component byte into AH? replaced below
     # Use a dedicated byte slot rather than relying on a caller register across API calls.
     $savedByteSlot = [int]$script:ActiveContext.ScratchPosition + 0xDF0
+    $apiResultSlot = [int]$script:ActiveContext.ScratchPosition + 0xDF8
     Emit-StoreZero64Frame -SlotPosition $savedByteSlot
+    Emit-StoreZero64Frame -SlotPosition $apiResultSlot
     Emit-Bytes -Bytes ([byte[]]@(0x8A, 0x06, 0x88, 0x85))
     Emit-I32 -Value (Get-FrameDisp -SlotPosition $savedByteSlot)
     Emit-Bytes -Bytes ([byte[]]@(0xC6, 0x06, 0x00)) # temporarily end at C:\
     Emit-LeaRaxFrame -SlotPosition $PathSlot
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1))
     Emit-Win64CallIat -TargetRva ([UInt32]0x31C8) -StackArguments @()
+    Emit-StoreEaxFrame -SlotPosition $apiResultSlot
     Emit-LoadEaxFrame -SlotPosition $savedByteSlot
     Emit-Bytes -Bytes ([byte[]]@(0x88, 0x06)) # restore first component byte
+    Emit-LoadEaxFrame -SlotPosition $apiResultSlot # restore GetFileAttributesA result
     Emit-Bytes -Bytes ([byte[]]@(0x3D, 0xFF, 0xFF, 0xFF, 0xFF))
     Emit-JumpConditional -ConditionCode 0x84 -Label $FailureLabel
     Emit-Bytes -Bytes ([byte[]]@(0xA9, 0x10, 0x00, 0x00, 0x00))

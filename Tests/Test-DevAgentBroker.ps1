@@ -124,6 +124,42 @@ try {
         }
     }
     Write-Host 'PASS: AppContainer/ACL helper declarations and IAT targets are statically consistent; child execution is not yet sandbox-accepted' -ForegroundColor Green
+    # Regression guards for two subtle native helper correctness conditions.
+    $aclHelperStart = $compilerSource.IndexOf('function Emit-DevBrokerUpdateAcl')
+    $aclHelperEnd = $compilerSource.IndexOf('function Emit-DevBrokerBuildWorkspacePath', $aclHelperStart)
+    if ($aclHelperStart -lt 0 -or $aclHelperEnd -le $aclHelperStart) {
+        throw 'Workspace ACL helper cannot be isolated for DACL safety assertions.'
+    }
+    $aclHelperSource = $compilerSource.Substring($aclHelperStart, $aclHelperEnd - $aclHelperStart)
+    $getDaclCall = $aclHelperSource.IndexOf('# GetNamedSecurityInfoA')
+    $nullDaclCheck = $aclHelperSource.IndexOf('Emit-LoadRaxFrame -SlotPosition $oldAclSlot', $getDaclCall)
+    if ($getDaclCall -lt 0 -or $nullDaclCheck -lt $getDaclCall -or
+        -not $aclHelperSource.Substring($getDaclCall, $nullDaclCheck - $getDaclCall).Contains('ConditionCode 0x85 -Label $failed') -or
+        -not $aclHelperSource.Substring($nullDaclCheck).Contains('ConditionCode 0x84 -Label $failed')) {
+        throw 'ACL helper must reject a NULL DACL rather than replacing it with a package-only ACL.'
+    }
+
+    $pathHelperStart = $compilerSource.IndexOf('function Emit-DevBrokerCheckDirectoryChain')
+    $pathHelperEnd = $compilerSource.IndexOf('function Emit-DevBrokerPathCheck', $pathHelperStart)
+    if ($pathHelperStart -lt 0 -or $pathHelperEnd -le $pathHelperStart) {
+        throw 'Workspace ancestor path helper cannot be isolated.'
+    }
+    $pathHelperSource = $compilerSource.Substring($pathHelperStart, $pathHelperEnd - $pathHelperStart)
+    $apiResultStore = $pathHelperSource.IndexOf('Emit-StoreEaxFrame -SlotPosition $apiResultSlot')
+    $savedByteRestore = $pathHelperSource.IndexOf('Emit-LoadEaxFrame -SlotPosition $savedByteSlot')
+    $apiResultReload = $pathHelperSource.IndexOf('Emit-LoadEaxFrame -SlotPosition $apiResultSlot')
+    if ($apiResultStore -lt 0 -or $savedByteRestore -le $apiResultStore -or $apiResultReload -le $savedByteRestore) {
+        throw 'Drive-root path validation must preserve GetFileAttributesA result while restoring the path buffer.'
+    }
+
+    $appContainerStart = $compilerSource.IndexOf('function Emit-DevBrokerEnsureAppContainerSid')
+    $appContainerEnd = $compilerSource.IndexOf('function Emit-DevBrokerUpdateAcl', $appContainerStart)
+    $appContainerHelper = $compilerSource.Substring($appContainerStart, $appContainerEnd - $appContainerStart)
+    if (-not $appContainerHelper.Contains('Emit-LoadRaxFrame -SlotPosition $SidSlot') -or
+        -not $appContainerHelper.Contains('ConditionCode 0x84 -Label $FailureLabel')) {
+        throw 'AppContainer helper must reject a success HRESULT that returned no SID.'
+    }
+    Write-Host 'PASS: NULL-DACL rejection and path-probe return-value preservation are statically guarded' -ForegroundColor Green
 
     New-Item -ItemType Directory -Path $buildRoot -Force | Out-Null
     Remove-Item -LiteralPath $childPidPath -Force -ErrorAction SilentlyContinue
