@@ -10,5 +10,5 @@ if (-not [IO.Directory]::Exists($buildRoot)) { throw 'Broker staging directory i
 [IO.File]::WriteAllText($pidPath, [string]$PID, [Text.Encoding]::ASCII)
 [IO.File]::WriteAllText($readyPath, 'ready', [Text.Encoding]::ASCII)
 [Console]::WriteLine('acl-crash-probe-ready')
-Start-Sleep -Seconds 60
+[Threading.Thread]::Sleep(60000)
 exit 0
