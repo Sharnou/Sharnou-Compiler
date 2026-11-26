@@ -239,6 +239,11 @@ try {
     $activeMarker = Join-Path $base 'crash-active-work.marker'
     Wait-ForCrashMarker -Phase 'ActiveWork' -WorkspacePath $workspaceRoot -JournalPath $journalRoot -ExecutionSid $executionSidB -MarkerPath $activeMarker
     $activeWorkspace = [System.IO.File]::ReadAllText($activeMarker)
+    $activeJournal = @(Get-ChildItem -LiteralPath $journalRoot -Filter '*.json' -File)
+    if ($activeJournal.Count -ne 1) { throw 'Expected one active journal before backup recovery test.' }
+    $simulatedBackup = $activeJournal[0].FullName + '.bak-' + [Guid]::NewGuid().ToString('N')
+    Copy-Item -LiteralPath $activeJournal[0].FullName -Destination $simulatedBackup
+    Assert-WorkspaceTest -Condition (Test-Path -LiteralPath $simulatedBackup -PathType Leaf) -Message 'simulated interrupted File.Replace leaves a uniquely named journal backup'
     Assert-WorkspaceTest -Condition (Test-Path -LiteralPath (Join-Path $activeWorkspace 'nested\payload.bin')) -Message 'active worker crash leaves test data for recovery'
     $activeRecovery = Recover-SharnouExecutionWorkspaces -WorkspaceRoot $workspaceRoot -JournalRoot $journalRoot -SupervisorSid $supervisorSid
     Assert-WorkspaceTest -Condition ($activeRecovery.Recovered -eq 1 -and $activeRecovery.Deleted -eq 1 -and -not (Test-Path -LiteralPath $activeWorkspace)) -Message 'crash recovery removes the entire per-execution tree'
@@ -307,7 +312,8 @@ try {
     $finalJournals = @(Get-ChildItem -LiteralPath $journalRoot -Filter '*.json' -File)
     $finalLeases = @(Get-ChildItem -LiteralPath $journalRoot -Filter '*.lease' -File)
     $finalTemps = @(Get-ChildItem -LiteralPath $journalRoot -Filter '*.json.tmp-*' -File)
-    Assert-WorkspaceTest -Condition ($finalJournals.Count -eq 0 -and $finalLeases.Count -eq 0 -and $finalTemps.Count -eq 0) -Message 'successful recovery leaves no journal, lease or temporary-file residue'
+    $finalBackups = @(Get-ChildItem -LiteralPath $journalRoot -Filter '*.json.bak-*' -File)
+    Assert-WorkspaceTest -Condition ($finalJournals.Count -eq 0 -and $finalLeases.Count -eq 0 -and $finalTemps.Count -eq 0 -and $finalBackups.Count -eq 0) -Message 'successful recovery leaves no journal, lease, temporary-file or backup residue'
 
     Write-Host ("Workspace transaction suite: {0} passed, {1} failed, {2} total." -f $script:Passed, $script:Failed, ($script:Passed + $script:Failed)) -ForegroundColor Green
     Write-Host 'DevAgent workspace security result: PASS' -ForegroundColor Green

@@ -203,7 +203,10 @@ function Write-SharnouWorkspaceJournal {
         $stream = $null
 
         if ([System.IO.File]::Exists($Path)) {
-            [System.IO.File]::Replace($temp, $Path, $null)
+            # .NET Framework requires a non-empty backup path for File.Replace.
+            $backup = $Path + '.bak-' + [Guid]::NewGuid().ToString('N')
+            [System.IO.File]::Replace($temp, $Path, $backup)
+            if ([System.IO.File]::Exists($backup)) { [System.IO.File]::Delete($backup) }
         }
         else {
             [System.IO.File]::Move($temp, $Path)
@@ -580,6 +583,116 @@ function Recover-SharnouExecutionWorkspaces {
             $raw = Get-Content -LiteralPath $journalPath -Raw -Encoding UTF8
             $recordObject = ConvertFrom-Json -InputObject $raw
             $record = Assert-SharnouJournalRecord -Record $recordObject -JournalPath $journalPath -WorkspaceRoot $roots.WorkspaceRoot -JournalRoot $roots.JournalRoot -SupervisorSid $roots.SupervisorSid
+            # File.Replace can leave its old-version backup if the worker dies
+            # after the atomic swap. Reclaim only matching regular files while the
+            # exclusive execution lease is held and the primary journal is present.
+            $backupPattern = [System.IO.Path]::GetFileName($journalPath) + '.bak-*'
+            foreach ($backupPath in [System.IO.Directory]::GetFiles($roots.JournalRoot, $backupPattern)) {
+                $backupName = [System.IO.Path]::GetFileName($backupPath)
+                if ($backupName -notmatch ('^' + [regex]::Escape($id) + '\.json\.bak-[0-9a-f]{32}            Assert-SharnouWorkspaceSlot -WorkspaceRoot $roots.WorkspaceRoot -WorkspacePath $record.WorkspacePath
+
+            if (Test-Path -LiteralPath $record.WorkspacePath -PathType Container) {
+                [void](Invoke-SharnouWorkspaceRollback -Record $record -WorkspaceRoot $roots.WorkspaceRoot -JournalPath $journalPath -LeaseStream $lease -KeepRestoredWorkspace:$KeepRestoredWorkspaces)
+                $lease = $null
+                $recovered++
+                if (-not $KeepRestoredWorkspaces) { $deleted++ }
+            }
+            else {
+                if ([System.IO.File]::Exists($journalPath)) { [System.IO.File]::Delete($journalPath) }
+                $lease.Dispose()
+                $lease = $null
+                if ([System.IO.File]::Exists($leasePath)) { [System.IO.File]::Delete($leasePath) }
+                $recovered++
+                $deleted++
+            }
+        }
+        catch {
+            $failed++
+            $errors.Add(("{0}: {1}" -f $journalPath, $_.Exception.Message))
+        }
+        finally {
+            if ($null -ne $lease) { $lease.Dispose() }
+        }
+    }
+
+    # A crash between exclusive lease creation and the first durable journal write
+    # leaves no workspace; orphan leases are safe to reclaim after acquiring them.
+
+    # Remove abandoned atomic-write temp files only while holding the execution
+    # lease. A temp file with no committed journal can exist only before any
+    # workspace is created, because PREPARING is committed before mkdir.
+    foreach ($tempPath in [System.IO.Directory]::GetFiles($roots.JournalRoot, '*.json.tmp-*')) {
+        $tempName = [System.IO.Path]::GetFileName($tempPath)
+        if ($tempName -notmatch '^([0-9a-f]{32})\.json\.tmp-[0-9a-f]{32}$') {
+            $failed++
+            $errors.Add(("{0}: invalid atomic journal temp filename" -f $tempPath))
+            continue
+        }
+        $tempId = $Matches[1]
+        $tempLeasePath = Get-SharnouWorkspaceLeasePath -JournalRoot $roots.JournalRoot -Id $tempId
+        $tempJournalPath = Get-SharnouWorkspaceJournalPath -JournalRoot $roots.JournalRoot -Id $tempId
+        $tempLease = $null
+        try {
+            $tempLease = [System.IO.File]::Open($tempLeasePath, [System.IO.FileMode]::OpenOrCreate, [System.IO.FileAccess]::ReadWrite, [System.IO.FileShare]::None)
+            if ([System.IO.File]::Exists($tempPath)) { [System.IO.File]::Delete($tempPath) }
+            $tempLease.Dispose()
+            $tempLease = $null
+            if (-not [System.IO.File]::Exists($tempJournalPath) -and [System.IO.File]::Exists($tempLeasePath)) {
+                [System.IO.File]::Delete($tempLeasePath)
+            }
+        }
+        catch [System.IO.IOException] {
+            $skippedActive++
+        }
+        catch {
+            $failed++
+            $errors.Add(("{0}: {1}" -f $tempPath, $_.Exception.Message))
+        }
+        finally {
+            if ($null -ne $tempLease) { $tempLease.Dispose() }
+        }
+    }
+
+    foreach ($leasePath in [System.IO.Directory]::GetFiles($roots.JournalRoot, '*.lease')) {
+        $id = [System.IO.Path]::GetFileNameWithoutExtension($leasePath)
+        $journalPath = Get-SharnouWorkspaceJournalPath -JournalRoot $roots.JournalRoot -Id $id
+        if ([System.IO.File]::Exists($journalPath)) { continue }
+        $orphanLease = $null
+        try {
+            $orphanLease = [System.IO.File]::Open($leasePath, [System.IO.FileMode]::Open, [System.IO.FileAccess]::ReadWrite, [System.IO.FileShare]::None)
+            $orphanLease.Dispose()
+            $orphanLease = $null
+            [System.IO.File]::Delete($leasePath)
+        }
+        catch [System.IO.IOException] {
+            $skippedActive++
+        }
+        catch {
+            $failed++
+            $errors.Add(("{0}: {1}" -f $leasePath, $_.Exception.Message))
+        }
+        finally {
+            if ($null -ne $orphanLease) { $orphanLease.Dispose() }
+        }
+    }
+
+    return [pscustomobject]@{
+        Recovered = $recovered
+        Deleted = $deleted
+        SkippedActive = $skippedActive
+        Failed = $failed
+        Errors = $errors.ToArray()
+    }
+}
+)) {
+                    throw "Unexpected workspace journal backup filename: $backupName"
+                }
+                $backupItem = Get-Item -LiteralPath $backupPath -Force
+                if (($backupItem.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+                    throw "Workspace journal backup is a reparse point: $backupPath"
+                }
+                [System.IO.File]::Delete($backupPath)
+            }
             Assert-SharnouWorkspaceSlot -WorkspaceRoot $roots.WorkspaceRoot -WorkspacePath $record.WorkspacePath
 
             if (Test-Path -LiteralPath $record.WorkspacePath -PathType Container) {

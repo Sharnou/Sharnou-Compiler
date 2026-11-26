@@ -180,3 +180,6 @@ Phase 2A implementation hardening notes:
 - Journal JSON is capped at 64 KiB on write and on both recovery reads.
 - Synthetic execution test SIDs use the AppContainer SID namespace prefix S-1-15-2-; this is a format gate only, not proof that Windows created the SID from an AppContainer profile.
 - Crash tests include the PREPARING state after mkdir, ACL_PENDING after the DACL write, RESTORING before/after DACL restoration, RESTORED before deletion, and active-work tree cleanup with a nested external junction.
+
+
+Windows CI finding and correction (2026-11-26): the first adversarial runner reached the journal transition and exposed that .NET Framework File.Replace rejects a null backup path. The journal writer now supplies a unique same-directory backup filename, deletes it after a successful swap, and recovery reclaims a leftover backup only while holding the execution lease. The adversarial suite seeds a simulated interrupted-replace backup and verifies recovery removes it. This correction is committed for a fresh Windows replay; it is not considered validated until that replay completes.
