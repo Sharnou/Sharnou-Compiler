@@ -1001,3 +1001,30 @@ DevAgent process broker phase 1 is implemented and tested:
 - Windows tests cover invalid IDs/timeouts, explicit opt-in, exit-code propagation, manifest tamper, script tamper, junction/reparse rejection, timeout and descendant cleanup.
 
 Security acceptance is still incomplete. Native CNG hashing, full canonical root/ancestor validation, restricted token/AppContainer and workspace ACLs, clean environment, bounded output capture, cancellation, and durable evidence journaling remain outstanding. The broker remains opt-in for test builds only; model-generated process execution remains DISABLED. No merge or release was performed.
+
+
+
+## Runtime ABI and DevAgent native broker - latest validated state, 2026-11-26
+
+Integrated PR #18 head `7a15892a944c747f9563961d7c050c909dd3d3a4` is draft/open/unmerged. Windows CI passed on the PR merge ref:
+- Stage 7A: 24/24.
+- Stage 5 collection imports: 2/2.
+- Stack probe/unwind: 6/6.
+- Runtime ABI: PASS. Nonvolatile register sentinels cover RBX, RBP, RSI, RDI, R12-R15; live RSP alignment is checked before/during/after calls; argument values and nested ordering are verified for 4, 5, 6, 8, and 16 integer arguments; the 17-parameter and 17-call-argument limits reject before PE output. Higher-arity Win32 API calls are exercised.
+- Frozen M1-M6 suite: 83/83 (Stage 2 25, Stage 4 20, PE verifier 4, Stage 5 25, Stage 6 9).
+- Combined result: PASS.
+
+Windows evidence:
+- Stage 7A / integrated suite: [45772104864](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45772104864).
+- Frozen M1-M6: [45772104661](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45772104661).
+
+DevAgent native process broker phase 1 is implemented and Windows-tested:
+- `sh_dev_run_tool(tool_id, timeout_ms)` is typed and only registered under explicit `-EnableDevAgentTools`; default compiler builds reject the capability.
+- Six fixed compiler-owned test tools; no caller-controlled command string, executable/script path, argv, or working directory.
+- Compiler-pinned SHA-256 tool manifest plus native Windows CNG SHA-256 verification of the selected script before `CreateProcessA`; its opened file handle is retained through child completion. Manifest tampering and script tampering fail closed.
+- PowerShell resolves from the absolute System32 directory; the workspace root is derived from the broker image path (`Build\\DevAgentBroker\\DevAgentBroker.exe`), not the inherited current directory. Test runs from a foreign working directory pass.
+- Checked workspace paths and opened script handles reject reparse points.
+- Child process starts suspended with handle inheritance disabled, joins a Job Object before resume, and is subject to kill-on-job-close, active-process, process-memory, job-memory, and timeout limits. Timeout terminates descendants.
+- Windows broker tests pass for explicit opt-in, manifest tamper, script tamper, foreign-CWD launch, reparse/junction rejection, invalid tool IDs/timeouts, exit-code propagation, timeout, and descendant termination.
+
+Security acceptance remains incomplete; model-generated process execution is DISABLED. Remaining work: final-path/ancestor canonicalization and ADS/UNC/device-path rejection; restricted token or AppContainer with workspace-only ACLs; clean environment and explicit DLL-search policy; bounded stdout/stderr capture and STARTUPINFOEX handle isolation; cooperative cancellation; durable evidence journal and restart recovery. This is a test-tool broker foundation, not yet a production sandbox. No merge, release, or executable publication occurred.
