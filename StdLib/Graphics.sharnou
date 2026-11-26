@@ -1,0 +1,3 @@
+// Sharnou graphics intrinsic module.
+// D3D11, window and graphics entry points are registered by the native Stage 0 compiler.
+// This module provides a stable import path; intrinsic signatures remain compiler-verified.

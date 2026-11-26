@@ -1,0 +1,9 @@
+// Milestone 5 collection foundation: four-element integer tuples.
+// Dynamic arrays, indexing, and heap-owned collections are later milestones.
+fn sh_std_vec4_sum4(a, b, c, d) {
+    return a + b + c + d;
+}
+
+fn sh_std_vec4_weighted_sum4(a, b, c, d) {
+    return a + (b * 2) + (c * 3) + (d * 4);
+}

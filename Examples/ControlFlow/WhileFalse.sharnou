@@ -1,0 +1,8 @@
+let value = 0;
+while (value > 0) {
+    print("must not execute");
+    value = value - 1;
+}
+if (value == 0) {
+    print("zero iterations");
+}
