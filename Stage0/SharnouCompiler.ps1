@@ -1329,6 +1329,7 @@ function Emit-DevBrokerRestoreSecurityDescriptor {
     $saclPresentSlot = $scratch + 0xD68
     $saclSlot = $scratch + 0xD70
     $saclDefaultedSlot = $scratch + 0xD78
+    $restoreStageSlot = $scratch + 0xE80
     $failed = New-UniqueLabel -Prefix 'dev_acl_restore_failed'
     $done = New-UniqueLabel -Prefix 'dev_acl_restore_done'
     Emit-StoreZero64Frame -SlotPosition $handleSlot
@@ -1337,6 +1338,7 @@ function Emit-DevBrokerRestoreSecurityDescriptor {
     }
     for ($i = 0; $i -lt 7; $i++) { Emit-StoreZero64Frame -SlotPosition ($fileInfoSlot + ($i * 8)) }
 
+    Emit-StoreBits32Frame -SlotPosition $restoreStageSlot -Value 1 # CreateFileA
     Emit-LeaRaxFrame -SlotPosition $PathSlot
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1, 0xBA, 0x00, 0x00, 0x0C, 0x00, 0x45, 0x33, 0xC0, 0x45, 0x33, 0xC9))
     Emit-Win64CallIat -TargetRva ([UInt32]0x30A0) -StackArguments @(
@@ -1350,6 +1352,7 @@ function Emit-DevBrokerRestoreSecurityDescriptor {
     Emit-JumpConditional -ConditionCode 0x84 -Label $failed
     Emit-StoreRaxFrame -SlotPosition $handleSlot
 
+    Emit-StoreBits32Frame -SlotPosition $restoreStageSlot -Value 2 # GetFileInformationByHandle + directory/reparse validation
     Emit-LoadRcxFrame -SlotPosition $handleSlot
     Emit-LeaRaxFrame -SlotPosition $fileInfoSlot
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC2))
@@ -1362,11 +1365,13 @@ function Emit-DevBrokerRestoreSecurityDescriptor {
     Emit-Bytes -Bytes ([byte[]]@(0xA9, 0x00, 0x04, 0x00, 0x00))
     Emit-JumpConditional -ConditionCode 0x85 -Label $failed
 
+    Emit-StoreBits32Frame -SlotPosition $restoreStageSlot -Value 3 # IsValidSecurityDescriptor
     Emit-LoadRcxFrame -SlotPosition $DescriptorSlot
     Emit-Win64CallIat -TargetRva ([UInt32]0x32F8) -StackArguments @()
     Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
     Emit-JumpConditional -ConditionCode 0x84 -Label $failed
 
+    Emit-StoreBits32Frame -SlotPosition $restoreStageSlot -Value 4 # GetSecurityDescriptorDacl
     Emit-LoadRcxFrame -SlotPosition $DescriptorSlot
     Emit-LeaRaxFrame -SlotPosition $daclPresentSlot
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC2))
@@ -1384,6 +1389,7 @@ function Emit-DevBrokerRestoreSecurityDescriptor {
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x85, 0xC0))
     Emit-JumpConditional -ConditionCode 0x84 -Label $failed
 
+    Emit-StoreBits32Frame -SlotPosition $restoreStageSlot -Value 5 # GetSecurityDescriptorSacl
     Emit-LoadRcxFrame -SlotPosition $DescriptorSlot
     Emit-LeaRaxFrame -SlotPosition $saclPresentSlot
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC2))
@@ -1395,6 +1401,7 @@ function Emit-DevBrokerRestoreSecurityDescriptor {
     Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
     Emit-JumpConditional -ConditionCode 0x84 -Label $failed
 
+    Emit-StoreBits32Frame -SlotPosition $restoreStageSlot -Value 6 # SetSecurityInfo(DACL | LABEL)
     Emit-LoadRcxFrame -SlotPosition $handleSlot
     Emit-Bytes -Bytes ([byte[]]@(0xBA, 0x01, 0x00, 0x00, 0x00, 0x41, 0xB8, 0x14, 0x00, 0x00, 0x00, 0x45, 0x33, 0xC9))
     Emit-Win64CallIat -TargetRva ([UInt32]0x32D0) -StackArguments @(
@@ -1405,6 +1412,7 @@ function Emit-DevBrokerRestoreSecurityDescriptor {
     Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
     Emit-JumpConditional -ConditionCode 0x85 -Label $failed
     Emit-StoreBits32Frame -SlotPosition $daclPresentSlot -Value 1
+    Emit-StoreBits32Frame -SlotPosition $restoreStageSlot -Value 0
     Emit-Jump -Label $done
 
     Mark-CodeLabel -Label $failed
@@ -3039,17 +3047,20 @@ function Emit-DevRunTool {
     Emit-Jump -Label $skipAclRollback
 
     Mark-CodeLabel -Label $aclRollbackRootFail
-    Emit-Bytes -Bytes ([byte[]]@(0xB8, 0x7F, 0xFF, 0xFF, 0xFF)) # -129: workspace-root descriptor restore failed
+    Emit-LoadEaxFrame -SlotPosition ($scratch + 0xE80)
+    Emit-Bytes -Bytes ([byte[]]@(0x89, 0xC2, 0xB8, 0x38, 0xFF, 0xFF, 0xFF, 0x29, 0xD0)) # -200 - restore stage
     Emit-StoreEaxFrame -SlotPosition $resultSlot
     Emit-Jump -Label $skipAclRollback
 
     Mark-CodeLabel -Label $aclRollbackBuildFail
-    Emit-Bytes -Bytes ([byte[]]@(0xB8, 0x7E, 0xFF, 0xFF, 0xFF)) # -130: Build descriptor restore failed
+    Emit-LoadEaxFrame -SlotPosition ($scratch + 0xE80)
+    Emit-Bytes -Bytes ([byte[]]@(0x89, 0xC2, 0xB8, 0x24, 0xFF, 0xFF, 0xFF, 0x29, 0xD0)) # -220 - restore stage
     Emit-StoreEaxFrame -SlotPosition $resultSlot
     Emit-Jump -Label $skipAclRollback
 
     Mark-CodeLabel -Label $aclRollbackBrokerFail
-    Emit-Bytes -Bytes ([byte[]]@(0xB8, 0x7D, 0xFF, 0xFF, 0xFF)) # -131: broker-directory descriptor restore failed
+    Emit-LoadEaxFrame -SlotPosition ($scratch + 0xE80)
+    Emit-Bytes -Bytes ([byte[]]@(0x89, 0xC2, 0xB8, 0x10, 0xFF, 0xFF, 0xFF, 0x29, 0xD0)) # -240 - restore stage
     Emit-StoreEaxFrame -SlotPosition $resultSlot
     Emit-Jump -Label $skipAclRollback
 
