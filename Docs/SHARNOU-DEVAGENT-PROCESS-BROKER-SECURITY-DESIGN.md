@@ -134,3 +134,22 @@ The broker is not permitted to execute arbitrary PowerShell, cmd.exe, downloaded
 - The historical PR #7 `sh_dev_run_process(String)` prototype remains rejected because it accepts raw command text, inherits standard handles, waits indefinitely, and has no allowlist or process-tree containment.
 - Remaining production-security gates: full canonical filesystem and executable-image final-path validation; ADS/UNC/device-path rejection; restricted token/AppContainer and workspace-only ACLs; clean environment and explicit DLL search policy; bounded stdout/stderr capture with handle allowlist; cancellation; durable audit journal/restart recovery.
 - Do not mark DevAgent autonomous or production-ready until every remaining adversarial gate above passes on the same Windows commit.
+
+## 10. Follow-on implementation checkpoint - 2026-11-26
+
+The follow-on branch `devagent-appcontainer-acl-output-20261126` is currently a **helper-scaffolding checkpoint**, not a sandbox implementation:
+- The compiler source declares an AppContainer-profile/SID helper and a DACL merge/revoke helper. Their IAT call targets were corrected to match the USERENV and ADVAPI32 import-table offsets.
+- PE verification recognizes the additional system DLLs and API names, and the broker regression contains static assertions for the helper declarations and their target RVAs.
+- These helpers are not currently invoked by the live `Emit-DevRunTool` emitter. The active child path therefore remains phase 1 and is not running inside an AppContainer or restricted primary token.
+- There is no runtime demonstration yet of AppContainer identity, denied access outside workspace, least-privilege ACLs, ACL revocation, or output-cap enforcement. Presence of API imports or helper declarations is not security evidence.
+
+The next implementation must not expose any model-facing execution path. It must complete the native child-creation transition atomically: create the restricted primary token; attach the no-capability AppContainer SECURITY_CAPABILITIES attribute; use STARTUPINFOEX with an explicit minimal handle list; apply only the required workspace DACL grants; create suspended; assign to the Job Object; resume only after every check succeeds; continuously drain stdout/stderr with a strict byte ceiling; terminate and confirm Job Object emptiness on timeout, overflow or failure; and revoke DACL grants before releasing the serialization lock.
+
+Known design risks requiring explicit resolution before acceptance:
+1. A persistent AppContainer profile SID plus temporary DACL ACEs can leave residual access if the broker crashes between grant and revoke. A named mutex serializes normal calls but is not crash recovery. Use a recoverable per-run security principal/ACL transaction or a durable recovery record that fail-closes access after restart.
+2. A static workspace-root DACL grant may be inherited by new descendants. Tests must prove the child can write only to the designated Build staging subtree and cannot modify source/tests or any parent directory.
+3. Passing a null environment block inherits the caller's environment. A sanitized environment block and DLL search hardening are still required.
+4. A pre-opened output file must be protected from reparse points and hard links before granting the AppContainer write ACL. The parent must retain an exclusive non-inherited handle and use that same handle for output persistence; reopening/CREATE_ALWAYS after sandbox execution would create a path race.
+5. Every termination path must wait for the Job Object to become empty before revoking ACLs. A failed wait must retain the failure state and must not be interpreted as successful cleanup.
+
+Until the runtime flow and adversarial Windows tests pass, the existing broker remains test-build opt-in only, and model-generated process execution remains DISABLED.
