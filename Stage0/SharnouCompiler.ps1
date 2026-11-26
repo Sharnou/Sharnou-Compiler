@@ -1404,6 +1404,7 @@ function Emit-DevBrokerRestoreSecurityDescriptor {
     )
     Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
     Emit-JumpConditional -ConditionCode 0x85 -Label $failed
+    Emit-StoreBits32Frame -SlotPosition $daclPresentSlot -Value 1
     Emit-Jump -Label $done
 
     Mark-CodeLabel -Label $failed
