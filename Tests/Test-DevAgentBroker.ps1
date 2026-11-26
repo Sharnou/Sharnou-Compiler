@@ -619,6 +619,53 @@ try {
     $recoveryNumericLines = @(Get-BrokerNumericLines -Lines $recoveryLines)
     $recoveryActual = ($recoveryNumericLines -join $nl).TrimEnd([char[]]@([char]13, [char]10))
     if ($recoveryExitCode -ne 0 -or -not [string]::Equals($recoveryActual, $expected, [StringComparison]::Ordinal)) {
+        # Preserve actionable evidence on a recovery regression before failing:
+        # inspect the committed journal's wire format and report exactly which
+        # descriptors remain at their transient or baseline SDDL.
+        try {
+            $journalBytes = [IO.File]::ReadAllBytes($journalPath)
+            if ($journalBytes.Length -ge 32) {
+                $journalMagic = [Text.Encoding]::ASCII.GetString($journalBytes, 0, 8)
+                $journalVersion = [BitConverter]::ToUInt32($journalBytes, 8)
+                $journalRootLength = [BitConverter]::ToUInt32($journalBytes, 16)
+                $journalBuildLength = [BitConverter]::ToUInt32($journalBytes, 20)
+                $journalBrokerLength = [BitConverter]::ToUInt32($journalBytes, 24)
+                $journalExpectedLength = [long]32 + $journalRootLength + $journalBuildLength + $journalBrokerLength
+                Write-Host ("ACL_RECOVERY_JOURNAL|bytes={0}|magic={1}|version={2}|root={3}|build={4}|broker={5}|expectedBytes={6}" -f
+                    $journalBytes.Length, $journalMagic, $journalVersion, $journalRootLength, $journalBuildLength, $journalBrokerLength, $journalExpectedLength)
+                foreach ($record in @(
+                    [pscustomobject]@{ Name = 'root'; Offset = 32; Length = $journalRootLength },
+                    [pscustomobject]@{ Name = 'build'; Offset = (32 + $journalRootLength); Length = $journalBuildLength },
+                    [pscustomobject]@{ Name = 'broker'; Offset = (32 + $journalRootLength + $journalBuildLength); Length = $journalBrokerLength }
+                )) {
+                    try {
+                        $rawDescriptor = [Security.AccessControl.RawSecurityDescriptor]::new($journalBytes, [int]$record.Offset)
+                        Write-Host ("ACL_RECOVERY_DESCRIPTOR|{0}|valid=true|dacl={1}|sacl={2}|length={3}" -f
+                            $record.Name, ($null -ne $rawDescriptor.DiscretionaryAcl), ($null -ne $rawDescriptor.SystemAcl), $record.Length)
+                    }
+                    catch {
+                        Write-Host ("ACL_RECOVERY_DESCRIPTOR|{0}|valid=false|error={1}" -f $record.Name, $_.Exception.Message)
+                    }
+                }
+            }
+            else {
+                Write-Host ("ACL_RECOVERY_JOURNAL|bytes={0}|too-short=true" -f $journalBytes.Length)
+            }
+        }
+        catch {
+            Write-Host ("ACL_RECOVERY_JOURNAL_READ_FAIL|{0}" -f $_.Exception.Message)
+        }
+        foreach ($aclPath in $aclPaths) {
+            try {
+                $currentSddl = Get-BrokerSecuritySddl -Path $aclPath
+                $sameBaseline = [string]::Equals($currentSddl, $aclBaseline[$aclPath], [StringComparison]::Ordinal)
+                $sameCrash = [string]::Equals($currentSddl, $aclDuringCrash[$aclPath], [StringComparison]::Ordinal)
+                Write-Host ("ACL_RECOVERY_PATH|{0}|baseline={1}|transient={2}" -f $aclPath, $sameBaseline, $sameCrash)
+            }
+            catch {
+                Write-Host ("ACL_RECOVERY_PATH_READ_FAIL|{0}|{1}" -f $aclPath, $_.Exception.Message)
+            }
+        }
         throw "Post-crash ACL recovery replay failed. Expected=[$expected] Actual=[$recoveryActual] ExitCode=$recoveryExitCode."
     }
     foreach ($aclPath in $aclPaths) {
