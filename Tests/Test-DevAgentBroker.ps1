@@ -454,6 +454,77 @@ try {
         Remove-Item -LiteralPath $foreignWorkingDirectory -Recurse -Force -ErrorAction SilentlyContinue
     }
 
+    # Exercise malformed-journal parsing while the workspace has its original
+    # ACLs. These are test-owned files, not active crash journals; never overwrite
+    # or discard a journal left by an interrupted execution.
+    if ((Test-Path -LiteralPath $journalPath) -or (Test-Path -LiteralPath $journalTempPath)) {
+        throw 'Successful broker execution did not retire its journal before malformed-input tests.'
+    }
+    $aclBeforeMalformedJournal = @{}
+    foreach ($aclPath in @($repoRoot, (Join-Path $repoRoot 'Build'), $buildRoot)) {
+        $aclBeforeMalformedJournal[$aclPath] = Get-BrokerSecuritySddl -Path $aclPath
+    }
+
+    # Header layout: SHAR | ACL1 | version=1 | flags=0 | three 20-byte
+    # descriptor lengths | reserved=0. 93 bytes is one byte longer than the
+    # declared 32 + 20 + 20 + 20 payload, so the trailing-data case must fail.
+    $wellFormedLengthHeader = [byte[]]::new(93)
+    [byte[]]$journalMagic = @(0x53, 0x48, 0x41, 0x52, 0x41, 0x43, 0x4C, 0x31)
+    [Array]::Copy($journalMagic, 0, $wellFormedLengthHeader, 0, $journalMagic.Length)
+    $wellFormedLengthHeader[8] = [byte]1
+    foreach ($lengthOffset in @(16, 20, 24)) {
+        $wellFormedLengthHeader[$lengthOffset] = [byte]0x14
+    }
+    $invalidJournalCases = @(
+        [pscustomobject]@{ Name = 'bad-signature'; Bytes = $null },
+        [pscustomobject]@{ Name = 'truncated-header'; Bytes = [byte[]]::new(31) },
+        [pscustomobject]@{ Name = 'trailing-data'; Bytes = $wellFormedLengthHeader }
+    )
+    $invalidJournalExpected = @('-100', '-101', '-119', '-119', '-119', '-119') -join $nl
+    foreach ($journalFault in $invalidJournalCases) {
+        $faultBytes = [byte[]]$journalFault.Bytes
+        if ($journalFault.Name -eq 'bad-signature') {
+            $faultBytes = [byte[]]::new($wellFormedLengthHeader.Length)
+            [Array]::Copy($wellFormedLengthHeader, $faultBytes, $wellFormedLengthHeader.Length)
+            $faultBytes[0] = [byte]0
+        }
+        try {
+            [IO.File]::WriteAllBytes($journalPath, $faultBytes)
+            Remove-Item -LiteralPath $childPidPath -Force -ErrorAction SilentlyContinue
+            Remove-Item -LiteralPath $crashChildPidPath -Force -ErrorAction SilentlyContinue
+            $invalidJournalLines = @(& $outputPath 2>&1)
+            $invalidJournalExitCode = $LASTEXITCODE
+            $invalidJournalNumeric = @(Get-BrokerNumericLines -Lines $invalidJournalLines)
+            $invalidJournalActual = ($invalidJournalNumeric -join $nl).TrimEnd([char[]]@([char]13, [char]10))
+            if ($invalidJournalExitCode -ne 0 -or
+                -not [string]::Equals($invalidJournalActual, $invalidJournalExpected, [StringComparison]::Ordinal)) {
+                throw "Malformed ACL journal '$($journalFault.Name)' was not rejected fail-closed. Expected=[$invalidJournalExpected] Actual=[$invalidJournalActual] ExitCode=$invalidJournalExitCode."
+            }
+            if (-not (Test-Path -LiteralPath $journalPath -PathType Leaf)) {
+                throw "Malformed ACL journal '$($journalFault.Name)' was deleted instead of retained for operator recovery."
+            }
+            if ((Test-Path -LiteralPath $childPidPath -PathType Leaf) -or
+                (Test-Path -LiteralPath $crashChildPidPath -PathType Leaf)) {
+                throw "Malformed ACL journal '$($journalFault.Name)' permitted a child process to start."
+            }
+            foreach ($aclPath in $aclBeforeMalformedJournal.Keys) {
+                $unchangedSddl = Get-BrokerSecuritySddl -Path $aclPath
+                if (-not [string]::Equals($unchangedSddl, $aclBeforeMalformedJournal[$aclPath], [StringComparison]::Ordinal)) {
+                    throw "Malformed ACL journal '$($journalFault.Name)' changed workspace security on $aclPath."
+                }
+            }
+            Write-Host ("PASS: malformed ACL journal rejected before child launch or ACL mutation ({0})" -f $journalFault.Name) -ForegroundColor Green
+        }
+        finally {
+            # This journal was created by this malformed-input test only. The
+            # earlier no-journal assertion proves it cannot be a live transaction.
+            Remove-Item -LiteralPath $journalPath -Force -ErrorAction SilentlyContinue
+        }
+    }
+    if (Test-Path -LiteralPath $journalTempPath) {
+        throw 'Malformed-journal tests unexpectedly created a temporary transaction file.'
+    }
+
     # Establish the clean post-invocation security-descriptor baseline before
     # inducing a real parent-process crash while an AppContainer child is running.
     if ((Test-Path -LiteralPath $journalPath) -or (Test-Path -LiteralPath $journalTempPath)) {
@@ -523,64 +594,6 @@ try {
         # Restore the exact already-verified normal broker image even if the
         # adversarial phase itself fails, so subsequent tests use the normal fixture.
         [IO.File]::WriteAllBytes($outputPath, $originalBrokerImage)
-    }
-
-    # Corrupt recovery records must be rejected before any ACL is changed or
-    # any child process is started. Restore the original committed journal bytes
-    # after each probe so the final replay can prove successful recovery.
-    $journalOriginalBytes = [IO.File]::ReadAllBytes($journalPath)
-    $invalidJournalExpected = @('-100', '-101', '-119', '-119', '-119', '-119') -join $nl
-    foreach ($journalFault in @('bad-signature', 'truncated', 'trailing-data')) {
-        $faultBytes = $null
-        switch ($journalFault) {
-            'bad-signature' {
-                $faultBytes = [byte[]]::new($journalOriginalBytes.Length)
-                [Array]::Copy($journalOriginalBytes, $faultBytes, $journalOriginalBytes.Length)
-                $faultBytes[0] = [byte]0
-            }
-            'truncated' {
-                if ($journalOriginalBytes.Length -lt 2) { throw 'Committed ACL journal is unexpectedly short.' }
-                $faultBytes = [byte[]]::new($journalOriginalBytes.Length - 1)
-                [Array]::Copy($journalOriginalBytes, $faultBytes, $faultBytes.Length)
-            }
-            'trailing-data' {
-                $faultBytes = [byte[]]::new($journalOriginalBytes.Length + 1)
-                [Array]::Copy($journalOriginalBytes, $faultBytes, $journalOriginalBytes.Length)
-                $faultBytes[$faultBytes.Length - 1] = [byte]0xA5
-            }
-            default { throw "Unknown journal adversarial case: $journalFault" }
-        }
-
-        try {
-            [IO.File]::WriteAllBytes($journalPath, $faultBytes)
-            Remove-Item -LiteralPath $childPidPath -Force -ErrorAction SilentlyContinue
-            Remove-Item -LiteralPath $crashChildPidPath -Force -ErrorAction SilentlyContinue
-            $invalidJournalLines = @(& $outputPath 2>&1)
-            $invalidJournalExitCode = $LASTEXITCODE
-            $invalidJournalNumeric = @(Get-BrokerNumericLines -Lines $invalidJournalLines)
-            $invalidJournalActual = ($invalidJournalNumeric -join $nl).TrimEnd([char[]]@([char]13, [char]10))
-            if ($invalidJournalExitCode -ne 0 -or
-                -not [string]::Equals($invalidJournalActual, $invalidJournalExpected, [StringComparison]::Ordinal)) {
-                throw "Malformed ACL journal '$journalFault' was not rejected fail-closed. Expected=[$invalidJournalExpected] Actual=[$invalidJournalActual] ExitCode=$invalidJournalExitCode."
-            }
-            if (-not (Test-Path -LiteralPath $journalPath -PathType Leaf)) {
-                throw "Malformed ACL journal '$journalFault' was deleted instead of retained for operator recovery."
-            }
-            if ((Test-Path -LiteralPath $childPidPath -PathType Leaf) -or
-                (Test-Path -LiteralPath $crashChildPidPath -PathType Leaf)) {
-                throw "Malformed ACL journal '$journalFault' permitted a child process to start."
-            }
-            foreach ($aclPath in $aclPaths) {
-                $stillQuarantinedSddl = Get-BrokerSecuritySddl -Path $aclPath
-                if (-not [string]::Equals($stillQuarantinedSddl, $aclDuringCrash[$aclPath], [StringComparison]::Ordinal)) {
-                    throw "Malformed ACL journal '$journalFault' caused a partial ACL rollback on $aclPath."
-                }
-            }
-            Write-Host ("PASS: malformed ACL journal rejected without child launch or partial rollback ({0})" -f $journalFault) -ForegroundColor Green
-        }
-        finally {
-            [IO.File]::WriteAllBytes($journalPath, $journalOriginalBytes)
-        }
     }
 
     $recoveryLines = @(& $outputPath 2>&1)
