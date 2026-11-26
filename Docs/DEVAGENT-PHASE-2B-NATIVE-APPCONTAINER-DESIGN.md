@@ -60,7 +60,7 @@ The journal directory remains inaccessible to the child. The child must never be
 The emitter/import-table work must account for these APIs (DLL ownership must be verified against the Windows SDK import libraries and actual runner):
 
 - USERENV.dll: `CreateAppContainerProfile`, `DeleteAppContainerProfile` (only for a profile created and owned by this execution).
-- KERNEL32.dll: `InitializeProcThreadAttributeList`, `UpdateProcThreadAttribute`, `DeleteProcThreadAttributeList`, `CreateProcessW`, `GetCurrentProcess`, `OpenProcessToken`, `GetProcessId`, `ResumeThread`, `TerminateProcess`, `CloseHandle`, `WaitForSingleObject`, `GetExitCodeProcess`, `GetLastError`, `HeapAlloc`, `HeapFree`, `GetEnvironmentStringsW` only if needed for safe filtering (prefer a constructed allowlist block).
+- KERNEL32.dll: `InitializeProcThreadAttributeList`, `UpdateProcThreadAttribute`, `DeleteProcThreadAttributeList`, `CreateProcessW`, `GetCurrentProcess`, `GetProcessId`, `ResumeThread`, `TerminateProcess`, `CloseHandle`, `WaitForSingleObject`, `GetExitCodeProcess`, `GetLastError`, `HeapAlloc`, `HeapFree`, `GetEnvironmentStringsW` only if needed for safe filtering (prefer a constructed allowlist block).
 - ADVAPI32.dll: `OpenProcessToken`, `GetTokenInformation`, `SetSecurityInfo` / `GetSecurityInfo` or the selected documented ACL API, and token APIs only in the separately gated restricted-token experiment.
 - Structures/constants requiring explicit x64 layout assertions: `STARTUPINFOEXW`, `STARTUPINFOW`, `PROCESS_INFORMATION`, `SECURITY_CAPABILITIES`, `SID_AND_ATTRIBUTES`, `JOBOBJECT_EXTENDED_LIMIT_INFORMATION`, `TOKEN_MANDATORY_LABEL`, and the selected token information buffers.
 
