@@ -1318,6 +1318,7 @@ function Emit-DevBrokerRestoreSecurityDescriptor {
     param(
         [int] $PathSlot,
         [int] $DescriptorSlot,
+        [bool] $RestoreLabel = $false,
         [string] $FailureLabel
     )
     $scratch = [int]$script:ActiveContext.ScratchPosition
@@ -1341,7 +1342,9 @@ function Emit-DevBrokerRestoreSecurityDescriptor {
 
     Emit-StoreBits32Frame -SlotPosition $restoreStageSlot -Value 1 # CreateFileA
     Emit-LeaRaxFrame -SlotPosition $PathSlot
-    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1, 0xBA, 0x00, 0x00, 0x0C, 0x00, 0x45, 0x33, 0xC0, 0x45, 0x33, 0xC9))
+    # Match the normal ACL-update handle: READ_CONTROL | WRITE_DAC | WRITE_OWNER,
+    # with full share access so Windows can propagate restored inheritable ACEs.
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1, 0xBA, 0x00, 0x00, 0x0E, 0x00, 0x41, 0xB8, 0x07, 0x00, 0x00, 0x00, 0x45, 0x33, 0xC9))
     Emit-Win64CallIat -TargetRva ([UInt32]0x30A0) -StackArguments @(
         @{ Kind = 'Immediate'; Value = 3 },
         @{ Kind = 'Immediate'; Value = 0x02200080 },
@@ -1390,25 +1393,36 @@ function Emit-DevBrokerRestoreSecurityDescriptor {
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x85, 0xC0))
     Emit-JumpConditional -ConditionCode 0x84 -Label $failed
 
-    Emit-StoreBits32Frame -SlotPosition $restoreStageSlot -Value 5 # GetSecurityDescriptorSacl
-    Emit-LoadRcxFrame -SlotPosition $DescriptorSlot
-    Emit-LeaRaxFrame -SlotPosition $saclPresentSlot
-    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC2))
-    Emit-LeaRaxFrame -SlotPosition $saclSlot
-    Emit-Bytes -Bytes ([byte[]]@(0x49, 0x89, 0xC0))
-    Emit-LeaRaxFrame -SlotPosition $saclDefaultedSlot
-    Emit-Bytes -Bytes ([byte[]]@(0x49, 0x89, 0xC1))
-    Emit-Win64CallIat -TargetRva ([UInt32]0x32E8) -StackArguments @()
-    Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
-    Emit-JumpConditional -ConditionCode 0x84 -Label $failed
+    if ($RestoreLabel) {
+        Emit-StoreBits32Frame -SlotPosition $restoreStageSlot -Value 5 # GetSecurityDescriptorSacl
+        Emit-LoadRcxFrame -SlotPosition $DescriptorSlot
+        Emit-LeaRaxFrame -SlotPosition $saclPresentSlot
+        Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC2))
+        Emit-LeaRaxFrame -SlotPosition $saclSlot
+        Emit-Bytes -Bytes ([byte[]]@(0x49, 0x89, 0xC0))
+        Emit-LeaRaxFrame -SlotPosition $saclDefaultedSlot
+        Emit-Bytes -Bytes ([byte[]]@(0x49, 0x89, 0xC1))
+        Emit-Win64CallIat -TargetRva ([UInt32]0x32E8) -StackArguments @()
+        Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
+        Emit-JumpConditional -ConditionCode 0x84 -Label $failed
+    }
 
-    Emit-StoreBits32Frame -SlotPosition $restoreStageSlot -Value 6 # SetSecurityInfo(DACL | LABEL)
+    Emit-StoreBits32Frame -SlotPosition $restoreStageSlot -Value 6 # SetSecurityInfo
     Emit-LoadRcxFrame -SlotPosition $handleSlot
-    Emit-Bytes -Bytes ([byte[]]@(0xBA, 0x01, 0x00, 0x00, 0x00, 0x41, 0xB8, 0x14, 0x00, 0x00, 0x00, 0x45, 0x33, 0xC9))
+    Emit-Bytes -Bytes ([byte[]]@(0xBA, 0x01, 0x00, 0x00, 0x00, 0x41, 0xB8))
+    if ($RestoreLabel) {
+        Emit-I32 -Value 0x14 # DACL_SECURITY_INFORMATION | LABEL_SECURITY_INFORMATION
+        $restoreSaclArgument = @{ Kind = 'FrameQword'; SlotPosition = $saclSlot }
+    }
+    else {
+        Emit-I32 -Value 0x04 # DACL_SECURITY_INFORMATION only; root label is never changed
+        $restoreSaclArgument = @{ Kind = 'Immediate'; Value = 0 }
+    }
+    Emit-Bytes -Bytes ([byte[]]@(0x45, 0x33, 0xC9))
     Emit-Win64CallIat -TargetRva ([UInt32]0x32D0) -StackArguments @(
         @{ Kind = 'Immediate'; Value = 0 },
         @{ Kind = 'FrameQword'; SlotPosition = $daclSlot },
-        @{ Kind = 'FrameQword'; SlotPosition = $saclSlot }
+        $restoreSaclArgument
     )
     Emit-StoreEaxFrame -SlotPosition $restoreErrorSlot # SetSecurityInfo returns a Win32 error code directly
     Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
@@ -1726,8 +1740,8 @@ function Emit-DevBrokerRecoverAclJournal {
 
     # Restore parents before descendants so each child snapshot wins after inheritance propagation.
     Emit-DevBrokerRestoreSecurityDescriptor -PathSlot $WorkspaceRootSlot -DescriptorSlot $RootDescriptorSlot -FailureLabel $failed
-    Emit-DevBrokerRestoreSecurityDescriptor -PathSlot $BuildPathSlot -DescriptorSlot $BuildDescriptorSlot -FailureLabel $failed
-    Emit-DevBrokerRestoreSecurityDescriptor -PathSlot $BrokerDirectorySlot -DescriptorSlot $BrokerDescriptorSlot -FailureLabel $failed
+    Emit-DevBrokerRestoreSecurityDescriptor -PathSlot $BuildPathSlot -DescriptorSlot $BuildDescriptorSlot -RestoreLabel $true -FailureLabel $failed
+    Emit-DevBrokerRestoreSecurityDescriptor -PathSlot $BrokerDirectorySlot -DescriptorSlot $BrokerDescriptorSlot -RestoreLabel $true -FailureLabel $failed
 
     Emit-LoadRcxFrame -SlotPosition $JournalHandleSlot
     Emit-Win64CallIat -TargetRva ([UInt32]0x30B8) -StackArguments @()
@@ -3037,8 +3051,8 @@ function Emit-DevRunTool {
     Emit-JumpConditional -ConditionCode 0x84 -Label $skipAclRollback
 
     Emit-DevBrokerRestoreSecurityDescriptor -PathSlot $workspaceRootSlot -DescriptorSlot $rootDescriptorSlot -FailureLabel $aclRollbackRootFail
-    Emit-DevBrokerRestoreSecurityDescriptor -PathSlot $buildPathSlot -DescriptorSlot $buildDescriptorSlot -FailureLabel $aclRollbackBuildFail
-    Emit-DevBrokerRestoreSecurityDescriptor -PathSlot $brokerDirectorySlot -DescriptorSlot $brokerDescriptorSlot -FailureLabel $aclRollbackBrokerFail
+    Emit-DevBrokerRestoreSecurityDescriptor -PathSlot $buildPathSlot -DescriptorSlot $buildDescriptorSlot -RestoreLabel $true -FailureLabel $aclRollbackBuildFail
+    Emit-DevBrokerRestoreSecurityDescriptor -PathSlot $brokerDirectorySlot -DescriptorSlot $brokerDescriptorSlot -RestoreLabel $true -FailureLabel $aclRollbackBrokerFail
 
     Emit-LeaRaxFrame -SlotPosition $journalPathSlot
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1))
