@@ -149,6 +149,10 @@ try {
         # Tamper with the fixed success tool after the PE is built. The embedded
         # SHA-256 must reject it before the script's exit 37 can execute.
         [IO.File]::AppendAllText($successScriptPath, "`r`n# intentional broker hash mismatch test`r`n", [Text.Encoding]::ASCII)
+        $tamperedFileSha256 = (Get-FileHash -LiteralPath $successScriptPath -Algorithm SHA256).Hash
+        $pinnedSuccessSha256 = [string](@($manifest.tools | Where-Object { [int]$_.id -eq 6 })[0].sha256)
+        if ($tamperedFileSha256 -ceq $pinnedSuccessSha256) { throw 'Test precondition failed: SuccessProbe content was not changed.' }
+        Write-Host ("DEVAGENT_TAMPERED_TOOL_SHA256|6|{0}" -f $tamperedFileSha256)
         Remove-Item -LiteralPath $childPidPath -Force -ErrorAction SilentlyContinue
         $tamperedLines = @(& $outputPath 2>&1)
         $tamperedExitCode = $LASTEXITCODE
