@@ -1,3 +1,0 @@
-// Compatibility import path for older Stage 5 test fixtures.
-// The implementation remains centralized in the repository-level StdLib module.
-import "../../StdLib/Collections.sharnou";
