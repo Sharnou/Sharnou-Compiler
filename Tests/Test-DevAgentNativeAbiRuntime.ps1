@@ -51,13 +51,13 @@ foreach ($structure in $manifest.structureLayouts) {
 }
 
 # These three structures are consumed directly by the Phase 2B.2 API calls.
-if (Get-SharnouMarshalSize -NativeType $types['SECURITY_CAPABILITIES'] -ne 24) {
+if ((Get-SharnouMarshalSize -NativeType $types['SECURITY_CAPABILITIES']) -ne 24) {
     throw 'SECURITY_CAPABILITIES runtime size is not 24 bytes.'
 }
-if (Get-SharnouMarshalOffset -NativeType $types['STARTUPINFOEXW'] -FieldName 'lpAttributeList' -ne 104) {
+if ((Get-SharnouMarshalOffset -NativeType $types['STARTUPINFOEXW'] -FieldName 'lpAttributeList') -ne 104) {
     throw 'STARTUPINFOEXW.lpAttributeList runtime offset is not 104.'
 }
-if (Get-SharnouMarshalSize -NativeType $types['PROCESS_INFORMATION'] -ne 24) {
+if ((Get-SharnouMarshalSize -NativeType $types['PROCESS_INFORMATION']) -ne 24) {
     throw 'PROCESS_INFORMATION runtime size is not 24 bytes.'
 }
 
