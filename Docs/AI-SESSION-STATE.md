@@ -1028,3 +1028,16 @@ DevAgent native process broker phase 1 is implemented and Windows-tested:
 - Windows broker tests pass for explicit opt-in, manifest tamper, script tamper, foreign-CWD launch, reparse/junction rejection, invalid tool IDs/timeouts, exit-code propagation, timeout, and descendant termination.
 
 Security acceptance remains incomplete; model-generated process execution is DISABLED. Remaining work: final-path/ancestor canonicalization and ADS/UNC/device-path rejection; restricted token or AppContainer with workspace-only ACLs; clean environment and explicit DLL-search policy; bounded stdout/stderr capture and STARTUPINFOEX handle isolation; cooperative cancellation; durable evidence journal and restart recovery. This is a test-tool broker foundation, not yet a production sandbox. No merge, release, or executable publication occurred.
+
+## AppContainer and workspace-ACL security tranche - 2026-11-26
+
+A follow-on branch `devagent-appcontainer-acl-output-20261126` is stacked on the draft phase-1 broker branch. This tranche corrects the native import-table targets for the AppContainer profile and DACL helper emitters, adds the relevant `USERENV.dll` / `ADVAPI32.dll` API names to the PE verifier allowlist, and adds static source assertions for the helper declarations and IAT mappings.
+
+Important scope boundary:
+- The AppContainer profile/SID and ACL-update helper functions are currently declarations in the compiler source. They are **not called by the live `Emit-DevRunTool` execution path**.
+- `CreateRestrictedToken`, `CreateProcessAsUserA`, AppContainer process attributes, actual workspace ACL grant/revoke, and bounded stdout/stderr capture are **not yet implemented as an end-to-end runtime path** in this commit.
+- No sandbox runtime or adversarial Windows test has passed for this tranche. The static assertions are not proof of runtime isolation.
+- The existing process broker remains an explicit opt-in test-only capability, and model-facing process execution remains **DISABLED**.
+- Do not merge the follow-on branch or mark the security target complete on this evidence.
+
+Required next gates: wire the restricted primary token and no-capability AppContainer into suspended process creation; apply and reliably revoke least-privilege workspace DACL entries; capture combined stdout/stderr through an explicit STARTUPINFOEX handle list under a hard byte cap; terminate and confirm the entire job on timeout/overflow/failure; then add adversarial Windows tests for token identity, denied filesystem/network access, ACL rollback/restart, handle isolation, output cap, timeout and descendant termination. Clean environment/DLL-search policy and durable evidence journaling remain separate gates.
