@@ -263,3 +263,15 @@ The linker now emits `.pdata` / `.xdata`, a PE exception directory, and a privat
 PR #17 now has Windows CI evidence for the runtime ABI tranche and frozen M1-M6 baseline on the same head: Stage 7A 24/24, collection imports 2/2, stack-probe/unwind 6/6, runtime ABI sentinel/alignment/argument/marshalling tests PASS, and M1-M6 83/83. Evidence: [45717111101](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45717111101) and [45717111040](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45717111040).
 
 The next dependency is the secure native process broker. The security contract is recorded in [SHARNOU-DEVAGENT-PROCESS-BROKER-SECURITY-DESIGN.md](SHARNOU-DEVAGENT-PROCESS-BROKER-SECURITY-DESIGN.md). The old raw-string `sh_dev_run_process(String)` prototype is explicitly rejected. The broker must use immutable tool IDs, exact script hashes, workspace confinement, a restricted token, suspended creation, Job Object process-tree containment, timeout/cancellation, bounded output, and adversarial tests. No model-controlled process execution is enabled.
+
+
+
+## 2026-11-26 - runtime ABI and broker phase 1 validated
+
+Integrated PR #18 head `7a15892a944c747f9563961d7c050c909dd3d3a4` passed Windows CI. Stage 7A 24/24, collection imports 2/2, stack-probe/unwind 6/6, Runtime ABI PASS, and the frozen M1-M6 suite 83/83. The ABI gate exercises all 16 supported integer arguments, RSP alignment, nonvolatile register sentinels, higher-arity Win32 APIs, and rejects arity 17.
+
+The native DevAgent test-tool process broker phase 1 is now implemented and validated: typed explicit-opt-in API, six fixed tool IDs, SHA-256-pinned manifest, native CNG script hashing, image-derived workspace path independent of CWD, reparse-point checks, suspended process creation, Job Object containment, memory/process limits, timeout, and descendant termination.
+
+Evidence: combined run [45772104864](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45772104864), frozen baseline run [45772104661](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45772104661). PR #18 remains draft/unmerged.
+
+Remaining work before any model-controlled execution: complete executable/workspace canonicalization and ADS/UNC/device rejection; restricted token/AppContainer and workspace-only ACLs; clean environment and DLL-search policy; bounded stdout/stderr capture with STARTUPINFOEX handle isolation; cancellation; durable tool evidence and restart recovery. Until those gates pass, the broker remains disabled for model-generated plans.
