@@ -134,3 +134,41 @@ The broker is not permitted to execute arbitrary PowerShell, cmd.exe, downloaded
 - The historical PR #7 `sh_dev_run_process(String)` prototype remains rejected because it accepts raw command text, inherits standard handles, waits indefinitely, and has no allowlist or process-tree containment.
 - Remaining production-security gates: full canonical filesystem and executable-image final-path validation; ADS/UNC/device-path rejection; restricted token/AppContainer and workspace-only ACLs; clean environment and explicit DLL search policy; bounded stdout/stderr capture with handle allowlist; cancellation; durable audit journal/restart recovery.
 - Do not mark DevAgent autonomous or production-ready until every remaining adversarial gate above passes on the same Windows commit.
+
+
+## 2026-11-26 - Phase 2A: crash-safe per-execution workspace transaction candidate
+
+Status: IMPLEMENTED IN THE PR #18 CANDIDATE BRANCH; WINDOWS ADVERSARIAL CI PENDING. This is a PowerShell 5.1 transaction prototype and test harness. It is not yet wired into the native process-broker emitter and does not complete the restricted-token/AppContainer gate.
+
+Candidate files:
+- Tests/DevAgentBroker/WorkspaceTransaction.ps1
+- Tests/DevAgentBroker/WorkspaceCrashChild.ps1
+- Tests/Test-DevAgentWorkspaceSecurity.ps1
+- .github/workflows/devagent-workspace-security.yml
+
+Transaction contract:
+1. Each execution receives a random 128-bit directory ID and a dedicated exec-<id> workspace. The caller supplies an execution SID (the planned AppContainer/package SID) and a supervisor SID.
+2. The dedicated workspace root must already have a protected DACL granting FullControl only to the supervisor and SYSTEM; the manager validates this precondition and never mutates that shared root. The dedicated journal root is hardened to the same supervisor/SYSTEM allowlist.
+3. The exclusive lease is created first. A durable PREPARING intent is committed atomically before workspace creation.
+4. After mkdir, the complete owner/group/DACL SDDL is captured. The journal advances to ACL_PENDING and is flushed before any restrictive DACL mutation.
+5. The per-execution DACL is protected from inheritance and contains only three FullControl principals: supervisor, that execution SID, and SYSTEM. The descriptor is verified before the journal advances to ACTIVE.
+6. Completion or recovery first commits RESTORING, restores the original DACL, verifies the complete owner/group/DACL SDDL, commits RESTORED, and only then deletes the execution tree and journal.
+7. Recovery acquires the per-execution exclusive lease. Live executions are skipped. Replaying PREPARING, ACL_PENDING, ACTIVE, RESTORING, or RESTORED is designed to be idempotent. An empty PREPARING directory can be deleted; a non-empty one without a captured descriptor fails closed.
+8. Journal writes use a same-directory temporary file, Flush(true), and atomic File.Move/File.Replace. Abandoned temporary and lease files are reclaimed only after obtaining the execution lease.
+
+Adversarial Windows test plan:
+- Two concurrent executions must have disjoint ACL identities and unique paths; active leases must block recovery.
+- Kill a worker process after directory creation, after ACL application, during rollback before ACL restore, and after ACL restore but before the final journal state. Recovery must restore the saved descriptor and safely finish cleanup.
+- A nested junction targeting an external sentinel directory must be unlinked without traversing or deleting its target.
+- Malformed journals, journal path redirection, execution-slot junctions, and orphan atomic-write artifacts must fail closed or be safely reclaimed.
+- Verify shared parent ACLs remain byte-for-byte unchanged and no journal/lease/temp artifacts remain after successful recovery.
+
+Boundaries and limitations:
+- The tests use valid AppContainer-shaped SIDs as ACL principals, but they do not create or validate a restricted primary token or an AppContainer process. ACL identity separation is not proof of process isolation.
+- The native broker still launches under the caller token. No token restriction, low-integrity label, AppContainer capability policy, network denial, clean environment, DLL search policy, bounded stdout/stderr capture, cancellation, or durable audit-evidence chain is implemented by this component.
+- This PowerShell prototype checks reparse-point attributes and never intentionally traverses a detected link during cleanup, but it does not provide handle-relative, race-free filesystem traversal. Native final-path and file-identity checks using opened handles remain mandatory.
+- The journal captures owner, group, and DACL, but does not read or modify SACL/audit entries. Owner and group are preserved; rollback applies the saved DACL and verifies the complete saved owner/group/DACL descriptor.
+- Flush(true) and atomic rename protect process-termination recovery; this candidate does not claim power-loss durability of parent-directory metadata.
+- The existing native broker still changes its process current directory to the image-derived workspace root. The new transaction manager does not alter or fix that native behavior.
+
+Do not enable model-generated process execution. Treat this phase as a testable rollback foundation only. Acceptance requires the new adversarial Windows workflow to pass on one exact commit, followed by native restricted-token/AppContainer integration and the remaining broker gates.

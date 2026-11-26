@@ -1,0 +1,44 @@
+name: Sharnou DevAgent Workspace Security
+
+on:
+  push:
+    branches:
+      - devagent-secure-process-broker-20261126
+  pull_request:
+    branches:
+      - Sharnou-Compiler
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-workspace-security:
+    runs-on: windows-2025
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Verify PowerShell source encoding
+        shell: powershell
+        run: |
+          $paths = @(
+            'Tests\DevAgentBroker\WorkspaceTransaction.ps1',
+            'Tests\DevAgentBroker\WorkspaceCrashChild.ps1',
+            'Tests\Test-DevAgentWorkspaceSecurity.ps1'
+          )
+          foreach ($path in $paths) {
+            $bytes = [IO.File]::ReadAllBytes((Join-Path $PWD $path))
+            if ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF) {
+              throw "UTF-8 BOM is not allowed: $path"
+            }
+            foreach ($byte in $bytes) {
+              if ($byte -gt 127) { throw "Non-ASCII source byte: $path" }
+            }
+          }
+          Write-Host 'PASS: workspace security scripts are ASCII without BOM.'
+
+      - name: Run crash-safe workspace and ACL rollback tests
+        shell: powershell
+        run: .\Tests\Test-DevAgentWorkspaceSecurity.ps1
