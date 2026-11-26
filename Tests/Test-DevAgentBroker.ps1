@@ -309,6 +309,12 @@ try {
         $actual = ($numericLines -join $nl).TrimEnd([char[]]@([char]13, [char]10))
         if ($exitCode -ne 0) { throw "Broker fixture process exited with code $exitCode. Output=[$actual]." }
         if (-not [string]::Equals($actual, $expected, [StringComparison]::Ordinal)) {
+            $timeoutDiagnosticPath = Join-Path $buildRoot 'timeout-probe-diagnostic.txt'
+            Write-Host ("DEVAGENT_TIMEOUT_MARKER_PRESENT|{0}" -f (Test-Path -LiteralPath $childPidPath -PathType Leaf))
+            if (Test-Path -LiteralPath $timeoutDiagnosticPath -PathType Leaf) {
+                $timeoutProbeDiagnostic = Get-Content -LiteralPath $timeoutDiagnosticPath -Raw -Encoding UTF8
+                Write-Host ("DEVAGENT_TIMEOUT_PROBE_DETAIL|{0}" -f $timeoutProbeDiagnostic)
+            }
             if (Test-Path -LiteralPath $capturedOutputPath -PathType Leaf) {
                 $diagnosticBytes = [IO.File]::ReadAllBytes($capturedOutputPath)
                 $diagnosticLength = [Math]::Min(4096, $diagnosticBytes.Length)
