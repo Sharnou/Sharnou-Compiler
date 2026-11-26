@@ -1172,7 +1172,7 @@ function Emit-DevRunTool {
     # Resolve the workspace from this broker image, never from inherited current-directory state.
     # The broker is accepted only from Build\\DevAgentBroker\\DevAgentBroker.exe.
     $modulePathLengthSlot = Get-TempSlotPosition -Depth ($BaseDepth + 8)
-    $imageSuffix = '\\Build\\DevAgentBroker\\DevAgentBroker.exe'
+    $imageSuffix = '\Build\DevAgentBroker\DevAgentBroker.exe'
     $imageSuffixLength = [System.Text.Encoding]::ASCII.GetByteCount($imageSuffix)
     $imageSuffixItem = Register-DataConstant -Value $imageSuffix
     Emit-Bytes -Bytes ([byte[]]@(0x31, 0xC9)) # RCX = NULL module handle
