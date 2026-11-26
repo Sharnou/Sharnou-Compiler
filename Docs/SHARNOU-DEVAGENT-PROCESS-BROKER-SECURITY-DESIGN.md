@@ -153,3 +153,38 @@ Known design risks requiring explicit resolution before acceptance:
 5. Every termination path must wait for the Job Object to become empty before revoking ACLs. A failed wait must retain the failure state and must not be interpreted as successful cleanup.
 
 Until the runtime flow and adversarial Windows tests pass, the existing broker remains test-build opt-in only, and model-generated process execution remains DISABLED.
+
+## 11. Live sandbox integration candidate - 2026-11-26
+
+The branch `devagent-sandbox-runtime-20261126` connects the previously staged security primitives into the live `Emit-DevRunTool` emitter. The following is source implementation status, **not runtime acceptance**:
+
+- The broker opens the current process token with the primary-token rights it needs, calls `CreateRestrictedToken(DISABLE_MAX_PRIVILEGE)`, and supplies the resulting restricted primary token to `CreateProcessAsUserA`.
+- A profile SID is created/derived under a stable package name. No capabilities are declared in `SECURITY_CAPABILITIES`. The suspended child is assigned to the Job Object, then its primary token is queried for AppContainer identity, restrictions, and zero declared capabilities before the thread resumes.
+- `STARTUPINFOEX` is sized with the documented NULL-list sizing call, validates `ERROR_INSUFFICIENT_BUFFER`, caps the attribute list allocation at 4096 bytes, and initializes two attributes: `SECURITY_CAPABILITIES` and `HANDLE_LIST`.
+- The handle list explicitly contains only NUL stdin and the pipe writer used for merged stdout/stderr. The read handle and exclusive output-file handle are parent-only.
+- The ACL helper opens directories with backup semantics and `OPEN_REPARSE_POINT`, validates the opened handle as a non-reparse directory, obtains the existing DACL with `GetSecurityInfo`, merges the package SID ACE with `SetEntriesInAclA`, and updates that same opened object with `SetSecurityInfo`.
+- Package DACL policy is read/execute on the workspace root and read/write/execute on `Build` plus `Build\\DevAgentBroker`.
+- AppContainer processes run at Low IL. Mandatory Integrity Control is evaluated before the DACL, so the writable Build folders also receive a Low IL mandatory label with `NO_WRITE_UP` and inheritable OI/CI flags. The source workspace root is intentionally not relabeled.
+- Stdout and stderr share one pipe. The parent continuously drains it; each read is limited to the remaining bytes in the 1 MiB buffer. Once the buffer is full, any additional available byte causes whole-job termination and the overflow status. Captured bytes are persisted through the same exclusive output handle, not by reopening the path.
+- The child is created suspended, assigned to the Job Object, verified, and then resumed. Timeout, capture overflow, and failure paths terminate the job and wait for it to become empty before common cleanup proceeds.
+
+The native import-table layout was statically re-audited on this branch: 16 descriptors, 66 unique APIs, non-overlapping lookup arrays and IAT arrays including each module's zero terminator, and all emitted IAT calls resolving to declared slots. Static checks do not replace a native PE build or Windows execution.
+
+### Required runtime and residual security acceptance
+
+No Windows Actions result has yet validated this branch. Keep the candidate draft and model-facing process execution disabled until all of the following have positive Windows evidence:
+1. Native PE generation and PE verification with the expanded imports.
+2. AppContainer identity and restricted-token assertions in the actual child before resume.
+3. Positive Build staging write and negative Tests/source write, including parent/child path escapes and reparse/junction attacks.
+4. Exact 1 MiB output persistence from a 1 MiB + 1 byte probe, then whole-job termination and Job Object emptiness; also no deadlock under large simultaneous stdout/stderr.
+5. Repeat-run, timeout, setup-failure and cleanup behavior with no leaked processes/handles or unintended DACL changes.
+6. Network denial and explicit cancellation tests.
+
+Known hard gaps:
+- The current package SID is stable and workspace ACL grants are persistent. There is no per-run security identity, transactional grant/revoke, or durable crash-recovery journal yet. A broker crash can leave the package SID's access ACEs behind. This is not an acceptable final production state.
+- `CreateProcessAsUserA` currently receives a NULL environment block, which inherits the broker environment. A minimal sanitized environment block and explicit DLL-search policy remain required.
+- Canonical final-path resolution and elimination of ancestor TOCTOU races remain incomplete. Current path and handle checks are defense-in-depth, not a complete race-free filesystem capability boundary.
+- Network isolation and cancellation are not yet adversarially validated. Declaring zero AppContainer capabilities is not sufficient proof that all network paths are inaccessible.
+- No model-generated plan may invoke this broker. It remains explicit-opt-in test tooling only.
+
+Status: **IMPLEMENTATION CANDIDATE / WINDOWS RUNTIME VALIDATION PENDING / NOT SECURITY-ACCEPTED**. No merge, release, or executable publication is authorized by this checkpoint.
