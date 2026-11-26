@@ -464,7 +464,7 @@ PR #17 remains OPEN and UNMERGED. This is Windows CI evidence, not user-local Wi
 
 The broker security design is now recorded in `Docs/SHARNOU-DEVAGENT-PROCESS-BROKER-SECURITY-DESIGN.md`. It defines a typed `sh_dev_run_tool(tool_id, timeout_ms)` API, immutable tool descriptors, SHA-256 allowlisting, canonical workspace confinement, restricted execution, suspended process creation, Job Object containment, timeout/cancellation, bounded output, and adversarial tests.
 
-The historical PR #7 raw-command process intrinsic remains rejected and must not be reused. Native broker implementation has NOT started; model-controlled process execution remains DISABLED until all security gates pass.
+The historical PR #7 raw-command process intrinsic remains rejected and must not be reused. Native broker phase 1 is implemented on isolated PR #18; the full production security boundary remains incomplete and model-controlled process execution remains DISABLED.
 
 
 ## Issue #14 - DevAgent autonomous development broker status - 2026-11-26
@@ -477,3 +477,17 @@ PR #18 head `2ee44cef7f3d67b4ccdc26aa391a9e789197197b` passed Windows CI:
 Evidence: Stage 7A / combined [45724983298](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45724983298); frozen baseline [45724983299](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45724983299); draft PR [#18](https://github.com/Sharnou/Sharnou-Compiler/pull/18).
 
 Status: PHASE 1 IMPLEMENTED; NOT PRODUCTION-SECURE / NOT MODEL-ENABLED. Remaining blockers: native CNG hashing, complete canonical path/ancestor confinement, restricted token or AppContainer with workspace ACLs, clean environment and DLL search policy, bounded stdout/stderr capture, cancellation, and durable evidence journal/restart recovery. Keep model-controlled process execution disabled until every gate passes.
+
+
+
+## Issue #14 - latest ABI and secure broker verification - 2026-11-26
+
+This entry supersedes the earlier 2ee44... status note. Integrated PR #18 head `7a15892a944c747f9563961d7c050c909dd3d3a4` passed Windows CI:
+- Stage 7A 24/24; Stage 5 collection imports 2/2; stack probe/unwind 6/6.
+- Runtime ABI PASS, including RBX/RBP/RSI/RDI/R12-R15 sentinels, live RSP alignment, values/nested ordering for 4/5/6/8/16 integer arguments, and fail-closed rejection of 17 parameters and 17 call arguments.
+- Frozen M1-M6 baseline 83/83.
+- Native DevAgent broker phase 1 PASS: default-disabled typed API, six immutable test-tool IDs, pinned manifest, CNG SHA-256 before process launch, open file handle retained during execution, image-relative workspace discovery independent of CWD, path and opened-file reparse checks, suspended launch, Job Object limits, timeout and descendant termination.
+
+Evidence: combined Windows run [45772104864](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45772104864); frozen baseline [45772104661](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45772104661); PR [#18](https://github.com/Sharnou/Sharnou-Compiler/pull/18).
+
+Status: PHASE 1 IMPLEMENTED / SECURITY ACCEPTANCE INCOMPLETE. Native CNG hashing and image-relative workspace derivation are implemented and tested. Remaining blockers are complete final-path/ancestor canonicalization, ADS/UNC/device-path rejection, restricted token or AppContainer plus workspace ACLs, clean environment/DLL-search policy, bounded stdout/stderr capture with explicit handle list, cooperative cancellation, and durable evidence journal/restart recovery. The broker is still test-build opt-in; model-generated process execution remains DISABLED. PR #18 stays draft and unmerged.
