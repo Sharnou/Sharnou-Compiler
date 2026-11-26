@@ -279,13 +279,16 @@ try {
     # the post-recovery checks have borrowed that buffer.
     $rootPreflight = $brokerEmitterSource.IndexOf('Emit-DevBrokerPathCheck -FrameSlot $workspaceRootSlot', [StringComparison]::Ordinal)
     $buildPreflight = $brokerEmitterSource.IndexOf('Emit-DevBrokerPathCheck -FrameSlot $buildPathSlot', [StringComparison]::Ordinal)
-    $journalPathRebuild = $brokerEmitterSource.IndexOf('DestinationSlot $journalPathSlot', $recoveryCall, [StringComparison]::Ordinal)
+    $compilerPreflight = $brokerEmitterSource.IndexOf('Emit-DevBrokerPathCheck -FrameSlot $pathScratchSlot -IsDirectory $false', $recoveryCall, [StringComparison]::Ordinal)
     $workingDirectorySet = $brokerEmitterSource.IndexOf('# SetCurrentDirectoryA', $recoveryCall, [StringComparison]::Ordinal)
+    $scriptHashVerification = $brokerEmitterSource.IndexOf('Emit-DevBrokerVerifyScript', $recoveryCall, [StringComparison]::Ordinal)
+    $journalPathRebuild = $brokerEmitterSource.IndexOf('DestinationSlot $journalPathSlot', $scriptHashVerification, [StringComparison]::Ordinal)
     if ($rootPreflight -lt 0 -or $rootPreflight -gt $recoveryCall -or
-        $buildPreflight -le $recoveryCall -or
-        $journalPathRebuild -le $buildPreflight -or
-        $workingDirectorySet -le $journalPathRebuild) {
-        throw 'Crash recovery must precede descendant path checks, and the journal destination must be rebuilt after shared scratch-buffer use.'
+        $buildPreflight -le $recoveryCall -or $compilerPreflight -le $buildPreflight -or
+        $workingDirectorySet -le $compilerPreflight -or
+        $scriptHashVerification -le $workingDirectorySet -or
+        $journalPathRebuild -le $scriptHashVerification) {
+        throw 'Recovery must precede descendant checks and tool hashing; rebuild the journal destination after path/hash code borrows the shared scratch buffer.'
     }
     foreach ($requiredJournalApi in @('MoveFileExA', 'FlushFileBuffers', 'Emit-DevBrokerRestoreSecurityDescriptor', 'IsValidSecurityDescriptor', '0x80200002')) {
         if (-not $compilerSource.Contains($requiredJournalApi)) { throw "Crash-safe ACL journal component missing: $requiredJournalApi" }
