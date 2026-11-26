@@ -2384,8 +2384,8 @@ $dataRawSize = Align-Up -Value $dataBytes.Length -Alignment 0x200
 # stay stable within .idata. Lookup tables use the disjoint 0x500-0x610 range;
 # no lookup table may overlap any IAT slot or import-by-name string. Emit-CallIat rebases target RVAs after section placement.
 $idata = [byte[]]::new(0x1000)
-# Lookup tables occupy 0x700..0x8D0. Keep twelve import descriptors and the null terminator
-# in a separate 0xA00..0xB18 range.
+# Lookup tables occupy 0x700..0x8D8. Keep twelve import descriptors and the null terminator
+# in a separate 0xA00..0xB04 range.
 $descriptorBase = 0xA00
 $importDirectorySize = 0x104
 if (($descriptorBase + $importDirectorySize) -gt $idata.Length) { throw 'Import descriptor table exceeds .idata storage.' }
