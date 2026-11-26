@@ -1440,7 +1440,7 @@ function Emit-DevRunTool {
     $captureSuffixLength = [System.Text.Encoding]::ASCII.GetByteCount($captureSuffix)
 
     $manifestPath = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\Tests\DevAgentBroker\tool-manifest.json'))
-    $expectedManifestSha256 = 'MANIFEST_SHA256_PLACEHOLDER'
+    $expectedManifestSha256 = 'AD3A5222593E088D9B22B75580903AAC3571C07FABA59A0E0279408B5DF8E050'
     if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) { throw 'Pinned DevAgent tool manifest is missing.' }
     $actualManifestSha256 = (Get-FileHash -LiteralPath $manifestPath -Algorithm SHA256).Hash
     if ($actualManifestSha256 -cne $expectedManifestSha256) {
@@ -1799,7 +1799,7 @@ function Emit-DevRunTool {
     Emit-LoadRaxFrame -SlotPosition $attributeListSlot
     Emit-StoreRaxFrame -SlotPosition ($startupSlot + 104)
 
-    # JOB_OBJECT_EXTENDED_LIMIT_INFORMATION: kill-on-close, four-process limit, 256/512 MiB.
+    # JOB_OBJECT_EXTENDED_LIMIT_INFORMATION: KILL_ON_JOB_CLOSE | ACTIVE_PROCESS | PROCESS_MEMORY | JOB_MEMORY (0x2308).
     for ($i = 0; $i -lt 18; $i++) { Emit-StoreZero64Frame -SlotPosition ($jobInfoSlot + ($i * 8)) }
     Emit-StoreBits32Frame -SlotPosition ($jobInfoSlot + 16) -Value 0x2308
     Emit-StoreBits32Frame -SlotPosition ($jobInfoSlot + 40) -Value 4 # ActiveProcessLimit
