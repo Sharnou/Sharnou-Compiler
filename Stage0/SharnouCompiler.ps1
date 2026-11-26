@@ -1465,7 +1465,7 @@ function Emit-DevRunTool {
     $captureSuffixLength = [System.Text.Encoding]::ASCII.GetByteCount($captureSuffix)
 
     $manifestPath = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\Tests\DevAgentBroker\tool-manifest.json'))
-    $expectedManifestSha256 = 'AD3A5222593E088D9B22B75580903AAC3571C07FABA59A0E0279408B5DF8E050'
+    $expectedManifestSha256 = '9D9F0B834BE059C282688745A6E0B87F0778903EC38C6BE7DD75FB656073A1F2'
     if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) { throw 'Pinned DevAgent tool manifest is missing.' }
     $actualManifestSha256 = (Get-FileHash -LiteralPath $manifestPath -Algorithm SHA256).Hash
     if ($actualManifestSha256 -cne $expectedManifestSha256) {
