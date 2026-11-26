@@ -170,10 +170,10 @@ try {
     $applicationPointer = New-SharnouTrackedUnicodeString -Value $childImage -Allocations $allocations
     $commandLinePointer = New-SharnouTrackedUnicodeString -Value ('"' + $childImage + '"') -Allocations $allocations
     $currentDirectoryPointer = New-SharnouTrackedUnicodeString -Value $systemDirectory -Allocations $allocations
-    $environmentPointer = New-SharnouTrackedEnvironmentBlock -Entries @(
-        ('SystemRoot=' + $env:SystemRoot),
-        ('WINDIR=' + $env:SystemRoot)
-    ) -Allocations $allocations
+    # A NULL environment inherits the runner block. This fixture keeps the child thread
+    # suspended and terminates it before user-mode entry, so no code can read this block.
+    # The production broker must still supply a separately reviewed clean environment.
+    $environmentPointer = [IntPtr]::Zero
 
     $startupSize = Get-SharnouMarshalSize -NativeType $types['STARTUPINFOEXW']
     $processInformationSize = Get-SharnouMarshalSize -NativeType $types['PROCESS_INFORMATION']
