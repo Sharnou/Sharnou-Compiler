@@ -119,7 +119,7 @@ Stop immediately if the required USERENV/ADVAPI32 imports or Windows SDK declara
 
 ## 10. Phase 2B.1 - native API and x64 ABI contract
 
-Status: CONTRACT IMPLEMENTED; WINDOWS SDK / IMPORT-MAP VALIDATION PENDING. No native imports or process-creation emitter instructions have been added in this phase.
+Status: PHASE 2B.1 CONTRACT VALIDATED ON WINDOWS. GitHub Actions run 45909475426 passed on code commit 631c75c78f89c0ff19dfc17c84d772f31bfbee7f using Windows Server 2025 / Windows SDK 10.0.26100.0. No native imports or process-creation emitter instructions have been added in this phase.
 
 Candidate artifacts:
 - `Tests/DevAgentBroker/native-abi-manifest.json`: observed import-table groups, planned Win32 API-to-DLL map, API signatures, token information class IDs, process-attribute constants, and x64 structure field/offset/size expectations.
@@ -158,3 +158,6 @@ Source references:
 - Handle-list inheritance requirement: https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-updateprocthreadattribute
 - Writable CreateProcessW command line: https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-createprocessw
 - Token information and AppContainer SID: https://learn.microsoft.com/en-us/windows/win32/api/securitybaseapi/nf-securitybaseapi-gettokeninformation
+
+
+Windows Phase 2B.1 contract evidence (2026-11-26): run 45909475426 completed successfully. The runner checked 53 x64 structure fields across 10 aggregate structures, all 12 existing PE import groups, all 44 existing IAT entries, all 17 planned API declarations and three token-information class values. The test checked the actual installed Windows SDK headers and calculated the ABI layouts under the Windows x64 pointer-size-8 / default-pack-8 model. It explicitly did not compile a native probe, execute sizeof/offsetof code, create a PE, or launch a process. The SDK uses conditional-compilation arms inside SECURITY_CAPABILITIES; the test validates each member declaration and models the field layout separately rather than comparing mutually exclusive preprocessor branches as if they were one sequential C declaration.
