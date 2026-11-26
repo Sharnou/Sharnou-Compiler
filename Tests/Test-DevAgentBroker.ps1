@@ -15,10 +15,18 @@ function Get-BrokerNumericLines {
     return $numeric.ToArray()
 }
 
+function Get-BrokerDaclSddl {
+    param([Parameter(Mandatory = $true)][string] $Path)
+    $security = Get-Acl -LiteralPath $Path
+    return $security.GetSecurityDescriptorSddlForm([Security.AccessControl.AccessControlSections]::Access)
+}
+
 $repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $compilerPath = Join-Path $repoRoot 'Stage0\SharnouCompiler.ps1'
 $verifierPath = Join-Path $repoRoot 'Tools\SharnouPEVerify.ps1'
 $fixturePath = Join-Path $PSScriptRoot 'DevAgentBroker\DevAgentBroker.sharnou'
+$crashHarnessPath = Join-Path $PSScriptRoot 'DevAgentBroker\CrashHarness.sharnou'
+$crashProbeScriptPath = Join-Path $PSScriptRoot 'DevAgentBroker\CrashProbe.ps1'
 $timeoutScriptPath = Join-Path $PSScriptRoot 'DevAgentBroker\TimeoutProbe.ps1'
 $toolManifestPath = Join-Path $PSScriptRoot 'DevAgentBroker\tool-manifest.json'
 $successScriptPath = Join-Path $PSScriptRoot 'DevAgentBroker\SuccessProbe.ps1'
@@ -32,6 +40,10 @@ $childPidPath = Join-Path $buildRoot 'child.pid'
 $sandboxMarkerPath = Join-Path $buildRoot 'sandbox-write-probe.ok'
 $deniedMarkerPath = Join-Path $PSScriptRoot 'DevAgentBroker\denied-write-probe.tmp'
 $capturedOutputPath = Join-Path $buildRoot 'captured-output.bin'
+$journalPath = Join-Path $repoRoot '.sharnou-devagent-acl.journal'
+$journalTempPath = Join-Path $repoRoot '.sharnou-devagent-acl.journal.tmp'
+$crashChildPidPath = Join-Path $buildRoot 'acl-crash-child.pid'
+$crashReadyPath = Join-Path $buildRoot 'acl-crash-ready.marker'
 $nl = [string][char]10
 $expected = @('-100', '-101', '37', '-110', '0', '-114') -join $nl
 $originalLocation = Get-Location
@@ -43,7 +55,8 @@ $toolHashInputs = @(
     [pscustomobject]@{ Id = 5; Path = 'Tests\DevAgentBroker\TimeoutProbe.ps1' },
     [pscustomobject]@{ Id = 6; Path = 'Tests\DevAgentBroker\SuccessProbe.ps1' },
     [pscustomobject]@{ Id = 7; Path = 'Tests\DevAgentBroker\SandboxProbe.ps1' },
-    [pscustomobject]@{ Id = 8; Path = 'Tests\DevAgentBroker\OverflowProbe.ps1' }
+    [pscustomobject]@{ Id = 8; Path = 'Tests\DevAgentBroker\OverflowProbe.ps1' },
+    [pscustomobject]@{ Id = 9; Path = 'Tests\DevAgentBroker\CrashProbe.ps1' }
 )
 
 try {
@@ -64,7 +77,7 @@ try {
         Write-Host ("DEVAGENT_TOOL_SHA256|{0}|{1}|{2}" -f $tool.Id, $tool.Path, $toolHash)
     }
     Set-Location -LiteralPath $repoRoot
-    foreach ($required in @($compilerPath, $verifierPath, $fixturePath, $timeoutScriptPath, $successScriptPath, $sandboxScriptPath, $overflowScriptPath, $disabledFixturePath, $toolManifestPath)) {
+    foreach ($required in @($compilerPath, $verifierPath, $fixturePath, $crashHarnessPath, $crashProbeScriptPath, $timeoutScriptPath, $successScriptPath, $sandboxScriptPath, $overflowScriptPath, $disabledFixturePath, $toolManifestPath)) {
         if (-not (Test-Path -LiteralPath $required -PathType Leaf)) { throw "Required broker test input is missing: $required" }
     }
     $compilerSource = [IO.File]::ReadAllText($compilerPath)
@@ -162,8 +175,8 @@ try {
         }
     }
     $iatEnd = ($iatRanges | Measure-Object -Property End -Maximum).Maximum
-    if ($iatEnd -ne 0x300 -or -not $compilerSource.Contains('Value 0x290')) {
-        throw "Import Address Table extent must include the final zero thunk through offset 0x300; actual end=$('{0:X}' -f $iatEnd)."
+    if ($iatEnd -ne 0x330 -or -not $compilerSource.Contains('Value 0x2C0')) {
+        throw "Import Address Table extent must include the final zero thunk through offset 0x330; actual end=$('{0:X}' -f $iatEnd)."
     }
     Write-Host 'PASS: import lookup and IAT arrays are disjoint, including each module terminator' -ForegroundColor Green
 
@@ -172,7 +185,13 @@ try {
         'TargetRva ([UInt32]0x3280)', # DeriveAppContainerSidFromAppContainerName
         'TargetRva ([UInt32]0x32C8)', # GetSecurityInfo
         'TargetRva ([UInt32]0x3298)', # SetEntriesInAclA
-        'TargetRva ([UInt32]0x32D0)'  # SetSecurityInfo
+        'TargetRva ([UInt32]0x32D0)', # SetSecurityInfo
+        'TargetRva ([UInt32]0x32E0)', # GetSecurityDescriptorDacl
+        'TargetRva ([UInt32]0x32E8)', # GetSecurityDescriptorSacl
+        'TargetRva ([UInt32]0x32F0)', # GetSecurityDescriptorLength
+        'TargetRva ([UInt32]0x32F8)', # IsValidSecurityDescriptor
+        'TargetRva ([UInt32]0x3318)', # MoveFileExA
+        'TargetRva ([UInt32]0x3320)'  # FlushFileBuffers
     )
     foreach ($expectedCall in $expectedHelperIatCalls) {
         if (-not $compilerSource.Contains($expectedCall)) {
@@ -205,21 +224,26 @@ try {
             throw "Low-integrity mandatory-label implementation is missing: $required"
         }
     }
-    $brokerEmitterLines = $brokerEmitterSource -split '\r?\n'
-    $workspaceAclLine = $brokerEmitterLines | Where-Object { $_.Contains('Emit-DevBrokerUpdateAcl -PathSlot $workspaceRootSlot') } | Select-Object -First 1
-    $buildAclLine = $brokerEmitterLines | Where-Object { $_.Contains('Emit-DevBrokerUpdateAcl -PathSlot $buildPathSlot') } | Select-Object -First 1
-    $brokerBuildAclLine = $brokerEmitterLines | Where-Object { $_.Contains('Emit-DevBrokerUpdateAcl -PathSlot $brokerDirectorySlot') } | Select-Object -First 1
-    if ([string]::IsNullOrWhiteSpace($workspaceAclLine) -or
-        [string]::IsNullOrWhiteSpace($buildAclLine) -or
-        [string]::IsNullOrWhiteSpace($brokerBuildAclLine)) {
-        throw 'Expected workspace, Build, and Build\\DevAgentBroker ACL grants were not all found.'
+    # Distinguish the migration-time REVOKE_ACCESS calls from the actual grant
+    # calls. The positive grants must occur after the durable journal commit.
+    $journalCommitOffset = $brokerEmitterSource.IndexOf('Emit-DevBrokerWriteAclJournal', [StringComparison]::Ordinal)
+    if ($journalCommitOffset -lt 0) { throw 'Durable ACL snapshot/commit call is missing.' }
+    $postJournalAclSource = $brokerEmitterSource.Substring($journalCommitOffset)
+    $grantLines = @($postJournalAclSource -split '\r?\n' | Where-Object { $_.Contains('Emit-DevBrokerUpdateAcl') })
+    $workspaceGrant = $grantLines | Where-Object { $_.Contains('-PathSlot $workspaceRootSlot') -and $_.Contains('-AccessMode 2') } | Select-Object -First 1
+    $buildGrant = $grantLines | Where-Object { $_.Contains('-PathSlot $buildPathSlot') -and $_.Contains('-AccessMode 2') } | Select-Object -First 1
+    $brokerBuildGrant = $grantLines | Where-Object { $_.Contains('-PathSlot $brokerDirectorySlot') -and $_.Contains('-AccessMode 2') } | Select-Object -First 1
+    if ([string]::IsNullOrWhiteSpace($workspaceGrant) -or
+        [string]::IsNullOrWhiteSpace($buildGrant) -or
+        [string]::IsNullOrWhiteSpace($brokerBuildGrant)) {
+        throw 'Expected post-journal workspace, Build, and Build\\DevAgentBroker ACL grants were not all found.'
     }
-    if ($workspaceAclLine.Contains('-SetLowIntegrityLabel')) {
+    if ($workspaceGrant.Contains('-SetLowIntegrityLabel')) {
         throw 'The workspace source root must not be relabeled Low IL.'
     }
-    if (-not $buildAclLine.Contains('-SetLowIntegrityLabel $true') -or
-        -not $brokerBuildAclLine.Contains('-SetLowIntegrityLabel $true')) {
-        throw 'Both writable Build directories must receive the Low IL mandatory label.'
+    if (-not $buildGrant.Contains('-SetLowIntegrityLabel $true') -or
+        -not $brokerBuildGrant.Contains('-SetLowIntegrityLabel $true')) {
+        throw 'Both writable Build directories must receive the Low IL mandatory label after the durable journal commit.'
     }
     if (-not $brokerEmitterSource.Contains('mainCapReadReady') -or
         -not $brokerEmitterSource.Contains('finalCapReadReady') -or
@@ -228,30 +252,69 @@ try {
     }
     Write-Host 'PASS: Low IL is applied only to writable Build staging; the source workspace keeps its existing integrity label' -ForegroundColor Green
     Write-Host 'PASS: capture reads the remaining 1 MiB capacity before classifying subsequent bytes as overflow' -ForegroundColor Green
-    # An abandoned ACL-serialization mutex means the previous broker may have
-    # died with package-SID grants still present. Require fail-closed return before
-    # AppContainer SID creation or any ACL update.
-    $mutexBlockStart = $brokerEmitterSource.IndexOf('# Serialize AppContainer ACL updates')
-    $mutexBlockEnd = $brokerEmitterSource.IndexOf('# A stable no-capability AppContainer SID', $mutexBlockStart)
-    if ($mutexBlockStart -lt 0 -or $mutexBlockEnd -le $mutexBlockStart) {
-        throw 'Broker mutex acquisition block could not be isolated.'
+    # Both WAIT_OBJECT_0 and WAIT_ABANDONED converge on recovery while the caller
+    # owns the mutex. Recovery must finish before the AppContainer identity is used.
+    $mutexBlockStart = $brokerEmitterSource.IndexOf('# Serialize each ACL transaction')
+    $mutexBlockEnd = $brokerEmitterSource.IndexOf('Emit-DevBrokerRecoverAclJournal', $mutexBlockStart)
+    $recoveryCall = $brokerEmitterSource.IndexOf('Emit-DevBrokerRecoverAclJournal', $mutexBlockStart)
+    $sidCreation = $brokerEmitterSource.IndexOf('Emit-DevBrokerEnsureAppContainerSid', $recoveryCall, [StringComparison]::Ordinal)
+    $journalCommit = $brokerEmitterSource.IndexOf('Emit-DevBrokerWriteAclJournal', $sidCreation, [StringComparison]::Ordinal)
+    $firstGrant = $brokerEmitterSource.IndexOf('AccessMask ([UInt32]0x001200A9)', $journalCommit, [StringComparison]::Ordinal)
+    $abandonedBranch = $brokerEmitterSource.IndexOf("New-UniqueLabel -Prefix 'dev_tool_mutex_abandoned'", $mutexBlockStart, [StringComparison]::Ordinal)
+    $abandonedJoin = $brokerEmitterSource.IndexOf('Emit-Jump -Label $mutexReady', $abandonedBranch, [StringComparison]::Ordinal)
+    if ($mutexBlockStart -lt 0 -or $mutexBlockEnd -le $mutexBlockStart -or
+        $abandonedBranch -lt 0 -or $abandonedJoin -le $abandonedBranch -or
+        $recoveryCall -lt 0 -or $sidCreation -le $recoveryCall -or
+        $journalCommit -le $sidCreation -or $firstGrant -le $journalCommit) {
+        throw 'WAIT_ABANDONED recovery, manifest identity setup, durable snapshot and first ACL expansion are out of order.'
     }
-    $mutexBlock = $brokerEmitterSource.Substring($mutexBlockStart, $mutexBlockEnd - $mutexBlockStart)
-    $abandonedBranch = $mutexBlock.IndexOf("New-UniqueLabel -Prefix 'dev_tool_mutex_abandoned'", [StringComparison]::Ordinal)
-    $abandonedReturn = $mutexBlock.IndexOf('0x8A, 0xFF, 0xFF, 0xFF', [StringComparison]::Ordinal)
-    $abandonedCleanup = $mutexBlock.IndexOf('Emit-Jump -Label $cleanup', $abandonedReturn)
-    # SID creation is intentionally after the mutex-block end marker: the marker
-    # precedes the normal-acquisition path. Search the full emitter from that point.
-    $sidCreation = $brokerEmitterSource.IndexOf('Emit-DevBrokerEnsureAppContainerSid', $mutexBlockEnd, [StringComparison]::Ordinal)
-    if ($abandonedBranch -lt 0 -or $abandonedReturn -le $abandonedBranch -or
-        $abandonedCleanup -le $abandonedReturn -or $sidCreation -le $mutexBlockEnd -or
-        -not $mutexBlock.Substring($abandonedReturn, $abandonedCleanup - $abandonedReturn).Contains('Emit-StoreEaxFrame -SlotPosition $resultSlot')) {
-        throw 'WAIT_ABANDONED must return -118 and branch to cleanup before AppContainer SID/ACL work.'
+    foreach ($requiredJournalApi in @('MoveFileExA', 'FlushFileBuffers', 'Emit-DevBrokerRestoreSecurityDescriptor', 'IsValidSecurityDescriptor', '0x80200002')) {
+        if (-not $compilerSource.Contains($requiredJournalApi)) { throw "Crash-safe ACL journal component missing: $requiredJournalApi" }
     }
-    Write-Host 'PASS: abandoned ACL mutex fails closed with -118 before any new sandbox child or ACL grant' -ForegroundColor Green
+    $restoreHelperStart = $compilerSource.IndexOf('function Emit-DevBrokerRestoreSecurityDescriptor', [StringComparison]::Ordinal)
+    $restoreHelperEnd = $compilerSource.IndexOf('function Emit-DevBrokerWriteAclJournal', $restoreHelperStart, [StringComparison]::Ordinal)
+    if ($restoreHelperStart -lt 0 -or $restoreHelperEnd -le $restoreHelperStart) {
+        throw 'Security descriptor restore helper could not be isolated.'
+    }
+    $restoreHelper = $compilerSource.Substring($restoreHelperStart, $restoreHelperEnd - $restoreHelperStart)
+    $restoreSuccessCheck = $restoreHelper.IndexOf('Emit-StoreBits32Frame -SlotPosition $daclPresentSlot -Value 1', [StringComparison]::Ordinal)
+    $restoreFailureCheck = $restoreHelper.IndexOf('Emit-StoreBits32Frame -SlotPosition $daclPresentSlot -Value 0', $restoreSuccessCheck, [StringComparison]::Ordinal)
+    if ($restoreSuccessCheck -lt 0 -or $restoreFailureCheck -le $restoreSuccessCheck) {
+        throw 'ACL restore helper must distinguish successful SetSecurityInfo from its fail-closed path.'
+    }
+    if (-not $restoreHelper.Contains('DACL_SECURITY_INFORMATION only; root label is never changed') -or
+        -not $restoreHelper.Contains('DACL_SECURITY_INFORMATION | LABEL_SECURITY_INFORMATION')) {
+        throw 'ACL rollback must restore only the components modified at each path: root DACL, child DACL plus mandatory label.'
+    }
+    if (-not $brokerEmitterSource.Contains('-RestoreLabel $true -FailureLabel $aclRollbackBuildFail') -or
+        -not $brokerEmitterSource.Contains('-RestoreLabel $true -FailureLabel $aclRollbackBrokerFail')) {
+        throw 'Build and broker directory rollback must restore their temporary Low IL labels.'
+    }
+    foreach ($restoreStage in 1..6) {
+        if (-not $restoreHelper.Contains("-Value $restoreStage")) {
+            throw "ACL restore diagnostic stage $restoreStage is missing."
+        }
+    }
+    if (-not $restoreHelper.Contains('$restoreErrorSlot = $scratch + 0xE84') -or
+        -not $restoreHelper.Contains('SetSecurityInfo returns a Win32 error code directly')) {
+        throw 'ACL rollback must preserve the native SetSecurityInfo error instead of collapsing it into a generic stage failure.'
+    }
+    Write-Host 'PASS: WAIT_ABANDONED acquires the mutex and recovers the durable ACL journal before any new child' -ForegroundColor Green
+    Write-Host 'PASS: all ACL expansions occur after a flushed, write-through journal commit' -ForegroundColor Green
+    foreach ($noProfileProbe in @($timeoutScriptPath, $crashProbeScriptPath)) {
+        $probeText = [IO.File]::ReadAllText($noProfileProbe)
+        if ($probeText.Contains('Start-Sleep') -or -not $probeText.Contains('[Threading.Thread]::Sleep(')) {
+            throw "No-profile AppContainer probe must use .NET Thread.Sleep, not profile-dependent Start-Sleep: $noProfileProbe"
+        }
+    }
+    Write-Host 'PASS: timeout and crash probes use profile-independent .NET Thread.Sleep'
     Write-Host 'PASS: broker source declares restricted-token, AppContainer, handle-based ACL and bounded-output runtime gates' -ForegroundColor Green
 
     New-Item -ItemType Directory -Path $buildRoot -Force | Out-Null
+    Remove-Item -LiteralPath $journalPath -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $journalTempPath -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $crashChildPidPath -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $crashReadyPath -Force -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $childPidPath -Force -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $outputPath -Force -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $sandboxMarkerPath -Force -ErrorAction SilentlyContinue
@@ -387,6 +450,95 @@ try {
         Remove-Item -LiteralPath $foreignWorkingDirectory -Recurse -Force -ErrorAction SilentlyContinue
     }
 
+    # Establish the clean post-invocation DACL baseline before inducing a real
+    # parent-process crash while an AppContainer child is running.
+    if ((Test-Path -LiteralPath $journalPath) -or (Test-Path -LiteralPath $journalTempPath)) {
+        throw 'A successful broker invocation left an ACL journal or temporary file behind.'
+    }
+    $aclPaths = @($repoRoot, (Join-Path $repoRoot 'Build'), $buildRoot)
+    $aclBaseline = @{}
+    foreach ($aclPath in $aclPaths) { $aclBaseline[$aclPath] = Get-BrokerDaclSddl -Path $aclPath }
+
+    $originalBrokerImage = [IO.File]::ReadAllBytes($outputPath)
+    $crashStdoutPath = Join-Path $buildRoot 'acl-crash-parent.stdout'
+    $crashStderrPath = Join-Path $buildRoot 'acl-crash-parent.stderr'
+    $crashProcess = $null
+    try {
+        Remove-Item -LiteralPath $crashChildPidPath -Force -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath $crashReadyPath -Force -ErrorAction SilentlyContinue
+        & $compilerPath -Source $crashHarnessPath -Output $outputPath -EnableDevAgentTools
+        & $verifierPath -Path $outputPath
+        $crashProcess = Start-Process -FilePath $outputPath -PassThru -NoNewWindow -RedirectStandardOutput $crashStdoutPath -RedirectStandardError $crashStderrPath
+
+        $crashDeadline = [DateTime]::UtcNow.AddSeconds(25)
+        while ([DateTime]::UtcNow -lt $crashDeadline) {
+            $crashProcess.Refresh()
+            if ($crashProcess.HasExited) { throw 'Crash harness exited before publishing its child-ready marker.' }
+            if ((Test-Path -LiteralPath $crashReadyPath -PathType Leaf) -and (Test-Path -LiteralPath $crashChildPidPath -PathType Leaf)) { break }
+            Start-Sleep -Milliseconds 200
+        }
+        if (-not (Test-Path -LiteralPath $crashReadyPath -PathType Leaf) -or
+            -not (Test-Path -LiteralPath $crashChildPidPath -PathType Leaf) -or
+            -not (Test-Path -LiteralPath $journalPath -PathType Leaf)) {
+            throw 'Crash probe did not reach the post-ACL/pre-exit state with a committed journal.'
+        }
+        $crashChildPid = [int](Get-Content -LiteralPath $crashChildPidPath -Raw)
+        foreach ($aclPath in $aclPaths) {
+            $duringCrashSddl = Get-BrokerDaclSddl -Path $aclPath
+            if ([string]::Equals($duringCrashSddl, $aclBaseline[$aclPath], [StringComparison]::Ordinal)) {
+                throw "Expected transient execution ACE was not present on $aclPath during the child run."
+            }
+        }
+
+        # Abruptly kill the native broker parent. Closing its Job Object handle
+        # must terminate the AppContainer child; the durable journal must remain.
+        $crashProcess.Kill()
+        if (-not $crashProcess.WaitForExit(10000)) { throw 'Crash broker parent did not terminate after Kill().' }
+        $childDeadline = [DateTime]::UtcNow.AddSeconds(10)
+        while ([DateTime]::UtcNow -lt $childDeadline) {
+            if ($null -eq (Get-Process -Id $crashChildPid -ErrorAction SilentlyContinue)) { break }
+            Start-Sleep -Milliseconds 200
+        }
+        if ($null -ne (Get-Process -Id $crashChildPid -ErrorAction SilentlyContinue)) {
+            throw "Job Object kill-on-close left crash child PID $crashChildPid alive."
+        }
+        if (-not (Test-Path -LiteralPath $journalPath -PathType Leaf)) {
+            throw 'Abrupt parent termination lost the durable ACL recovery journal.'
+        }
+    }
+    finally {
+        if ($null -ne $crashProcess) {
+            $crashProcess.Refresh()
+            if (-not $crashProcess.HasExited) {
+                $crashProcess.Kill()
+                [void]$crashProcess.WaitForExit(10000)
+            }
+        }
+        # Restore the exact already-verified normal broker image even if the
+        # adversarial phase itself fails, so subsequent tests use the normal fixture.
+        [IO.File]::WriteAllBytes($outputPath, $originalBrokerImage)
+    }
+
+    $recoveryLines = @(& $outputPath 2>&1)
+    $recoveryExitCode = $LASTEXITCODE
+    $recoveryNumericLines = @(Get-BrokerNumericLines -Lines $recoveryLines)
+    $recoveryActual = ($recoveryNumericLines -join $nl).TrimEnd([char[]]@([char]13, [char]10))
+    if ($recoveryExitCode -ne 0 -or -not [string]::Equals($recoveryActual, $expected, [StringComparison]::Ordinal)) {
+        throw "Post-crash ACL recovery replay failed. Expected=[$expected] Actual=[$recoveryActual] ExitCode=$recoveryExitCode."
+    }
+    foreach ($aclPath in $aclPaths) {
+        $restoredSddl = Get-BrokerDaclSddl -Path $aclPath
+        if (-not [string]::Equals($restoredSddl, $aclBaseline[$aclPath], [StringComparison]::Ordinal)) {
+            throw "ACL DACL rollback/recovery did not reproduce its exact pre-run descriptor on $aclPath."
+        }
+    }
+    if ((Test-Path -LiteralPath $journalPath) -or (Test-Path -LiteralPath $journalTempPath)) {
+        throw 'Successful crash recovery left a committed or temporary ACL journal behind.'
+    }
+    Write-Host 'PASS: normal execution restored exact DACL SDDL on workspace root, Build and broker directories' -ForegroundColor Green
+    Write-Host 'PASS: forced parent termination preserved its journal and Job Object killed the AppContainer child' -ForegroundColor Green
+    Write-Host 'PASS: next invocation recovered the abandoned ACL transaction and removed the journal' -ForegroundColor Green
+
     $brokerDirectory = Join-Path $repoRoot 'Tests\DevAgentBroker'
     $brokerDirectoryBackup = Join-Path $buildRoot 'DevAgentBroker.original'
     $junctionTarget = Join-Path $buildRoot 'JunctionTarget'
@@ -421,13 +573,14 @@ try {
 
     Write-Host 'PASS: native Windows CNG SHA-256 verifies every selected tool before CreateProcess' -ForegroundColor Green
     Write-Host 'PASS: native script hash mismatch rejected before child creation' -ForegroundColor Green
-    Write-Host 'PASS: compiler pins manifest SHA-256 and all eight tool-script hashes' -ForegroundColor Green
+    Write-Host 'PASS: compiler pins manifest SHA-256 and all nine tool-script hashes' -ForegroundColor Green
     Write-Host 'PASS: AppContainer token identity and zero-capability token are checked before resume' -ForegroundColor Green
     Write-Host 'PASS: AppContainer writes are confined to Build and denied in Tests' -ForegroundColor Green
     Write-Host 'PASS: merged stdout/stderr capture is capped at exactly 1 MiB and persisted through one exclusive handle' -ForegroundColor Green
     Write-Host 'PASS: broker derives workspace from its image path and ignores a foreign current directory' -ForegroundColor Green
     Write-Host 'PASS: workspace paths and opened script handles reject reparse points' -ForegroundColor Green
     Write-Host 'PASS: runtime CNG SHA-256 mismatch rejected before modified tool execution' -ForegroundColor Green
+    Write-Host 'PASS: per-execution DACL grants are journaled and reliably rolled back across process death' -ForegroundColor Green
     Write-Host 'PASS: unknown tool IDs rejected before process creation' -ForegroundColor Green
     Write-Host 'PASS: timeout values below policy minimum rejected' -ForegroundColor Green
     Write-Host 'PASS: fixed allowlisted success tool launched by absolute System32 PowerShell path' -ForegroundColor Green

@@ -1,45 +1,50 @@
-{
-  "version": 1,
-  "tools": [
-    {
-      "id": 1,
-      "path": "Tests\\Test-Stage7A.ps1",
-      "sha256": "4C932F94258022D85E88A43D15420066BF7E5C8FE5D6BC108A7058CA4F4D81C4"
-    },
-    {
-      "id": 2,
-      "path": "Tests\\Test-RuntimeABI.ps1",
-      "sha256": "CEA5C7B0A23784F05F87CFAC08FC56904583BF00A1DF371D6DF062A2F13ED5F4"
-    },
-    {
-      "id": 3,
-      "path": "Tests\\BaselineM6\\Test-Milestone6Baseline.ps1",
-      "sha256": "D4BBCDF81BF684E5FE6D457F0DB59B92F28C59FD79C56CE1C06CACC92947D600"
-    },
-    {
-      "id": 4,
-      "path": "Tests\\Test-StackProbeUnwind.ps1",
-      "sha256": "C377CBBB7AA0F3BBF359E9AA63689C798872E57DD066E7D32F291CD068D544BC"
-    },
-    {
-      "id": 5,
-      "path": "Tests\\DevAgentBroker\\TimeoutProbe.ps1",
-      "sha256": "D93FD2C38C215CDE2143B3FA101D39B4C92EA233D275930F6D91FFEA2FFCA092"
-    },
-    {
-      "id": 6,
-      "path": "Tests\\DevAgentBroker\\SuccessProbe.ps1",
-      "sha256": "D70BAD9C7556ED0EF16BC7BE3EB48A8D7D645D4798A95F7ECC55D84F9C6FC279"
-    },
-    {
-      "id": 7,
-      "path": "Tests\\DevAgentBroker\\SandboxProbe.ps1",
-      "sha256": "239E33785492F6EBE49922562D0897A57EAD111EDAC450D13FD4C886F2A24708"
-    },
-    {
-      "id": 8,
-      "path": "Tests\\DevAgentBroker\\OverflowProbe.ps1",
-      "sha256": "4C648254B715CEBE00854665E811BC3DF26239465854AACB7286C6CD0349F3EF"
-    }
-  ]
-}
+{
+  "version": 1,
+  "tools": [
+    {
+      "id": 1,
+      "path": "Tests\\Test-Stage7A.ps1",
+      "sha256": "4C932F94258022D85E88A43D15420066BF7E5C8FE5D6BC108A7058CA4F4D81C4"
+    },
+    {
+      "id": 2,
+      "path": "Tests\\Test-RuntimeABI.ps1",
+      "sha256": "CEA5C7B0A23784F05F87CFAC08FC56904583BF00A1DF371D6DF062A2F13ED5F4"
+    },
+    {
+      "id": 3,
+      "path": "Tests\\BaselineM6\\Test-Milestone6Baseline.ps1",
+      "sha256": "D4BBCDF81BF684E5FE6D457F0DB59B92F28C59FD79C56CE1C06CACC92947D600"
+    },
+    {
+      "id": 4,
+      "path": "Tests\\Test-StackProbeUnwind.ps1",
+      "sha256": "C377CBBB7AA0F3BBF359E9AA63689C798872E57DD066E7D32F291CD068D544BC"
+    },
+    {
+      "id": 5,
+      "path": "Tests\\DevAgentBroker\\TimeoutProbe.ps1",
+      "sha256": "0B4F5D63266F08C3F085F0E65D5ACDB614E3FCDFF92CB4AE4D93867DEA0EC2C2"
+    },
+    {
+      "id": 6,
+      "path": "Tests\\DevAgentBroker\\SuccessProbe.ps1",
+      "sha256": "D70BAD9C7556ED0EF16BC7BE3EB48A8D7D645D4798A95F7ECC55D84F9C6FC279"
+    },
+    {
+      "id": 7,
+      "path": "Tests\\DevAgentBroker\\SandboxProbe.ps1",
+      "sha256": "239E33785492F6EBE49922562D0897A57EAD111EDAC450D13FD4C886F2A24708"
+    },
+    {
+      "id": 8,
+      "path": "Tests\\DevAgentBroker\\OverflowProbe.ps1",
+      "sha256": "4C648254B715CEBE00854665E811BC3DF26239465854AACB7286C6CD0349F3EF"
+    },
+    {
+      "id": 9,
+      "path": "Tests\\DevAgentBroker\\CrashProbe.ps1",
+      "sha256": "454204AA999A2FCD7960F034E37D5585AE445CEA1108B40816065645D4DC5043"
+    }
+  ]
+}
