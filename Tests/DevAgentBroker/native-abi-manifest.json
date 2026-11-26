@@ -634,7 +634,7 @@
         "DWORD",
         "PSIZE_T"
       ],
-      "header": "processthreadsapi.h",
+      "header": "um/processthreadsapi.h",
       "callingConvention": "WINAPI / Microsoft x64"
     },
     {
@@ -650,7 +650,7 @@
         "PVOID",
         "PSIZE_T"
       ],
-      "header": "processthreadsapi.h",
+      "header": "um/processthreadsapi.h",
       "callingConvention": "WINAPI / Microsoft x64"
     },
     {
@@ -660,7 +660,7 @@
       "parameters": [
         "LPPROC_THREAD_ATTRIBUTE_LIST"
       ],
-      "header": "processthreadsapi.h",
+      "header": "um/processthreadsapi.h",
       "callingConvention": "WINAPI / Microsoft x64"
     },
     {
@@ -679,7 +679,7 @@
         "LPSTARTUPINFOW",
         "LPPROCESS_INFORMATION"
       ],
-      "header": "processthreadsapi.h",
+      "header": "um/processthreadsapi.h",
       "callingConvention": "WINAPI / Microsoft x64"
     },
     {
@@ -689,7 +689,7 @@
       "parameters": [
         "VOID"
       ],
-      "header": "heapapi.h",
+      "header": "um/heapapi.h",
       "callingConvention": "WINAPI / Microsoft x64"
     },
     {
@@ -701,7 +701,7 @@
         "DWORD",
         "SIZE_T"
       ],
-      "header": "heapapi.h",
+      "header": "um/heapapi.h",
       "callingConvention": "WINAPI / Microsoft x64"
     },
     {
@@ -713,7 +713,7 @@
         "DWORD",
         "LPVOID"
       ],
-      "header": "heapapi.h",
+      "header": "um/heapapi.h",
       "callingConvention": "WINAPI / Microsoft x64"
     },
     {
@@ -723,7 +723,7 @@
       "parameters": [
         "VOID"
       ],
-      "header": "errhandlingapi.h",
+      "header": "um/errhandlingapi.h",
       "callingConvention": "WINAPI / Microsoft x64"
     },
     {
@@ -738,7 +738,7 @@
         "DWORD",
         "PSID*"
       ],
-      "header": "userenv.h",
+      "header": "um/userenv.h",
       "callingConvention": "WINAPI / Microsoft x64"
     },
     {
@@ -748,7 +748,7 @@
       "parameters": [
         "PCWSTR"
       ],
-      "header": "userenv.h",
+      "header": "um/userenv.h",
       "callingConvention": "WINAPI / Microsoft x64"
     },
     {
@@ -760,7 +760,7 @@
         "DWORD",
         "PHANDLE"
       ],
-      "header": "processthreadsapi.h",
+      "header": "um/processthreadsapi.h",
       "callingConvention": "WINAPI / Microsoft x64"
     },
     {
@@ -774,7 +774,7 @@
         "DWORD",
         "PDWORD"
       ],
-      "header": "securitybaseapi.h",
+      "header": "um/securitybaseapi.h",
       "callingConvention": "WINAPI / Microsoft x64"
     },
     {
@@ -784,7 +784,7 @@
       "parameters": [
         "PSID"
       ],
-      "header": "securitybaseapi.h",
+      "header": "um/securitybaseapi.h",
       "callingConvention": "WINAPI / Microsoft x64"
     },
     {
@@ -794,7 +794,7 @@
       "parameters": [
         "PSID"
       ],
-      "header": "securitybaseapi.h",
+      "header": "um/securitybaseapi.h",
       "callingConvention": "WINAPI / Microsoft x64"
     },
     {
@@ -805,7 +805,7 @@
         "PSID",
         "PSID"
       ],
-      "header": "securitybaseapi.h",
+      "header": "um/securitybaseapi.h",
       "callingConvention": "WINAPI / Microsoft x64"
     },
     {
@@ -815,7 +815,7 @@
       "parameters": [
         "PSID"
       ],
-      "header": "securitybaseapi.h",
+      "header": "um/securitybaseapi.h",
       "callingConvention": "WINAPI / Microsoft x64"
     },
     {
@@ -826,7 +826,7 @@
         "PSID",
         "DWORD"
       ],
-      "header": "securitybaseapi.h",
+      "header": "um/securitybaseapi.h",
       "callingConvention": "WINAPI / Microsoft x64"
     }
   ]
