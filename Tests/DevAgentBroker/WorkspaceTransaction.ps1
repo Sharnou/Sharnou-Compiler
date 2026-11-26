@@ -13,6 +13,7 @@ function ConvertTo-SharnouCanonicalLocalPath {
     param([Parameter(Mandatory = $true)][string]$Path)
 
     if ([string]::IsNullOrWhiteSpace($Path)) { throw 'Path is empty.' }
+    if ($Path -notmatch '^[A-Za-z]:\\') { throw 'Workspace roots must be absolute local drive paths; relative paths are not permitted.' }
     if ($Path.StartsWith('\\') -or $Path.StartsWith('\??\') -or $Path.StartsWith('\Device\', [StringComparison]::OrdinalIgnoreCase)) {
         throw 'UNC, device and NT namespace paths are not permitted.'
     }
@@ -191,6 +192,7 @@ function Write-SharnouWorkspaceJournal {
 
     $json = ConvertTo-Json -InputObject $Record -Depth 6
     $bytes = (New-Object System.Text.UTF8Encoding($false)).GetBytes($json)
+    if ($bytes.Length -gt 65536) { throw 'Workspace journal record exceeds the 64 KiB policy limit.' }
     $temp = $Path + '.tmp-' + [Guid]::NewGuid().ToString('N')
     $stream = $null
     try {
@@ -555,6 +557,7 @@ function Recover-SharnouExecutionWorkspaces {
             $fileItem = Get-Item -LiteralPath $journalPath -Force
             if (($fileItem.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) { throw 'Journal file is a reparse point.' }
 
+            if ((Get-Item -LiteralPath $journalPath -Force).Length -gt 65536) { throw 'Workspace journal exceeds the 64 KiB policy limit.' }
             $raw = Get-Content -LiteralPath $journalPath -Raw -Encoding UTF8
             $recordObject = ConvertFrom-Json -InputObject $raw
             if ($null -eq $recordObject) { throw 'Journal JSON is empty.' }
@@ -573,6 +576,7 @@ function Recover-SharnouExecutionWorkspaces {
 
             # Re-read after acquiring the lease: a writer may have atomically
             # advanced the journal between the initial ID probe and lock acquisition.
+            if ((Get-Item -LiteralPath $journalPath -Force).Length -gt 65536) { throw 'Workspace journal exceeds the 64 KiB policy limit.' }
             $raw = Get-Content -LiteralPath $journalPath -Raw -Encoding UTF8
             $recordObject = ConvertFrom-Json -InputObject $raw
             $record = Assert-SharnouJournalRecord -Record $recordObject -JournalPath $journalPath -WorkspaceRoot $roots.WorkspaceRoot -JournalRoot $roots.JournalRoot -SupervisorSid $roots.SupervisorSid

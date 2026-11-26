@@ -172,3 +172,11 @@ Boundaries and limitations:
 - The existing native broker still changes its process current directory to the image-derived workspace root. The new transaction manager does not alter or fix that native behavior.
 
 Do not enable model-generated process execution. Treat this phase as a testable rollback foundation only. Acceptance requires the new adversarial Windows workflow to pass on one exact commit, followed by native restricted-token/AppContainer integration and the remaining broker gates.
+
+
+Phase 2A implementation hardening notes:
+- Both security roots must be absolute local drive paths; relative, UNC, NT namespace, device, and ADS forms are rejected before canonicalization.
+- The workspace root is a precondition: it must already be a protected supervisor/SYSTEM-only directory. A failed preflight does not modify either root.
+- Journal JSON is capped at 64 KiB on write and on both recovery reads.
+- Synthetic execution test SIDs use the AppContainer SID namespace prefix S-1-15-2-; this is a format gate only, not proof that Windows created the SID from an AppContainer profile.
+- Crash tests include the PREPARING state after mkdir, ACL_PENDING after the DACL write, RESTORING before/after DACL restoration, RESTORED before deletion, and active-work tree cleanup with a nested external junction.

@@ -34,6 +34,10 @@ jobs:
           }
           Write-Host "PASS: ASCII source and UTF-8 without BOM."
 
+      - name: Run crash-safe DevAgent workspace and ACL rollback tests
+        shell: powershell
+        run: .\Tests\Test-DevAgentWorkspaceSecurity.ps1
+
       - name: Run native compiler control-flow tests
         shell: powershell
         run: .\Test.ps1

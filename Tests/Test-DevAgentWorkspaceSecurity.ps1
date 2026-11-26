@@ -20,8 +20,8 @@ $script:Failed = 0
 $junctionId = ''
 $sections = [System.Security.AccessControl.AccessControlSections]::Owner -bor [System.Security.AccessControl.AccessControlSections]::Group -bor [System.Security.AccessControl.AccessControlSections]::Access
 $supervisorSid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
-$executionSidA = 'S-1-15-2-11001-22002-33003-44004-55005'
-$executionSidB = 'S-1-15-2-11006-22007-33008-44009-55010'
+$executionSidA = 'S-1-15-2-11001-22002-33003-44004-55005-66006'
+$executionSidB = 'S-1-15-2-11006-22007-33008-44009-55010-66011'
 $systemSid = 'S-1-5-18'
 $base = Join-Path $env:TEMP ('Sharnou-Workspace-Security-' + [Guid]::NewGuid().ToString('N'))
 $workspaceRoot = Join-Path $base 'executions'
@@ -139,7 +139,8 @@ try {
         '\\server\share\workspace',
         '\\?\C:\device\workspace',
         '\\.\C:\device\workspace',
-        'C:\temp\stream.txt:payload'
+        'C:\temp\stream.txt:payload',
+        '.\relative-workspace'
     )
     foreach ($badPath in $badPaths) {
         $rejected = $false
@@ -258,6 +259,15 @@ try {
     Assert-WorkspaceTest -Condition ($restoredCrash.Count -eq 1 -and ((Get-Content -LiteralPath $restoredCrash[0].FullName -Raw | ConvertFrom-Json).state -eq 'RESTORING')) -Message 'crash after Set-Acl leaves a replayable RESTORING journal'
     $restoreReplay = Recover-SharnouExecutionWorkspaces -WorkspaceRoot $workspaceRoot -JournalRoot $journalRoot -SupervisorSid $supervisorSid
     Assert-WorkspaceTest -Condition ($restoreReplay.Recovered -eq 1 -and $restoreReplay.Deleted -eq 1 -and $restoreReplay.Failed -eq 0) -Message 'replaying an already-restored descriptor is idempotent'
+
+    # Crash after RESTORED is durable but before directory deletion. Replay must
+    # safely re-apply the saved DACL and complete the final cleanup.
+    $marker4 = Join-Path $base 'crash-after-restored-journal.marker'
+    Wait-ForCrashMarker -Phase 'AfterRestoredJournal' -WorkspacePath $workspaceRoot -JournalPath $journalRoot -ExecutionSid $executionSidA -MarkerPath $marker4
+    $restoredJournal = @(Get-ChildItem -LiteralPath $journalRoot -Filter '*.json' -File)
+    Assert-WorkspaceTest -Condition ($restoredJournal.Count -eq 1 -and ((Get-Content -LiteralPath $restoredJournal[0].FullName -Raw | ConvertFrom-Json).state -eq 'RESTORED')) -Message 'RESTORED journal is durable before workspace deletion'
+    $finalReplay = Recover-SharnouExecutionWorkspaces -WorkspaceRoot $workspaceRoot -JournalRoot $journalRoot -SupervisorSid $supervisorSid
+    Assert-WorkspaceTest -Condition ($finalReplay.Recovered -eq 1 -and $finalReplay.Deleted -eq 1 -and $finalReplay.Failed -eq 0) -Message 'recovery finishes a crash after RESTORED commit'
 
     # Invalid records must never redirect cleanup outside the dedicated workspace root.
     $outsideId = [Guid]::NewGuid().ToString('N')

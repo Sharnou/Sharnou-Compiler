@@ -32,7 +32,7 @@ if ($CrashAfterPhase -eq 'ActiveWork') {
 }
 
 $transaction = New-SharnouExecutionWorkspace -WorkspaceRoot $WorkspaceRoot -JournalRoot $JournalRoot -ExecutionSid $ExecutionSid -SupervisorSid $SupervisorSid
-if ($CrashAfterPhase -eq 'AfterRestoreIntent' -or $CrashAfterPhase -eq 'AfterAclRestored') {
+if ($CrashAfterPhase -eq 'AfterRestoreIntent' -or $CrashAfterPhase -eq 'AfterAclRestored' -or $CrashAfterPhase -eq 'AfterRestoredJournal') {
     [System.IO.File]::WriteAllText((Join-Path $transaction.WorkspacePath 'payload.bin'), 'workspace-data', [System.Text.Encoding]::ASCII)
     $null = Complete-SharnouExecutionWorkspace -Transaction $transaction -EnableTestHooks -PauseAfterPhase $CrashAfterPhase -MarkerPath $MarkerPath
     throw 'The expected rollback crash pause returned unexpectedly.'
