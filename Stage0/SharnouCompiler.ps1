@@ -1987,7 +1987,8 @@ function Emit-DevRunTool {
         (New-UniqueLabel -Prefix 'dev_tool_timeout_probe'),
         (New-UniqueLabel -Prefix 'dev_tool_success_probe'),
         (New-UniqueLabel -Prefix 'dev_tool_sandbox_probe'),
-        (New-UniqueLabel -Prefix 'dev_tool_output_overflow_probe')
+        (New-UniqueLabel -Prefix 'dev_tool_output_overflow_probe'),
+        (New-UniqueLabel -Prefix 'dev_tool_acl_crash_probe')
     )
     $commandReady = New-UniqueLabel -Prefix 'dev_tool_command_ready'
     $hashVerified = New-UniqueLabel -Prefix 'dev_tool_hash_verified'
@@ -2053,7 +2054,7 @@ function Emit-DevRunTool {
     $journalTempSuffixLength = [System.Text.Encoding]::ASCII.GetByteCount($journalTempSuffix)
 
     $manifestPath = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\Tests\DevAgentBroker\tool-manifest.json'))
-    $expectedManifestSha256 = '6E2C69A4D506B36125B77D563CF955580688C65A0634CEA44AF064F8D31EEBD7'
+    $expectedManifestSha256 = '2FFFDB7FAAE029548DE6CDC2480F17FD483C2E91412B5EADA8C587B85D8570A1'
     if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) { throw 'Pinned DevAgent tool manifest is missing.' }
     $actualManifestSha256 = (Get-FileHash -LiteralPath $manifestPath -Algorithm SHA256).Hash
     if ($actualManifestSha256 -cne $expectedManifestSha256) {
@@ -2068,7 +2069,8 @@ function Emit-DevRunTool {
         [pscustomobject]@{ Id = 5; Path = 'Tests\DevAgentBroker\TimeoutProbe.ps1' },
         [pscustomobject]@{ Id = 6; Path = 'Tests\DevAgentBroker\SuccessProbe.ps1' },
         [pscustomobject]@{ Id = 7; Path = 'Tests\DevAgentBroker\SandboxProbe.ps1' },
-        [pscustomobject]@{ Id = 8; Path = 'Tests\DevAgentBroker\OverflowProbe.ps1' }
+        [pscustomobject]@{ Id = 8; Path = 'Tests\DevAgentBroker\OverflowProbe.ps1' },
+        [pscustomobject]@{ Id = 9; Path = 'Tests\DevAgentBroker\CrashProbe.ps1' }
     )
     if ([int]$manifest.version -ne 1 -or @($manifest.tools).Count -ne $fixedToolPaths.Count) {
         throw 'Pinned DevAgent tool manifest version or fixed tool count is invalid.'
