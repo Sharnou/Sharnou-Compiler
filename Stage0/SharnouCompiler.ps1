@@ -1341,6 +1341,7 @@ function Emit-DevRunTool {
     $remainingMsSlot = $scratch + 0xAD4
     $outputFileHandleSlot = $scratch + 0xAD8
     $outputWrittenSlot = $scratch + 0xAE0
+    $pipeClosedSlot = $scratch + 0xAE4
     $appContainerSidSlot = $scratch + 0xAE8
     $mutexHandleSlot = $scratch + 0xAF0
     $mutexAcquiredSlot = $scratch + 0xAF8
@@ -1350,7 +1351,7 @@ function Emit-DevRunTool {
     $restrictedTokenSlot = $scratch + 0xB10
     $childTokenSlot = $scratch + 0xB18
     $tokenInformationSlot = $scratch + 0xB38
-    $tokenLengthSlot = $scratch + 0xB78
+    $tokenLengthSlot = $scratch + 0xB88
     $rootLengthSlot = $scratch + 0xB7C
     $modulePathLengthSlot = $scratch + 0xB80
     $pathScratchSlot = $scratch + 0xC00
@@ -1374,7 +1375,7 @@ function Emit-DevRunTool {
     foreach ($slot in @(
         $mutexAcquiredSlot, $attributeListReadySlot, $childActiveSlot,
         $outputCountSlot, $availableSlot, $readCountSlot, $remainingMsSlot,
-        $outputWrittenSlot
+        $outputWrittenSlot, $pipeClosedSlot
     )) { Emit-StoreBits32Frame -SlotPosition $slot -Value 0 }
     Emit-StoreBits32Frame -SlotPosition $resultSlot -Value 0
     Emit-StoreZero64Frame -SlotPosition $tokenLengthSlot
@@ -1742,16 +1743,34 @@ function Emit-DevRunTool {
     Emit-JumpConditional -ConditionCode 0x84 -Label $outputFail
     Emit-StoreRaxFrame -SlotPosition $outputBufferSlot
 
-    Emit-Bytes -Bytes ([byte[]]@(0x33, 0xC9, 0xBA, 0x00, 0x10, 0x00, 0x00, 0x41, 0xB8, 0x00, 0x30, 0x00, 0x00, 0x41, 0xB9, 0x04, 0x00, 0x00, 0x00))
-    Emit-Win64CallIat -TargetRva ([UInt32]0x31D0) -StackArguments @() # VirtualAlloc(4096)
+    # Query the exact size required for two process attributes. The documented
+    # first call uses a NULL list and must fail with ERROR_INSUFFICIENT_BUFFER (122).
+    Emit-StoreZero64Frame -SlotPosition $attributeSizeSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x33, 0xC9, 0xBA, 0x02, 0x00, 0x00, 0x00, 0x45, 0x33, 0xC0))
+    Emit-LeaR9Frame -SlotPosition $attributeSizeSlot
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3248) -StackArguments @() # InitializeProcThreadAttributeList(NULL,2,0,&size)
+    Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
+    Emit-JumpConditional -ConditionCode 0x85 -Label $attributeFail # the sizing call must return FALSE
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3268) -StackArguments @() # GetLastError
+    Emit-Bytes -Bytes ([byte[]]@(0x3D, 0x7A, 0x00, 0x00, 0x00)) # ERROR_INSUFFICIENT_BUFFER
+    Emit-JumpConditional -ConditionCode 0x85 -Label $attributeFail
+    Emit-LoadEaxFrame -SlotPosition $attributeSizeSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x3D, 0x01, 0x00, 0x00, 0x00))
+    Emit-JumpConditional -ConditionCode 0x82 -Label $attributeFail # size must be nonzero
+    Emit-Bytes -Bytes ([byte[]]@(0x3D, 0x00, 0x10, 0x00, 0x00))
+    Emit-JumpConditional -ConditionCode 0x87 -Label $attributeFail # hard allocation ceiling = 4096 bytes
+
+    Emit-Bytes -Bytes ([byte[]]@(0x33, 0xC9)) # lpAddress = NULL
+    Emit-LoadEaxFrame -SlotPosition $attributeSizeSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x89, 0xC2, 0x41, 0xB8, 0x00, 0x30, 0x00, 0x00, 0x41, 0xB9, 0x04, 0x00, 0x00, 0x00))
+    Emit-Win64CallIat -TargetRva ([UInt32]0x31D0) -StackArguments @() # VirtualAlloc(exact attribute-list size)
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x85, 0xC0))
     Emit-JumpConditional -ConditionCode 0x84 -Label $attributeFail
     Emit-StoreRaxFrame -SlotPosition $attributeListSlot
-    Emit-StoreBits32Frame -SlotPosition $attributeSizeSlot -Value 4096
     Emit-LoadRcxFrame -SlotPosition $attributeListSlot
     Emit-Bytes -Bytes ([byte[]]@(0xBA, 0x02, 0x00, 0x00, 0x00, 0x45, 0x33, 0xC0))
     Emit-LeaR9Frame -SlotPosition $attributeSizeSlot
-    Emit-Win64CallIat -TargetRva ([UInt32]0x3248) -StackArguments @() # InitializeProcThreadAttributeList
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3248) -StackArguments @() # InitializeProcThreadAttributeList(actual buffer)
     Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
     Emit-JumpConditional -ConditionCode 0x84 -Label $attributeFail
     Emit-StoreBits32Frame -SlotPosition $attributeListReadySlot -Value 1
@@ -1939,7 +1958,7 @@ function Emit-DevRunTool {
     Emit-JumpConditional -ConditionCode 0x85 -Label $capturePipeClosed
     Emit-LoadRcxFrame -SlotPosition $pipeReadSlot
     Emit-Bytes -Bytes ([byte[]]@(0x33, 0xD2, 0x45, 0x33, 0xC0, 0x45, 0x33, 0xC9))
-    Emit-Win64CallIat -TargetRva ([UInt32]0x3228) -StackArguments @(
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3240) -StackArguments @(
         @{ Kind = 'FrameAddress'; SlotPosition = $availableSlot },
         @{ Kind = 'Immediate'; Value = 0 }
     ) # PeekNamedPipe
@@ -2011,7 +2030,7 @@ function Emit-DevRunTool {
     Emit-JumpConditional -ConditionCode 0x85 -Label $captureDone
     Emit-LoadRcxFrame -SlotPosition $pipeReadSlot
     Emit-Bytes -Bytes ([byte[]]@(0x33, 0xD2, 0x45, 0x33, 0xC0, 0x45, 0x33, 0xC9))
-    Emit-Win64CallIat -TargetRva ([UInt32]0x3228) -StackArguments @(
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3240) -StackArguments @(
         @{ Kind = 'FrameAddress'; SlotPosition = $availableSlot },
         @{ Kind = 'Immediate'; Value = 0 }
     ) # PeekNamedPipe
@@ -3356,7 +3375,7 @@ Set-U32 -Buffer $image -Offset ($opt + 104) -Value 0; Set-U32 -Buffer $image -Of
 Set-U32 -Buffer $image -Offset ($opt + 120) -Value ([UInt32]([long]$idataRva + [long]$descriptorBase)); Set-U32 -Buffer $image -Offset ($opt + 124) -Value $importDirectorySize
 Set-U32 -Buffer $image -Offset ($opt + 136) -Value $pdataRva; Set-U32 -Buffer $image -Offset ($opt + 140) -Value $pdataBytes.Length
 Set-U32 -Buffer $image -Offset ($opt + 152) -Value $relocRva; Set-U32 -Buffer $image -Offset ($opt + 156) -Value 12
-Set-U32 -Buffer $image -Offset ($opt + 208) -Value ([UInt32]([long]$idataRva + 0x70)); Set-U32 -Buffer $image -Offset ($opt + 212) -Value 0x288
+Set-U32 -Buffer $image -Offset ($opt + 208) -Value ([UInt32]([long]$idataRva + 0x70)); Set-U32 -Buffer $image -Offset ($opt + 212) -Value 0x290
 $sectionText = 0x188
 Set-Ascii -Buffer $image -Offset $sectionText -Value '.text'; Set-U32 -Buffer $image -Offset ($sectionText + 8) -Value $codeBytes.Length; Set-U32 -Buffer $image -Offset ($sectionText + 12) -Value $textRva; Set-U32 -Buffer $image -Offset ($sectionText + 16) -Value $textRawSize; Set-U32 -Buffer $image -Offset ($sectionText + 20) -Value $textRawPointer; Set-U32 -Buffer $image -Offset ($sectionText + 36) -Value 0x60000020
 $sectionData = 0x1B0

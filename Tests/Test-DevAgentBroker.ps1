@@ -133,19 +133,49 @@ try {
             throw "Native sandbox security component is missing: $required"
         }
     }
+    $importArrayMatch = [regex]::Match($compilerSource, '\$importSets\s*=\s*@\(([\s\S]*?)\r?\n\)')
+    if (-not $importArrayMatch.Success) { throw 'Native import-set declarations could not be parsed.' }
+    $importRecords = [regex]::Matches($importArrayMatch.Groups[1].Value, "Descriptor = (0x[0-9A-Fa-f]+); Lookup = (0x[0-9A-Fa-f]+); Iat = (0x[0-9A-Fa-f]+); Dll = '([^']+)'; Names = @\(([^)]*)\)")
+    if ($importRecords.Count -ne 16) { throw "Expected 16 import descriptors, found $($importRecords.Count)." }
+    $iatRanges = @()
+    $lookupRanges = @()
+    foreach ($record in $importRecords) {
+        $iatStart = [Convert]::ToInt32($record.Groups[3].Value.Substring(2), 16)
+        $lookupStart = [Convert]::ToInt32($record.Groups[2].Value.Substring(2), 16)
+        $apiCount = [regex]::Matches($record.Groups[5].Value, "'[^']+'").Count
+        if ($apiCount -lt 1) { throw 'An import descriptor contains no API names.' }
+        $iatRanges += [pscustomobject]@{ Start = $iatStart; End = $iatStart + (($apiCount + 1) * 8); Dll = $record.Groups[4].Value }
+        $lookupRanges += [pscustomobject]@{ Start = $lookupStart; End = $lookupStart + (($apiCount + 1) * 8); Dll = $record.Groups[4].Value }
+    }
+    for ($i = 0; $i -lt $iatRanges.Count; $i++) {
+        for ($j = $i + 1; $j -lt $iatRanges.Count; $j++) {
+            if ($iatRanges[$i].Start -lt $iatRanges[$j].End -and $iatRanges[$j].Start -lt $iatRanges[$i].End) {
+                throw "IAT arrays overlap, including their terminators: $($iatRanges[$i].Dll) and $($iatRanges[$j].Dll)."
+            }
+            if ($lookupRanges[$i].Start -lt $lookupRanges[$j].End -and $lookupRanges[$j].Start -lt $lookupRanges[$i].End) {
+                throw "Import lookup tables overlap, including their terminators: $($lookupRanges[$i].Dll) and $($lookupRanges[$j].Dll)."
+            }
+        }
+    }
+    $iatEnd = ($iatRanges | Measure-Object -Property End -Maximum).Maximum
+    if ($iatEnd -ne 0x300 -or -not $compilerSource.Contains('Value 0x290')) {
+        throw "Import Address Table extent must include the final zero thunk through offset 0x300; actual end=$('{0:X}' -f $iatEnd)."
+    }
+    Write-Host 'PASS: import lookup and IAT arrays are disjoint, including each module terminator' -ForegroundColor Green
+
     $expectedHelperIatCalls = @(
-        'TargetRva ([UInt32]0x3260)', # CreateAppContainerProfile
-        'TargetRva ([UInt32]0x3268)', # DeriveAppContainerSidFromAppContainerName
-        'TargetRva ([UInt32]0x32B0)', # GetSecurityInfo
-        'TargetRva ([UInt32]0x3280)', # SetEntriesInAclA
-        'TargetRva ([UInt32]0x32B8)'  # SetSecurityInfo
+        'TargetRva ([UInt32]0x3278)', # CreateAppContainerProfile
+        'TargetRva ([UInt32]0x3280)', # DeriveAppContainerSidFromAppContainerName
+        'TargetRva ([UInt32]0x32C8)', # GetSecurityInfo
+        'TargetRva ([UInt32]0x3298)', # SetEntriesInAclA
+        'TargetRva ([UInt32]0x32D0)'  # SetSecurityInfo
     )
     foreach ($expectedCall in $expectedHelperIatCalls) {
         if (-not $compilerSource.Contains($expectedCall)) {
             throw "Sandbox helper API call does not target its declared IAT slot: $expectedCall"
         }
     }
-    if (-not $brokerEmitterSource.Contains('TargetRva ([UInt32]0x32C0)')) {
+    if (-not $brokerEmitterSource.Contains('TargetRva ([UInt32]0x32D8)')) {
         throw 'GetTokenInformation call does not target its declared ADVAPI32 IAT slot.'
     }
     if (-not $brokerEmitterSource.Contains('Emit-DevBrokerUpdateAcl -PathSlot $workspaceRootSlot') -or -not $brokerEmitterSource.Contains('Emit-DevBrokerUpdateAcl -PathSlot $buildPathSlot')) {
