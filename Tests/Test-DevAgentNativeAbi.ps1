@@ -178,6 +178,7 @@ foreach($api in $manifest.plannedApiSignatures){
     Assert-Contract ([string]$api.name -ceq [string]$api.name.Trim()) ("API name contains invalid surrounding whitespace: {0}" -f $api.name)
     Assert-Contract ($apiHeaders[[string]$api.name] -ceq $expectedHeader) ("API declaration header mapping differs for {0}" -f $api.name)
 }
+    $header=$headerCache[$expectedHeader]
     $prototypeMatch=[regex]::Match($header,'\b'+[regex]::Escape([string]$api.name)+'\s*\(')
     Assert-Contract $prototypeMatch.Success ("SDK prototype not found for {0}" -f $api.name)
     $openParen=$header.IndexOf('(',[int]$prototypeMatch.Index)
