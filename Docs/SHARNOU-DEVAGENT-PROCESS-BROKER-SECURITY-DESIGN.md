@@ -138,7 +138,7 @@ The broker is not permitted to execute arbitrary PowerShell, cmd.exe, downloaded
 
 ## 2026-11-26 - Phase 2A: crash-safe per-execution workspace transaction candidate
 
-Status: IMPLEMENTED IN THE PR #18 CANDIDATE BRANCH; WINDOWS ADVERSARIAL CI PENDING. This is a PowerShell 5.1 transaction prototype and test harness. It is not yet wired into the native process-broker emitter and does not complete the restricted-token/AppContainer gate.
+Status: IMPLEMENTED IN THE PR #18 CANDIDATE BRANCH; TARGETED WINDOWS ADVERSARIAL CI PASSED 44/44 (0 FAILED) ON CODE COMMIT 4ef0a5cd97eaf048de774afeedd24ee3bc476633, RUN 45901210083. This validates the workspace transaction and ACL rollback prototype only; it does not complete native process isolation. This is a PowerShell 5.1 transaction prototype and test harness. It is not yet wired into the native process-broker emitter and does not complete the restricted-token/AppContainer gate.
 
 Candidate files:
 - Tests/DevAgentBroker/WorkspaceTransaction.ps1
@@ -189,3 +189,6 @@ Second Windows parser finding (2026-11-26): the first backup-cleanup implementat
 
 
 Third Windows adversarial finding (2026-11-26): recovery initially serialized its normalized in-memory record with PascalCase fields and omitted the journal schema version. This made a retained RESTORED record fail on a second restart. The recovery projection now writes the same versioned lowercase journal schema as the transaction writer; a regression assertion checks the stored version, ID, state, and workspace path before a second recovery pass.
+
+
+Successful targeted Windows validation (2026-11-26): GitHub Actions run 45901210083, job windows-workspace-security, executed on Microsoft Windows Server 2025 with 64-bit Windows PowerShell 5.1 at code commit 4ef0a5cd97eaf048de774afeedd24ee3bc476633. Result: Workspace transaction suite 44 passed, 0 failed. The run exercised two isolated execution workspaces, exact ACL restore, recovery skips for live leases, process termination at PREPARING/ACL_PENDING/RESTORING/RESTORED boundaries, nested junction handling, journal tamper/path escape rejection, malformed journal handling, and journal/lease/temp/backup cleanup. The independent Stage 7A workflow passed this same workspace test step; its separate compiler regression step was still running when this note was written. The 83-case Milestone 6 baseline workflow completed successfully on the same code commit.
