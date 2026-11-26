@@ -1314,12 +1314,48 @@ function Emit-DevBrokerCheckDirectoryChain {
 function Emit-DevRunTool {
     param([int] $ToolSlot, [int] $TimeoutSlot, [int] $BaseDepth)
     $scratch = [int]$script:ActiveContext.ScratchPosition
-    $applicationSlot = $scratch
-    $workingDirectorySlot = $scratch + 0x120
-    $commandLineSlot = $scratch + 0x240
-    $startupSlot = $scratch + 0x460
-    $processSlot = $scratch + 0x4D0
-    $jobInfoSlot = $scratch + 0x510
+
+    # Fixed frame layout. All child-visible paths/handles are broker-owned.
+    $applicationSlot = $scratch + 0x000
+    $modulePathSlot = $scratch + 0x120
+    $workspaceRootSlot = $modulePathSlot
+    $commandLineSlot = $scratch + 0x360
+    $startupSlot = $scratch + 0x580
+    $processSlot = $scratch + 0x600
+    $jobInfoSlot = $scratch + 0x640
+    $buildPathSlot = $scratch + 0x700
+    $brokerDirectorySlot = $scratch + 0x820
+    $outputPathSlot = $scratch + 0x940
+    $attributeListSlot = $scratch + 0xA50
+    $pipeReadSlot = $scratch + 0xA58
+    $pipeWriteSlot = $scratch + 0xA60
+    $nulHandleSlot = $scratch + 0xA68
+    $attributeSizeSlot = $scratch + 0xA70
+    $securityCapabilitiesSlot = $scratch + 0xA78
+    $pipeSecuritySlot = $scratch + 0xA98
+    $handleListSlot = $scratch + 0xAB0
+    $outputBufferSlot = $scratch + 0xAC0
+    $outputCountSlot = $scratch + 0xAC8
+    $availableSlot = $scratch + 0xACC
+    $readCountSlot = $scratch + 0xAD0
+    $remainingMsSlot = $scratch + 0xAD4
+    $outputFileHandleSlot = $scratch + 0xAD8
+    $outputWrittenSlot = $scratch + 0xAE0
+    $appContainerSidSlot = $scratch + 0xAE8
+    $mutexHandleSlot = $scratch + 0xAF0
+    $mutexAcquiredSlot = $scratch + 0xAF8
+    $attributeListReadySlot = $scratch + 0xAFC
+    $childActiveSlot = $scratch + 0xB00
+    $sourceTokenSlot = $scratch + 0xB08
+    $restrictedTokenSlot = $scratch + 0xB10
+    $childTokenSlot = $scratch + 0xB18
+    $tokenInformationSlot = $scratch + 0xB38
+    $tokenLengthSlot = $scratch + 0xB78
+    $rootLengthSlot = $scratch + 0xB7C
+    $modulePathLengthSlot = $scratch + 0xB80
+    $pathScratchSlot = $scratch + 0xC00
+    $outputFileInfoSlot = $scratch + 0xDA8
+
     $jobHandleSlot = Get-TempSlotPosition -Depth ($BaseDepth + 2)
     $saveRdiSlot = Get-TempSlotPosition -Depth ($BaseDepth + 3)
     $saveRsiSlot = Get-TempSlotPosition -Depth ($BaseDepth + 4)
@@ -1327,10 +1363,23 @@ function Emit-DevRunTool {
     $exitCodeSlot = Get-TempSlotPosition -Depth ($BaseDepth + 6)
     $hashFileHandleSlot = Get-TempSlotPosition -Depth ($BaseDepth + 7)
 
-    # Initialize every handle slot before any validation branch can reach cleanup.
-    Emit-StoreZero64Frame -SlotPosition $jobHandleSlot
-    Emit-StoreZero64Frame -SlotPosition $hashFileHandleSlot
+    # Initialize every pointer, handle, and state flag before any branch reaches cleanup.
+    foreach ($slot in @(
+        $jobHandleSlot, $hashFileHandleSlot, $attributeListSlot, $pipeReadSlot,
+        $pipeWriteSlot, $nulHandleSlot, $outputBufferSlot, $outputFileHandleSlot,
+        $appContainerSidSlot, $mutexHandleSlot, $sourceTokenSlot,
+        $restrictedTokenSlot, $childTokenSlot
+    )) { Emit-StoreZero64Frame -SlotPosition $slot }
     for ($i = 0; $i -lt 3; $i++) { Emit-StoreZero64Frame -SlotPosition ($processSlot + ($i * 8)) }
+    foreach ($slot in @(
+        $mutexAcquiredSlot, $attributeListReadySlot, $childActiveSlot,
+        $outputCountSlot, $availableSlot, $readCountSlot, $remainingMsSlot,
+        $outputWrittenSlot
+    )) { Emit-StoreBits32Frame -SlotPosition $slot -Value 0 }
+    Emit-StoreBits32Frame -SlotPosition $resultSlot -Value 0
+    Emit-StoreZero64Frame -SlotPosition $tokenLengthSlot
+    Emit-StoreZero64Frame -SlotPosition $modulePathLengthSlot
+    Emit-StoreZero64Frame -SlotPosition $rootLengthSlot
 
     $unknownTool = New-UniqueLabel -Prefix 'dev_tool_unknown'
     $invalidTimeout = New-UniqueLabel -Prefix 'dev_tool_timeout_invalid'
@@ -1340,11 +1389,21 @@ function Emit-DevRunTool {
         (New-UniqueLabel -Prefix 'dev_tool_baseline_m1_m6'),
         (New-UniqueLabel -Prefix 'dev_tool_stack_unwind'),
         (New-UniqueLabel -Prefix 'dev_tool_timeout_probe'),
-        (New-UniqueLabel -Prefix 'dev_tool_success_probe')
+        (New-UniqueLabel -Prefix 'dev_tool_success_probe'),
+        (New-UniqueLabel -Prefix 'dev_tool_sandbox_probe'),
+        (New-UniqueLabel -Prefix 'dev_tool_output_overflow_probe')
     )
     $commandReady = New-UniqueLabel -Prefix 'dev_tool_command_ready'
+    $hashVerified = New-UniqueLabel -Prefix 'dev_tool_hash_verified'
+    $hashFail = New-UniqueLabel -Prefix 'dev_tool_hash_fail'
     $pathFail = New-UniqueLabel -Prefix 'dev_tool_path_fail'
     $directoryFail = New-UniqueLabel -Prefix 'dev_tool_directory_fail'
+    $mutexFail = New-UniqueLabel -Prefix 'dev_tool_mutex_fail'
+    $appContainerFail = New-UniqueLabel -Prefix 'dev_tool_appcontainer_fail'
+    $aclFail = New-UniqueLabel -Prefix 'dev_tool_acl_fail'
+    $tokenFail = New-UniqueLabel -Prefix 'dev_tool_token_fail'
+    $pipeFail = New-UniqueLabel -Prefix 'dev_tool_pipe_fail'
+    $attributeFail = New-UniqueLabel -Prefix 'dev_tool_attribute_fail'
     $jobFail = New-UniqueLabel -Prefix 'dev_tool_job_fail'
     $jobConfigFail = New-UniqueLabel -Prefix 'dev_tool_job_config_fail'
     $createFail = New-UniqueLabel -Prefix 'dev_tool_create_fail'
@@ -1352,15 +1411,36 @@ function Emit-DevRunTool {
     $resumeFail = New-UniqueLabel -Prefix 'dev_tool_resume_fail'
     $waitFail = New-UniqueLabel -Prefix 'dev_tool_wait_fail'
     $timeoutFail = New-UniqueLabel -Prefix 'dev_tool_timeout'
-    $success = New-UniqueLabel -Prefix 'dev_tool_success'
+    $outputOverflow = New-UniqueLabel -Prefix 'dev_tool_output_overflow'
+    $outputFail = New-UniqueLabel -Prefix 'dev_tool_output_fail'
+    $captureLoop = New-UniqueLabel -Prefix 'dev_tool_capture_loop'
+    $capturePipeClosed = New-UniqueLabel -Prefix 'dev_tool_capture_pipe_closed'
+    $capturePipeEof = New-UniqueLabel -Prefix 'dev_tool_capture_pipe_eof'
+    $processDone = New-UniqueLabel -Prefix 'dev_tool_process_done'
+    $finalDrain = New-UniqueLabel -Prefix 'dev_tool_final_drain'
+    $finalPipeEof = New-UniqueLabel -Prefix 'dev_tool_final_pipe_eof'
+    $captureDone = New-UniqueLabel -Prefix 'dev_tool_capture_done'
     $cleanup = New-UniqueLabel -Prefix 'dev_tool_cleanup'
     $done = New-UniqueLabel -Prefix 'dev_tool_done'
 
-    $suffix = '\WindowsPowerShell\v1.0\powershell.exe'
-    $suffixItem = Register-DataConstant -Value $suffix
-    $suffixLength = [System.Text.Encoding]::ASCII.GetByteCount($suffix)
+    $powerShellSuffix = '\WindowsPowerShell\v1.0\powershell.exe'
+    $powerShellSuffixItem = Register-DataConstant -Value $powerShellSuffix
+    $powerShellSuffixLength = [System.Text.Encoding]::ASCII.GetByteCount($powerShellSuffix)
+    $imageSuffix = '\Build\DevAgentBroker\DevAgentBroker.exe'
+    $imageSuffixItem = Register-DataConstant -Value $imageSuffix
+    $imageSuffixLength = [System.Text.Encoding]::ASCII.GetByteCount($imageSuffix)
+    $buildSuffix = '\Build'
+    $buildSuffixItem = Register-DataConstant -Value $buildSuffix
+    $buildSuffixLength = [System.Text.Encoding]::ASCII.GetByteCount($buildSuffix)
+    $brokerSuffix = '\Build\DevAgentBroker'
+    $brokerSuffixItem = Register-DataConstant -Value $brokerSuffix
+    $brokerSuffixLength = [System.Text.Encoding]::ASCII.GetByteCount($brokerSuffix)
+    $captureSuffix = '\Build\DevAgentBroker\captured-output.bin'
+    $captureSuffixItem = Register-DataConstant -Value $captureSuffix
+    $captureSuffixLength = [System.Text.Encoding]::ASCII.GetByteCount($captureSuffix)
+
     $manifestPath = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\Tests\DevAgentBroker\tool-manifest.json'))
-    $expectedManifestSha256 = '9E66BFC8465396E1FBCD0A314B1E4B1ED3FDBCF7BABB3FF7DC5EF443E98AD7B9'
+    $expectedManifestSha256 = 'MANIFEST_SHA256_PLACEHOLDER'
     if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) { throw 'Pinned DevAgent tool manifest is missing.' }
     $actualManifestSha256 = (Get-FileHash -LiteralPath $manifestPath -Algorithm SHA256).Hash
     if ($actualManifestSha256 -cne $expectedManifestSha256) {
@@ -1373,37 +1453,37 @@ function Emit-DevRunTool {
         [pscustomobject]@{ Id = 3; Path = 'Tests\BaselineM6\Test-Milestone6Baseline.ps1' },
         [pscustomobject]@{ Id = 4; Path = 'Tests\Test-StackProbeUnwind.ps1' },
         [pscustomobject]@{ Id = 5; Path = 'Tests\DevAgentBroker\TimeoutProbe.ps1' },
-        [pscustomobject]@{ Id = 6; Path = 'Tests\DevAgentBroker\SuccessProbe.ps1' }
+        [pscustomobject]@{ Id = 6; Path = 'Tests\DevAgentBroker\SuccessProbe.ps1' },
+        [pscustomobject]@{ Id = 7; Path = 'Tests\DevAgentBroker\SandboxProbe.ps1' },
+        [pscustomobject]@{ Id = 8; Path = 'Tests\DevAgentBroker\OverflowProbe.ps1' }
     )
     if ([int]$manifest.version -ne 1 -or @($manifest.tools).Count -ne $fixedToolPaths.Count) {
-        throw 'Pinned DevAgent tool manifest has an unsupported version or tool count.'
+        throw 'Pinned DevAgent tool manifest version or fixed tool count is invalid.'
     }
     $commandItems = @()
     foreach ($fixedTool in $fixedToolPaths) {
         $entry = @($manifest.tools | Where-Object { [int]$_.id -eq $fixedTool.Id })
-        if ($entry.Count -ne 1 -or [string]$entry[0].path -cne $fixedTool.Path) {
-            throw "Pinned DevAgent tool manifest path/ID mismatch for tool ID $($fixedTool.Id)."
-        }
-        $expectedScriptSha256 = [string]$entry[0].sha256
-        if ($expectedScriptSha256 -notmatch '^[A-F0-9]{64}$') {
-            throw "Pinned DevAgent tool manifest contains an invalid SHA-256 for tool ID $($fixedTool.Id)."
+        $toolPath = Join-Path $PSScriptRoot ('..\' + $fixedTool.Path)
+        if (-not (Test-Path -LiteralPath $toolPath -PathType Leaf)) { throw "Pinned DevAgent tool is missing: $($fixedTool.Path)" }
+        $toolHash = (Get-FileHash -LiteralPath $toolPath -Algorithm SHA256).Hash
+        if ($entry.Count -ne 1 -or [string]$entry[0].path -cne $fixedTool.Path -or [string]$entry[0].sha256 -cne $toolHash) {
+            throw "Pinned DevAgent tool manifest path/hash mismatch for tool ID $($fixedTool.Id)."
         }
         $commandCode = '$ErrorActionPreference=''Stop'';$p=''{0}'';$global:SHARNOU_TOOL_EXIT_CODE=$null;try{{& $p;if($null -ne $global:SHARNOU_TOOL_EXIT_CODE){{exit [int]$global:SHARNOU_TOOL_EXIT_CODE}};if(-not $?) {{exit 1}};exit 0}}catch{{exit 1}}' -f $fixedTool.Path
         $commandText = 'powershell.exe -NoLogo -NoProfile -NonInteractive -Command "' + $commandCode + '"'
         $commandLength = [System.Text.Encoding]::ASCII.GetByteCount($commandText)
         if ($commandLength -ge 0x220) { throw "Pinned DevAgent command for tool ID $($fixedTool.Id) exceeds its fixed buffer." }
-        $commandItems += [pscustomobject]@{
-            Id = $fixedTool.Id
-            Item = (Register-DataConstant -Value $commandText)
-            Length = $commandLength
-        }
+        $commandItems += [pscustomobject]@{ Id = $fixedTool.Id; Item = (Register-DataConstant -Value $commandText); Length = $commandLength }
+        $fixedTool | Add-Member -NotePropertyName Sha256 -NotePropertyValue ([string]$entry[0].sha256) -Force
+        $fixedTool | Add-Member -NotePropertyName SuffixItem -NotePropertyValue (Register-DataConstant -Value ('\' + $fixedTool.Path)) -Force
+        $fixedTool | Add-Member -NotePropertyName SuffixLength -NotePropertyValue ([System.Text.Encoding]::ASCII.GetByteCount('\' + $fixedTool.Path)) -Force
     }
 
-    # Preserve the two nonvolatile registers used by REP MOVSB.
+    # REP MOVSB uses nonvolatile RSI/RDI; preserve both for the Sharnou caller.
     Emit-StoreRdiFrame -SlotPosition $saveRdiSlot
     Emit-StoreRsiFrame -SlotPosition $saveRsiSlot
 
-    # Reject all unknown tool IDs and out-of-policy timeouts before any process creation.
+    # Validate tool ID and timeout before any filesystem or process side effect.
     Emit-LoadEaxFrame -SlotPosition $TimeoutSlot
     Emit-Bytes -Bytes ([byte[]]@(0x3D))
     Emit-I32 -Value 1000
@@ -1418,7 +1498,6 @@ function Emit-DevRunTool {
         Emit-JumpConditional -ConditionCode 0x84 -Label $toolLabels[$i]
     }
     Emit-Jump -Label $unknownTool
-
     for ($i = 0; $i -lt $commandItems.Count; $i++) {
         Mark-CodeLabel -Label $toolLabels[$i]
         Emit-CopyDataConstantToFrame -DataItem $commandItems[$i].Item -SlotPosition $commandLineSlot -Length $commandItems[$i].Length
@@ -1434,134 +1513,299 @@ function Emit-DevRunTool {
     Emit-Jump -Label $cleanup
     Mark-CodeLabel -Label $commandReady
 
-    # Resolve the PowerShell host from System32; never search PATH or accept a caller path.
+    # Resolve PowerShell from the absolute Windows System directory; never search PATH.
     Emit-LeaRaxFrame -SlotPosition $applicationSlot
-    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1, 0xBA, 0x04, 0x01, 0x00, 0x00)) # RCX=buffer, EDX=260
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1, 0xBA, 0x04, 0x01, 0x00, 0x00))
     Emit-Win64CallIat -TargetRva ([UInt32]0x3178) -StackArguments @() # GetSystemDirectoryA
     Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
     Emit-JumpConditional -ConditionCode 0x84 -Label $pathFail
     Emit-Bytes -Bytes ([byte[]]@(0x3D))
-    Emit-I32 -Value 220
+    Emit-I32 -Value (220 - $powerShellSuffixLength)
     Emit-JumpConditional -ConditionCode 0x87 -Label $pathFail
-    Emit-Bytes -Bytes ([byte[]]@(0x89, 0xC6)) # ESI = System32 path length
+    Emit-Bytes -Bytes ([byte[]]@(0x89, 0xC6)) # ESI = System32 length
     Emit-LeaRaxFrame -SlotPosition $applicationSlot
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC7, 0x48, 0x01, 0xF7)) # RDI = end of System32 path
-    Emit-DataAddress -DataItem $suffixItem
+    Emit-DataAddress -DataItem $powerShellSuffixItem
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC6, 0xB9))
-    Emit-I32 -Value $suffixLength
-    Emit-Bytes -Bytes ([byte[]]@(0xF3, 0xA4, 0xC6, 0x07, 0x00)) # append fixed PowerShell suffix and NUL
+    Emit-I32 -Value $powerShellSuffixLength
+    Emit-Bytes -Bytes ([byte[]]@(0xF3, 0xA4, 0xC6, 0x07, 0x00)) # append fixed suffix and NUL
 
-    # Resolve the workspace from this broker image, never from inherited current-directory state.
-    # The broker is accepted only from Build\\DevAgentBroker\\DevAgentBroker.exe.
-    $modulePathLengthSlot = Get-TempSlotPosition -Depth ($BaseDepth + 8)
-    $imageSuffix = '\Build\DevAgentBroker\DevAgentBroker.exe'
-    $imageSuffixLength = [System.Text.Encoding]::ASCII.GetByteCount($imageSuffix)
-    $imageSuffixItem = Register-DataConstant -Value $imageSuffix
-    Emit-Bytes -Bytes ([byte[]]@(0x31, 0xC9)) # RCX = NULL module handle
-    Emit-LeaRaxFrame -SlotPosition $workingDirectorySlot
-    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC2, 0x41, 0xB8, 0x04, 0x01, 0x00, 0x00)) # RDX=buffer; R8D=260
+    # Derive the workspace root from this executable's absolute image path.
+    Emit-Bytes -Bytes ([byte[]]@(0x33, 0xC9)) # HMODULE = NULL
+    Emit-LeaRaxFrame -SlotPosition $workspaceRootSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC2, 0x41, 0xB8, 0x04, 0x01, 0x00, 0x00))
     Emit-Win64CallIat -TargetRva ([UInt32]0x3208) -StackArguments @() # GetModuleFileNameA
     Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
     Emit-JumpConditional -ConditionCode 0x84 -Label $directoryFail
     Emit-Bytes -Bytes ([byte[]]@(0x3D))
-    Emit-I32 -Value (260 - 1)
+    Emit-I32 -Value 259
     Emit-JumpConditional -ConditionCode 0x87 -Label $directoryFail
     Emit-StoreEaxFrame -SlotPosition $modulePathLengthSlot
     Emit-Bytes -Bytes ([byte[]]@(0x3D))
     Emit-I32 -Value $imageSuffixLength
     Emit-JumpConditional -ConditionCode 0x82 -Label $directoryFail
 
-    # Compare the fixed image suffix against the returned module path.
-    Emit-LeaRaxFrame -SlotPosition $workingDirectorySlot
-    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC7)) # RDI = image path
+    # Require the exact \Build\DevAgentBroker\DevAgentBroker.exe suffix.
+    Emit-LeaRaxFrame -SlotPosition $workspaceRootSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC7))
     Emit-LoadEaxFrame -SlotPosition $modulePathLengthSlot
     Emit-Bytes -Bytes ([byte[]]@(0x2D))
     Emit-I32 -Value $imageSuffixLength
-    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x63, 0xC0, 0x48, 0x01, 0xC7)) # RDI = end - fixed suffix
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x63, 0xC0, 0x48, 0x01, 0xC7))
     Emit-DataAddress -DataItem $imageSuffixItem
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC6, 0xB9))
     Emit-I32 -Value $imageSuffixLength
     Emit-Bytes -Bytes ([byte[]]@(0xFC, 0xF3, 0xA6)) # CLD; REPE CMPSB
     Emit-JumpConditional -ConditionCode 0x85 -Label $directoryFail
-
-    # Truncate the executable suffix in-place to obtain the canonical workspace root.
     Emit-LoadEaxFrame -SlotPosition $modulePathLengthSlot
     Emit-Bytes -Bytes ([byte[]]@(0x2D))
     Emit-I32 -Value $imageSuffixLength
-    Emit-Bytes -Bytes ([byte[]]@(0xC6, 0x84, 0x05)) # mov byte ptr [rbp+rax+disp32],0
-    Emit-I32 -Value (Get-FrameDisp -SlotPosition $workingDirectorySlot)
-    Emit-Bytes -Bytes ([byte[]]@(0x00))
+    Emit-StoreEaxFrame -SlotPosition $rootLengthSlot
+    Emit-Bytes -Bytes ([byte[]]@(0xC6, 0x84, 0x05))
+    Emit-I32 -Value (Get-FrameDisp -SlotPosition $workspaceRootSlot)
+    Emit-Bytes -Bytes ([byte[]]@(0x00)) # terminate workspace root
 
-    # Set this process CWD to the image-derived root so all fixed relative checks resolve there.
-    Emit-LeaRaxFrame -SlotPosition $workingDirectorySlot
+    # Reject non-drive, UNC/device, ADS and reparse ancestors before building any child path.
+    Emit-DevBrokerCheckDirectoryChain -PathSlot $workspaceRootSlot -FailureLabel $directoryFail
+    Emit-DevBrokerPathCheck -FrameSlot $workspaceRootSlot -IsDirectory $true -FailureLabel $directoryFail
+    Emit-LeaRaxFrame -SlotPosition $workspaceRootSlot
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1))
     Emit-Win64CallIat -TargetRva ([UInt32]0x3210) -StackArguments @() # SetCurrentDirectoryA
     Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
     Emit-JumpConditional -ConditionCode 0x84 -Label $directoryFail
 
-    # Confine the broker to a recognizable workspace tree and reject reparse points.
-    Emit-DevBrokerPathCheck -FrameSlot $workingDirectorySlot -IsDirectory $true -FailureLabel $directoryFail
-    $workspaceDirectoryItem = Register-DataConstant -Value '.'
-    $stage0DirectoryItem = Register-DataConstant -Value 'Stage0'
-    $testsDirectoryItem = Register-DataConstant -Value 'Tests'
-    $brokerDirectoryItem = Register-DataConstant -Value 'Tests\DevAgentBroker'
-    $baselineDirectoryItem = Register-DataConstant -Value 'Tests\BaselineM6'
-    $compilerFileItem = Register-DataConstant -Value 'Stage0\SharnouCompiler.ps1'
-    Emit-DevBrokerPathCheck -DataItem $workspaceDirectoryItem -IsDirectory $true -FailureLabel $directoryFail
-    Emit-DevBrokerPathCheck -DataItem $stage0DirectoryItem -IsDirectory $true -FailureLabel $directoryFail
-    Emit-DevBrokerPathCheck -DataItem $testsDirectoryItem -IsDirectory $true -FailureLabel $directoryFail
-    Emit-DevBrokerPathCheck -DataItem $brokerDirectoryItem -IsDirectory $true -FailureLabel $directoryFail
-    Emit-DevBrokerPathCheck -DataItem $baselineDirectoryItem -IsDirectory $true -FailureLabel $directoryFail
-    Emit-DevBrokerPathCheck -DataItem $compilerFileItem -IsDirectory $false -FailureLabel $directoryFail
-    foreach ($fixedTool in $fixedToolPaths) {
-        $toolPathItem = Register-DataConstant -Value $fixedTool.Path
-        $entry = @($manifest.tools | Where-Object { [int]$_.id -eq $fixedTool.Id })
-        if ($entry.Count -ne 1) { throw "Pinned DevAgent manifest has no unique entry for tool ID $($fixedTool.Id)." }
-        $fixedTool | Add-Member -NotePropertyName PathItem -NotePropertyValue $toolPathItem -Force
-        $fixedTool | Add-Member -NotePropertyName Sha256 -NotePropertyValue ([string]$entry[0].sha256) -Force
-        Emit-DevBrokerPathCheck -DataItem $toolPathItem -IsDirectory $false -FailureLabel $directoryFail
-    }
+    # Construct canonical absolute paths using only the checked workspace root.
+    Emit-DevBrokerBuildWorkspacePath -RootSlot $workspaceRootSlot -RootLengthSlot $rootLengthSlot -SuffixItem $buildSuffixItem -SuffixLength $buildSuffixLength -DestinationSlot $buildPathSlot
+    Emit-DevBrokerBuildWorkspacePath -RootSlot $workspaceRootSlot -RootLengthSlot $rootLengthSlot -SuffixItem $brokerSuffixItem -SuffixLength $brokerSuffixLength -DestinationSlot $brokerDirectorySlot
+    Emit-DevBrokerBuildWorkspacePath -RootSlot $workspaceRootSlot -RootLengthSlot $rootLengthSlot -SuffixItem $captureSuffixItem -SuffixLength $captureSuffixLength -DestinationSlot $outputPathSlot
+    Emit-DevBrokerPathCheck -FrameSlot $buildPathSlot -IsDirectory $true -FailureLabel $directoryFail
+    Emit-DevBrokerPathCheck -FrameSlot $brokerDirectorySlot -IsDirectory $true -FailureLabel $directoryFail
 
-    # Verify the exact on-disk script selected by tool ID using native Windows CNG.
-    # The opened file handle remains alive until child completion, preventing write/delete
-    # replacement between the hash check and the PowerShell host opening the script.
-    $verifyLabels = @()
-    for ($i = 0; $i -lt $fixedToolPaths.Count; $i++) {
-        $verifyLabels += New-UniqueLabel -Prefix 'dev_tool_verify_hash'
+    foreach ($directorySuffix in @('\Stage0', '\Tests', '\Tests\BaselineM6', '\Tests\DevAgentBroker')) {
+        $directoryItem = Register-DataConstant -Value $directorySuffix
+        $directoryLength = [System.Text.Encoding]::ASCII.GetByteCount($directorySuffix)
+        Emit-DevBrokerBuildWorkspacePath -RootSlot $workspaceRootSlot -RootLengthSlot $rootLengthSlot -SuffixItem $directoryItem -SuffixLength $directoryLength -DestinationSlot $pathScratchSlot
+        Emit-DevBrokerPathCheck -FrameSlot $pathScratchSlot -IsDirectory $true -FailureLabel $directoryFail
     }
-    $hashVerified = New-UniqueLabel -Prefix 'dev_tool_hash_verified'
-    $scriptHashFail = New-UniqueLabel -Prefix 'dev_tool_script_hash_fail'
+    $compilerSuffixItem = Register-DataConstant -Value '\Stage0\SharnouCompiler.ps1'
+    $compilerSuffixLength = [System.Text.Encoding]::ASCII.GetByteCount('\Stage0\SharnouCompiler.ps1')
+    Emit-DevBrokerBuildWorkspacePath -RootSlot $workspaceRootSlot -RootLengthSlot $rootLengthSlot -SuffixItem $compilerSuffixItem -SuffixLength $compilerSuffixLength -DestinationSlot $pathScratchSlot
+    Emit-DevBrokerPathCheck -FrameSlot $pathScratchSlot -IsDirectory $false -FailureLabel $directoryFail
+
+    # Hash only the selected immutable script by absolute path; keep its opened file handle.
+    $verifyLabels = @()
+    for ($i = 0; $i -lt $fixedToolPaths.Count; $i++) { $verifyLabels += New-UniqueLabel -Prefix 'dev_tool_verify_hash' }
     Emit-LoadEaxFrame -SlotPosition $ToolSlot
     for ($i = 0; $i -lt $fixedToolPaths.Count; $i++) {
         Emit-Bytes -Bytes ([byte[]]@(0x3D))
-        Emit-I32 -Value ([int]$fixedToolPaths[$i].Id)
+        Emit-I32 -Value $fixedToolPaths[$i].Id
         Emit-JumpConditional -ConditionCode 0x84 -Label $verifyLabels[$i]
     }
     Emit-Jump -Label $unknownTool
     for ($i = 0; $i -lt $fixedToolPaths.Count; $i++) {
         Mark-CodeLabel -Label $verifyLabels[$i]
-        Emit-DevBrokerVerifyScript -PathItem $fixedToolPaths[$i].PathItem -ExpectedSha256 $fixedToolPaths[$i].Sha256 -PersistentFileHandleSlot $hashFileHandleSlot -FailureLabel $scriptHashFail
+        Emit-DevBrokerBuildWorkspacePath -RootSlot $workspaceRootSlot -RootLengthSlot $rootLengthSlot -SuffixItem $fixedToolPaths[$i].SuffixItem -SuffixLength $fixedToolPaths[$i].SuffixLength -DestinationSlot $pathScratchSlot
+        Emit-DevBrokerVerifyScript -FrameSlot $pathScratchSlot -ExpectedSha256 $fixedToolPaths[$i].Sha256 -PersistentFileHandleSlot $hashFileHandleSlot -FailureLabel $hashFail
         Emit-Jump -Label $hashVerified
     }
-    Mark-CodeLabel -Label $scriptHashFail
-    Emit-Bytes -Bytes ([byte[]]@(0xB8))
-    Emit-I32 -Value -111 # pinned script SHA-256 mismatch or native hash/read failure
+    Mark-CodeLabel -Label $hashFail
+    Emit-Bytes -Bytes ([byte[]]@(0xB8, 0x91, 0xFF, 0xFF, 0xFF)) # -111: selected script hash failed
     Emit-StoreEaxFrame -SlotPosition $resultSlot
     Emit-Jump -Label $cleanup
     Mark-CodeLabel -Label $hashVerified
 
-    # Zero STARTUPINFOA, PROCESS_INFORMATION and JOBOBJECT_EXTENDED_LIMIT_INFORMATION.
-    for ($i = 0; $i -lt 13; $i++) { Emit-StoreZero64Frame -SlotPosition ($startupSlot + ($i * 8)) }
-    for ($i = 0; $i -lt 3; $i++) { Emit-StoreZero64Frame -SlotPosition ($processSlot + ($i * 8)) }
-    for ($i = 0; $i -lt 18; $i++) { Emit-StoreZero64Frame -SlotPosition ($jobInfoSlot + ($i * 8)) }
-    Emit-StoreBits32Frame -SlotPosition $startupSlot -Value ([UInt32]104)
-    # KILL_ON_JOB_CLOSE | ACTIVE_PROCESS | PROCESS_MEMORY | JOB_MEMORY.
-    Emit-StoreBits32Frame -SlotPosition ($jobInfoSlot + 16) -Value ([UInt32]0x2308)
-    Emit-StoreBits32Frame -SlotPosition ($jobInfoSlot + 40) -Value ([UInt32]4)
-    Emit-StoreBits32Frame -SlotPosition ($jobInfoSlot + 112) -Value ([UInt32](256 * 1024 * 1024))
-    Emit-StoreBits32Frame -SlotPosition ($jobInfoSlot + 120) -Value ([UInt32](512 * 1024 * 1024))
+    # Serialize AppContainer ACL updates and output-file creation across broker instances.
+    $mutexNameItem = Register-DataConstant -Value 'Local\SharnouDevAgentBroker.Sandbox.v3'
+    Emit-Bytes -Bytes ([byte[]]@(0x33, 0xC9, 0x33, 0xD2))
+    Emit-DataAddress -DataItem $mutexNameItem
+    Emit-Bytes -Bytes ([byte[]]@(0x49, 0x89, 0xC0))
+    Emit-Win64CallIat -TargetRva ([UInt32]0x30D8) -StackArguments @() # CreateMutexA
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x85, 0xC0))
+    Emit-JumpConditional -ConditionCode 0x84 -Label $mutexFail
+    Emit-StoreRaxFrame -SlotPosition $mutexHandleSlot
+    Emit-LoadRcxFrame -SlotPosition $mutexHandleSlot
+    Emit-Bytes -Bytes ([byte[]]@(0xBA, 0x30, 0x75, 0x00, 0x00)) # wait <= 30000 ms
+    Emit-Win64CallIat -TargetRva ([UInt32]0x30D0) -StackArguments @() # WaitForSingleObject
+    Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
+    $mutexAcquired = New-UniqueLabel -Prefix 'dev_tool_mutex_acquired'
+    Emit-JumpConditional -ConditionCode 0x84 -Label $mutexAcquired
+    Emit-Bytes -Bytes ([byte[]]@(0x3D, 0x80, 0x00, 0x00, 0x00)) # WAIT_ABANDONED is also acquired
+    Emit-JumpConditional -ConditionCode 0x85 -Label $mutexFail
+    Mark-CodeLabel -Label $mutexAcquired
+    Emit-StoreBits32Frame -SlotPosition $mutexAcquiredSlot -Value 1
 
-    # Create and configure the job before creating any child.
+    # A stable no-capability AppContainer SID receives persistent, idempotent ACLs:
+    # workspace root = read/execute; Build and its broker subdirectory = read/write/execute.
+    Emit-DevBrokerEnsureAppContainerSid -SidSlot $appContainerSidSlot -FailureLabel $appContainerFail
+    Emit-DevBrokerUpdateAcl -PathSlot $workspaceRootSlot -SidSlot $appContainerSidSlot -AccessMask ([UInt32]0x001200A9) -AccessMode 2 -FailureLabel $aclFail
+    Emit-DevBrokerUpdateAcl -PathSlot $buildPathSlot -SidSlot $appContainerSidSlot -AccessMask ([UInt32]0x001201FF) -AccessMode 2 -FailureLabel $aclFail
+    Emit-DevBrokerUpdateAcl -PathSlot $brokerDirectorySlot -SidSlot $appContainerSidSlot -AccessMask ([UInt32]0x001201FF) -AccessMode 2 -FailureLabel $aclFail
+
+    # Create a new exclusive capture file before launch. CREATE_NEW cannot reopen an old
+    # reparse point or hard link; the held non-inheritable handle is reused for persistence.
+    Emit-LeaRaxFrame -SlotPosition $outputPathSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1))
+    Emit-Win64CallIat -TargetRva ([UInt32]0x32D8) -StackArguments @() # DeleteFileA; stale files are removed only before CREATE_NEW
+    Emit-LeaRaxFrame -SlotPosition $outputPathSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1, 0xBA, 0x80, 0x00, 0x00, 0x40, 0x45, 0x33, 0xC0, 0x45, 0x33, 0xC9))
+    Emit-Win64CallIat -TargetRva ([UInt32]0x30A0) -StackArguments @(
+        @{ Kind = 'Immediate'; Value = 1 },  # CREATE_NEW
+        @{ Kind = 'Immediate'; Value = 0x00200080 }, # OPEN_REPARSE_POINT | FILE_ATTRIBUTE_NORMAL
+        @{ Kind = 'Immediate'; Value = 0 }
+    ) # CreateFileA(captured-output.bin), share mode = 0
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x83, 0xF8, 0xFF))
+    Emit-JumpConditional -ConditionCode 0x84 -Label $outputFail
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x85, 0xC0))
+    Emit-JumpConditional -ConditionCode 0x84 -Label $outputFail
+    Emit-StoreRaxFrame -SlotPosition $outputFileHandleSlot
+    for ($i = 0; $i -lt 7; $i++) { Emit-StoreZero64Frame -SlotPosition ($outputFileInfoSlot + ($i * 8)) }
+    Emit-LoadRcxFrame -SlotPosition $outputFileHandleSlot
+    Emit-LeaRaxFrame -SlotPosition $outputFileInfoSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC2))
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3200) -StackArguments @() # GetFileInformationByHandle
+    Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
+    Emit-JumpConditional -ConditionCode 0x84 -Label $outputFail
+    Emit-LoadEaxFrame -SlotPosition $outputFileInfoSlot
+    Emit-Bytes -Bytes ([byte[]]@(0xA9, 0x10, 0x04, 0x00, 0x00))
+    Emit-JumpConditional -ConditionCode 0x85 -Label $outputFail # reject directory and reparse-point attributes
+    Emit-LoadEaxFrame -SlotPosition ($outputFileInfoSlot + 40)
+    Emit-Bytes -Bytes ([byte[]]@(0x3D, 0x01, 0x00, 0x00, 0x00))
+    Emit-JumpConditional -ConditionCode 0x85 -Label $outputFail # a fresh capture file must have exactly one link
+
+    # Build a restricted primary token and a no-capability AppContainer SECURITY_CAPABILITIES.
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0xC7, 0xC1, 0xFF, 0xFF, 0xFF, 0xFF)) # GetCurrentProcess()
+    Emit-Bytes -Bytes ([byte[]]@(0xBA, 0x8B, 0x00, 0x00, 0x00)) # TOKEN_ASSIGN_PRIMARY|DUPLICATE|QUERY|ADJUST_DEFAULT
+    Emit-LeaRaxFrame -SlotPosition $sourceTokenSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x49, 0x89, 0xC0))
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3298) -StackArguments @() # OpenProcessToken
+    Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
+    Emit-JumpConditional -ConditionCode 0x84 -Label $tokenFail
+    Emit-LoadRcxFrame -SlotPosition $sourceTokenSlot
+    Emit-Bytes -Bytes ([byte[]]@(0xBA, 0x01, 0x00, 0x00, 0x00, 0x45, 0x33, 0xC0, 0x45, 0x33, 0xC9))
+    Emit-Win64CallIat -TargetRva ([UInt32]0x32A0) -StackArguments @(
+        @{ Kind = 'Immediate'; Value = 0 }, # DeletePrivilegeCount
+        @{ Kind = 'Immediate'; Value = 0 }, # PrivilegesToDelete
+        @{ Kind = 'Immediate'; Value = 0 }, # RestrictedSidCount
+        @{ Kind = 'Immediate'; Value = 0 }, # SIDsToRestrict
+        @{ Kind = 'FrameAddress'; SlotPosition = $restrictedTokenSlot }
+    ) # CreateRestrictedToken(DISABLE_MAX_PRIVILEGE)
+    Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
+    Emit-JumpConditional -ConditionCode 0x84 -Label $tokenFail
+    Emit-LoadRaxFrame -SlotPosition $restrictedTokenSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x85, 0xC0))
+    Emit-JumpConditional -ConditionCode 0x84 -Label $tokenFail
+
+    Emit-LoadRaxFrame -SlotPosition $appContainerSidSlot
+    Emit-StoreRaxFrame -SlotPosition $securityCapabilitiesSlot
+    Emit-StoreZero64Frame -SlotPosition ($securityCapabilitiesSlot + 8) # Capability SID_AND_ATTRIBUTES pointer = NULL
+    Emit-StoreBits32Frame -SlotPosition ($securityCapabilitiesSlot + 16) -Value 0 # CapabilityCount
+    Emit-StoreBits32Frame -SlotPosition ($securityCapabilitiesSlot + 20) -Value 0 # Reserved
+
+    # Create inherited anonymous-pipe endpoints and a NUL standard-input handle.
+    Emit-StoreBits32Frame -SlotPosition $pipeSecuritySlot -Value 24 # sizeof(SECURITY_ATTRIBUTES)
+    Emit-StoreZero64Frame -SlotPosition ($pipeSecuritySlot + 8)
+    Emit-StoreBits32Frame -SlotPosition ($pipeSecuritySlot + 16) -Value 1 # bInheritHandle
+    Emit-LeaRaxFrame -SlotPosition $pipeReadSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1))
+    Emit-LeaRaxFrame -SlotPosition $pipeWriteSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC2))
+    Emit-LeaRaxFrame -SlotPosition $pipeSecuritySlot
+    Emit-Bytes -Bytes ([byte[]]@(0x49, 0x89, 0xC0, 0x45, 0x33, 0xC9))
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3218) -StackArguments @() # CreatePipe
+    Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
+    Emit-JumpConditional -ConditionCode 0x84 -Label $pipeFail
+    Emit-LoadRcxFrame -SlotPosition $pipeReadSlot
+    Emit-Bytes -Bytes ([byte[]]@(0xBA, 0x01, 0x00, 0x00, 0x00, 0x45, 0x33, 0xC0))
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3220) -StackArguments @() # SetHandleInformation(read, HANDLE_FLAG_INHERIT, 0)
+    Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
+    Emit-JumpConditional -ConditionCode 0x84 -Label $pipeFail
+
+    $nulItem = Register-DataConstant -Value 'NUL'
+    Emit-DataAddress -DataItem $nulItem
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1, 0xBA, 0x00, 0x00, 0x00, 0x80, 0x41, 0xB8, 0x03, 0x00, 0x00, 0x00))
+    Emit-LeaR9Frame -SlotPosition $pipeSecuritySlot
+    Emit-Win64CallIat -TargetRva ([UInt32]0x30A0) -StackArguments @(
+        @{ Kind = 'Immediate'; Value = 3 }, # OPEN_EXISTING
+        @{ Kind = 'Immediate'; Value = 0x80 }, # FILE_ATTRIBUTE_NORMAL
+        @{ Kind = 'Immediate'; Value = 0 }
+    ) # CreateFileA(NUL), inheritable
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x83, 0xF8, 0xFF))
+    Emit-JumpConditional -ConditionCode 0x84 -Label $pipeFail
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x85, 0xC0))
+    Emit-JumpConditional -ConditionCode 0x84 -Label $pipeFail
+    Emit-StoreRaxFrame -SlotPosition $nulHandleSlot
+
+    # Allocate the hard-capped output buffer and a STARTUPINFOEX attribute list.
+    Emit-Bytes -Bytes ([byte[]]@(0x33, 0xC9, 0xBA, 0x00, 0x00, 0x10, 0x00, 0x41, 0xB8, 0x00, 0x30, 0x00, 0x00, 0x41, 0xB9, 0x04, 0x00, 0x00, 0x00))
+    Emit-Win64CallIat -TargetRva ([UInt32]0x31D0) -StackArguments @() # VirtualAlloc(1MiB, MEM_COMMIT|RESERVE, PAGE_READWRITE)
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x85, 0xC0))
+    Emit-JumpConditional -ConditionCode 0x84 -Label $outputFail
+    Emit-StoreRaxFrame -SlotPosition $outputBufferSlot
+
+    Emit-Bytes -Bytes ([byte[]]@(0x33, 0xC9, 0xBA, 0x00, 0x10, 0x00, 0x00, 0x41, 0xB8, 0x00, 0x30, 0x00, 0x00, 0x41, 0xB9, 0x04, 0x00, 0x00, 0x00))
+    Emit-Win64CallIat -TargetRva ([UInt32]0x31D0) -StackArguments @() # VirtualAlloc(4096)
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x85, 0xC0))
+    Emit-JumpConditional -ConditionCode 0x84 -Label $attributeFail
+    Emit-StoreRaxFrame -SlotPosition $attributeListSlot
+    Emit-StoreBits32Frame -SlotPosition $attributeSizeSlot -Value 4096
+    Emit-LoadRcxFrame -SlotPosition $attributeListSlot
+    Emit-Bytes -Bytes ([byte[]]@(0xBA, 0x02, 0x00, 0x00, 0x00, 0x45, 0x33, 0xC0))
+    Emit-LeaR9Frame -SlotPosition $attributeSizeSlot
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3230) -StackArguments @() # InitializeProcThreadAttributeList
+    Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
+    Emit-JumpConditional -ConditionCode 0x84 -Label $attributeFail
+    Emit-StoreBits32Frame -SlotPosition $attributeListReadySlot -Value 1
+
+    # PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES: AppContainer SID and zero capabilities.
+    Emit-LoadRaxFrame -SlotPosition $appContainerSidSlot
+    Emit-StoreRaxFrame -SlotPosition $securityCapabilitiesSlot
+    Emit-LoadRcxFrame -SlotPosition $attributeListSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x33, 0xD2, 0x41, 0xB8, 0x09, 0x00, 0x02, 0x00))
+    Emit-LeaR9Frame -SlotPosition $securityCapabilitiesSlot
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3238) -StackArguments @(
+        @{ Kind = 'Immediate'; Value = 24 }, # sizeof(SECURITY_CAPABILITIES)
+        @{ Kind = 'Immediate'; Value = 0 },
+        @{ Kind = 'Immediate'; Value = 0 }
+    ) # UpdateProcThreadAttribute(SECURITY_CAPABILITIES)
+    Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
+    Emit-JumpConditional -ConditionCode 0x84 -Label $attributeFail
+
+    # The inherited-handle allowlist contains exactly NUL stdin and the pipe writer.
+    Emit-LoadRaxFrame -SlotPosition $nulHandleSlot
+    Emit-StoreRaxFrame -SlotPosition $handleListSlot
+    Emit-LoadRaxFrame -SlotPosition $pipeWriteSlot
+    Emit-StoreRaxFrame -SlotPosition ($handleListSlot + 8)
+    Emit-LoadRcxFrame -SlotPosition $attributeListSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x33, 0xD2, 0x41, 0xB8, 0x02, 0x00, 0x02, 0x00))
+    Emit-LeaR9Frame -SlotPosition $handleListSlot
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3238) -StackArguments @(
+        @{ Kind = 'Immediate'; Value = 16 }, # sizeof(HANDLE[2])
+        @{ Kind = 'Immediate'; Value = 0 },
+        @{ Kind = 'Immediate'; Value = 0 }
+    ) # UpdateProcThreadAttribute(HANDLE_LIST)
+    Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
+    Emit-JumpConditional -ConditionCode 0x84 -Label $attributeFail
+
+    # STARTUPINFOEXA: stdin=NUL, stdout=stderr=one pipe writer, exact attribute list.
+    for ($i = 0; $i -lt 14; $i++) { Emit-StoreZero64Frame -SlotPosition ($startupSlot + ($i * 8)) }
+    Emit-StoreBits32Frame -SlotPosition $startupSlot -Value 112 # sizeof(STARTUPINFOEXA)
+    Emit-StoreBits32Frame -SlotPosition ($startupSlot + 60) -Value 0x100 # STARTF_USESTDHANDLES
+    Emit-LoadRaxFrame -SlotPosition $nulHandleSlot
+    Emit-StoreRaxFrame -SlotPosition ($startupSlot + 80)
+    Emit-LoadRaxFrame -SlotPosition $pipeWriteSlot
+    Emit-StoreRaxFrame -SlotPosition ($startupSlot + 88)
+    Emit-LoadRaxFrame -SlotPosition $pipeWriteSlot
+    Emit-StoreRaxFrame -SlotPosition ($startupSlot + 96)
+    Emit-LoadRaxFrame -SlotPosition $attributeListSlot
+    Emit-StoreRaxFrame -SlotPosition ($startupSlot + 104)
+
+    # JOB_OBJECT_EXTENDED_LIMIT_INFORMATION: kill-on-close, four-process limit, 256/512 MiB.
+    for ($i = 0; $i -lt 18; $i++) { Emit-StoreZero64Frame -SlotPosition ($jobInfoSlot + ($i * 8)) }
+    Emit-StoreBits32Frame -SlotPosition ($jobInfoSlot + 16) -Value 0x2308
+    Emit-StoreBits32Frame -SlotPosition ($jobInfoSlot + 40) -Value 4 # ActiveProcessLimit
+    Emit-StoreImm64Frame -SlotPosition ($jobInfoSlot + 112) -Value ([UInt64](256 * 1024 * 1024))
+    Emit-StoreImm64Frame -SlotPosition ($jobInfoSlot + 120) -Value ([UInt64](512 * 1024 * 1024))
+
     Emit-Bytes -Bytes ([byte[]]@(0x33, 0xC9, 0x33, 0xD2))
     Emit-Win64CallIat -TargetRva ([UInt32]0x3190) -StackArguments @() # CreateJobObjectA
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x85, 0xC0))
@@ -1571,33 +1815,101 @@ function Emit-DevRunTool {
     Emit-Bytes -Bytes ([byte[]]@(0xBA, 0x09, 0x00, 0x00, 0x00))
     Emit-LeaRaxFrame -SlotPosition $jobInfoSlot
     Emit-Bytes -Bytes ([byte[]]@(0x49, 0x89, 0xC0, 0x41, 0xB9, 0x90, 0x00, 0x00, 0x00))
-    Emit-Win64CallIat -TargetRva ([UInt32]0x3198) -StackArguments @() # SetInformationJobObject(JobObjectExtendedLimitInformation)
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3198) -StackArguments @() # SetInformationJobObject
     Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
     Emit-JumpConditional -ConditionCode 0x84 -Label $jobConfigFail
 
-    # Create the exact allowlisted PowerShell tool suspended, with no inherited handles.
+    # Create the restricted-token/AppContainer child suspended; only the explicit handle list is inherited.
+    Emit-LoadRaxFrame -SlotPosition $restrictedTokenSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1)) # RCX = token
     Emit-LeaRaxFrame -SlotPosition $applicationSlot
-    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1))
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC2)) # RDX = absolute System32 powershell.exe
     Emit-LeaRaxFrame -SlotPosition $commandLineSlot
-    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC2, 0x45, 0x33, 0xC0, 0x45, 0x33, 0xC9))
-    Emit-Win64CallIat -TargetRva ([UInt32]0x3188) -StackArguments @(
-        @{ Kind = 'Immediate'; Value = 0 }, # bInheritHandles = FALSE
-        @{ Kind = 'Immediate'; Value = 4 }, # CREATE_SUSPENDED
-        @{ Kind = 'Immediate'; Value = 0 }, # inherited environment
-        @{ Kind = 'FrameAddress'; SlotPosition = $workingDirectorySlot },
+    Emit-Bytes -Bytes ([byte[]]@(0x49, 0x89, 0xC0, 0x45, 0x33, 0xC9)) # R8 = command line; R9 = NULL process attrs
+    Emit-Win64CallIat -TargetRva ([UInt32]0x32A8) -StackArguments @(
+        @{ Kind = 'Immediate'; Value = 0 }, # lpThreadAttributes
+        @{ Kind = 'Immediate'; Value = 1 }, # bInheritHandles TRUE, constrained by HANDLE_LIST
+        @{ Kind = 'Immediate'; Value = 0x00080004 }, # EXTENDED_STARTUPINFO_PRESENT | CREATE_SUSPENDED
+        @{ Kind = 'Immediate'; Value = 0 }, # inherited environment remains a separate hardening gate
+        @{ Kind = 'FrameAddress'; SlotPosition = $workspaceRootSlot },
         @{ Kind = 'FrameAddress'; SlotPosition = $startupSlot },
         @{ Kind = 'FrameAddress'; SlotPosition = $processSlot }
-    ) # CreateProcessA
+    ) # CreateProcessAsUserA
     Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
     Emit-JumpConditional -ConditionCode 0x84 -Label $createFail
 
-    # Assign the suspended process to its Job Object before allowing any user code to run.
+    # Parent closes its inheritable copies immediately; only the child owns the pipe writer after this point.
+    foreach ($slot in @($pipeWriteSlot, $nulHandleSlot)) {
+        Emit-LoadRcxFrame -SlotPosition $slot
+        Emit-Win64CallIat -TargetRva ([UInt32]0x30B8) -StackArguments @() # CloseHandle
+        Emit-StoreZero64Frame -SlotPosition $slot
+    }
+
+    # The process must join the Job Object while suspended.
     Emit-LoadRcxFrame -SlotPosition $jobHandleSlot
     Emit-LoadRaxFrame -SlotPosition $processSlot
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC2))
     Emit-Win64CallIat -TargetRva ([UInt32]0x31A0) -StackArguments @() # AssignProcessToJobObject
     Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
     Emit-JumpConditional -ConditionCode 0x84 -Label $assignFail
+    Emit-StoreBits32Frame -SlotPosition $childActiveSlot -Value 1
+
+    # Verify the actual primary token before the first instruction can execute.
+    Emit-LoadRaxFrame -SlotPosition $processSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1, 0xBA, 0x08, 0x00, 0x00, 0x00))
+    Emit-LeaRaxFrame -SlotPosition $childTokenSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x49, 0x89, 0xC0))
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3298) -StackArguments @() # OpenProcessToken(TOKEN_QUERY)
+    Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
+    Emit-JumpConditional -ConditionCode 0x84 -Label $tokenFail
+
+    # TokenIsAppContainer must be TRUE.
+    for ($i = 0; $i -lt 8; $i++) { Emit-StoreZero64Frame -SlotPosition ($tokenInformationSlot + ($i * 8)) }
+    Emit-StoreZero64Frame -SlotPosition $tokenLengthSlot
+    Emit-LoadRcxFrame -SlotPosition $childTokenSlot
+    Emit-Bytes -Bytes ([byte[]]@(0xBA, 0x1D, 0x00, 0x00, 0x00)) # TokenIsAppContainer = 29
+    Emit-LeaRaxFrame -SlotPosition $tokenInformationSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x49, 0x89, 0xC0, 0x41, 0xB9, 0x04, 0x00, 0x00, 0x00))
+    Emit-Win64CallIat -TargetRva ([UInt32]0x32C0) -StackArguments @(
+        @{ Kind = 'FrameAddress'; SlotPosition = $tokenLengthSlot }
+    ) # GetTokenInformation
+    Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
+    Emit-JumpConditional -ConditionCode 0x84 -Label $tokenFail
+    Emit-LoadEaxFrame -SlotPosition $tokenInformationSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
+    Emit-JumpConditional -ConditionCode 0x84 -Label $tokenFail
+
+    # TokenHasRestrictions must be TRUE (the parent token's maximum privileges were disabled).
+    for ($i = 0; $i -lt 8; $i++) { Emit-StoreZero64Frame -SlotPosition ($tokenInformationSlot + ($i * 8)) }
+    Emit-StoreZero64Frame -SlotPosition $tokenLengthSlot
+    Emit-LoadRcxFrame -SlotPosition $childTokenSlot
+    Emit-Bytes -Bytes ([byte[]]@(0xBA, 0x15, 0x00, 0x00, 0x00)) # TokenHasRestrictions = 21
+    Emit-LeaRaxFrame -SlotPosition $tokenInformationSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x49, 0x89, 0xC0, 0x41, 0xB9, 0x04, 0x00, 0x00, 0x00))
+    Emit-Win64CallIat -TargetRva ([UInt32]0x32C0) -StackArguments @(
+        @{ Kind = 'FrameAddress'; SlotPosition = $tokenLengthSlot }
+    )
+    Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
+    Emit-JumpConditional -ConditionCode 0x84 -Label $tokenFail
+    Emit-LoadEaxFrame -SlotPosition $tokenInformationSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
+    Emit-JumpConditional -ConditionCode 0x84 -Label $tokenFail
+
+    # TokenCapabilities must report zero capabilities; there is no network capability grant.
+    for ($i = 0; $i -lt 8; $i++) { Emit-StoreZero64Frame -SlotPosition ($tokenInformationSlot + ($i * 8)) }
+    Emit-StoreZero64Frame -SlotPosition $tokenLengthSlot
+    Emit-LoadRcxFrame -SlotPosition $childTokenSlot
+    Emit-Bytes -Bytes ([byte[]]@(0xBA, 0x1E, 0x00, 0x00, 0x00)) # TokenCapabilities = 30
+    Emit-LeaRaxFrame -SlotPosition $tokenInformationSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x49, 0x89, 0xC0, 0x41, 0xB9, 0x40, 0x00, 0x00, 0x00))
+    Emit-Win64CallIat -TargetRva ([UInt32]0x32C0) -StackArguments @(
+        @{ Kind = 'FrameAddress'; SlotPosition = $tokenLengthSlot }
+    )
+    Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
+    Emit-JumpConditional -ConditionCode 0x84 -Label $tokenFail
+    Emit-LoadEaxFrame -SlotPosition $tokenInformationSlot # TOKEN_GROUPS.GroupCount
+    Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
+    Emit-JumpConditional -ConditionCode 0x85 -Label $tokenFail
 
     Emit-LoadRaxFrame -SlotPosition ($processSlot + 8)
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1))
@@ -1605,19 +1917,148 @@ function Emit-DevRunTool {
     Emit-Bytes -Bytes ([byte[]]@(0x83, 0xF8, 0xFF))
     Emit-JumpConditional -ConditionCode 0x84 -Label $resumeFail
 
-    # Wait only for the validated timeout; timeout and wait failures terminate the whole job.
-    Emit-LoadRaxFrame -SlotPosition $processSlot
-    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1))
+    # Poll completion independently of pipe traffic. Each wait is 10 ms, keeping timeout accounting bounded.
     Emit-LoadEaxFrame -SlotPosition $TimeoutSlot
-    Emit-Bytes -Bytes ([byte[]]@(0x89, 0xC2))
-    Emit-Win64CallIat -TargetRva ([UInt32]0x30D0) -StackArguments @() # WaitForSingleObject
+    Emit-StoreEaxFrame -SlotPosition $remainingMsSlot
+    Mark-CodeLabel -Label $captureLoop
+    Emit-LoadRaxFrame -SlotPosition $processSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1, 0xBA, 0x0A, 0x00, 0x00, 0x00))
+    Emit-Win64CallIat -TargetRva ([UInt32]0x30D0) -StackArguments @() # WaitForSingleObject(process,10)
     Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
-    Emit-JumpConditional -ConditionCode 0x84 -Label $success
-    Emit-Bytes -Bytes ([byte[]]@(0x3D, 0x02, 0x01, 0x00, 0x00))
-    Emit-JumpConditional -ConditionCode 0x84 -Label $timeoutFail
-    Emit-Jump -Label $waitFail
+    Emit-JumpConditional -ConditionCode 0x84 -Label $processDone
+    Emit-Bytes -Bytes ([byte[]]@(0x3D, 0x02, 0x01, 0x00, 0x00)) # WAIT_TIMEOUT
+    Emit-JumpConditional -ConditionCode 0x85 -Label $waitFail
+    Emit-LoadEaxFrame -SlotPosition $remainingMsSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x83, 0xE8, 0x0A))
+    Emit-StoreEaxFrame -SlotPosition $remainingMsSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x83, 0xF8, 0x00))
+    Emit-JumpConditional -ConditionCode 0x8E -Label $timeoutFail
 
-    Mark-CodeLabel -Label $success
+    Emit-LoadEaxFrame -SlotPosition $pipeClosedSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
+    Emit-JumpConditional -ConditionCode 0x85 -Label $capturePipeClosed
+    Emit-LoadRcxFrame -SlotPosition $pipeReadSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x33, 0xD2, 0x45, 0x33, 0xC0, 0x45, 0x33, 0xC9))
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3228) -StackArguments @(
+        @{ Kind = 'FrameAddress'; SlotPosition = $availableSlot },
+        @{ Kind = 'Immediate'; Value = 0 }
+    ) # PeekNamedPipe
+    Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
+    Emit-JumpConditional -ConditionCode 0x84 -Label $capturePipeEof
+    Emit-LoadEaxFrame -SlotPosition $availableSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
+    Emit-JumpConditional -ConditionCode 0x84 -Label $captureLoop
+
+    # Reject addition wrap and any byte count above the exact 1 MiB output ceiling before ReadFile.
+    Emit-LoadEaxFrame -SlotPosition $outputCountSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x03, 0x85))
+    Emit-I32 -Value (Get-FrameDisp -SlotPosition $availableSlot)
+    Emit-JumpConditional -ConditionCode 0x82 -Label $outputOverflow
+    Emit-Bytes -Bytes ([byte[]]@(0x3D))
+    Emit-I32 -Value 0x100000
+    Emit-JumpConditional -ConditionCode 0x87 -Label $outputOverflow
+
+    Emit-LoadRcxFrame -SlotPosition $pipeReadSlot
+    Emit-LoadRaxFrame -SlotPosition $outputBufferSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC2))
+    Emit-LoadEaxFrame -SlotPosition $outputCountSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x63, 0xC0, 0x48, 0x01, 0xC2))
+    Emit-LoadEaxFrame -SlotPosition $availableSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x41, 0x89, 0xC0))
+    Emit-LeaRaxFrame -SlotPosition $readCountSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x49, 0x89, 0xC1))
+    Emit-Win64CallIat -TargetRva ([UInt32]0x30B0) -StackArguments @(
+        @{ Kind = 'Immediate'; Value = 0 }
+    ) # ReadFile
+    Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
+    Emit-JumpConditional -ConditionCode 0x84 -Label $waitFail
+    Emit-LoadEaxFrame -SlotPosition $readCountSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
+    Emit-JumpConditional -ConditionCode 0x84 -Label $waitFail
+    Emit-LoadEaxFrame -SlotPosition $outputCountSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x03, 0x85))
+    Emit-I32 -Value (Get-FrameDisp -SlotPosition $readCountSlot)
+    Emit-StoreEaxFrame -SlotPosition $outputCountSlot
+    Emit-Jump -Label $captureLoop
+
+    Mark-CodeLabel -Label $capturePipeClosed
+    Emit-Jump -Label $captureLoop
+
+    Mark-CodeLabel -Label $capturePipeEof
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3250) -StackArguments @() # GetLastError
+    Emit-Bytes -Bytes ([byte[]]@(0x3D, 0x6D, 0x00, 0x00, 0x00)) # ERROR_BROKEN_PIPE = 109
+    Emit-JumpConditional -ConditionCode 0x85 -Label $waitFail
+    Emit-StoreBits32Frame -SlotPosition $pipeClosedSlot -Value 1
+    Emit-Jump -Label $captureLoop
+
+    Mark-CodeLabel -Label $processDone
+    # Terminate any descendants and wait on the Job Object itself until every process has exited.
+    Emit-LoadRcxFrame -SlotPosition $jobHandleSlot
+    Emit-Bytes -Bytes ([byte[]]@(0xBA, 0x02, 0x00, 0xAD, 0xDE))
+    Emit-Win64CallIat -TargetRva ([UInt32]0x31B0) -StackArguments @() # TerminateJobObject
+    Emit-LoadRcxFrame -SlotPosition $jobHandleSlot
+    Emit-Bytes -Bytes ([byte[]]@(0xBA, 0xFF, 0xFF, 0xFF, 0xFF))
+    Emit-Win64CallIat -TargetRva ([UInt32]0x30D0) -StackArguments @() # WaitForSingleObject(job,INFINITE)
+    Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
+    Emit-JumpConditional -ConditionCode 0x85 -Label $waitFail
+    Emit-StoreBits32Frame -SlotPosition $childActiveSlot -Value 0
+    Emit-Jump -Label $finalDrain
+
+    # The Job Object is empty before the final pipe drain begins.
+    Mark-CodeLabel -Label $finalDrain
+    Emit-LoadEaxFrame -SlotPosition $pipeClosedSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
+    Emit-JumpConditional -ConditionCode 0x85 -Label $captureDone
+    Emit-LoadRcxFrame -SlotPosition $pipeReadSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x33, 0xD2, 0x45, 0x33, 0xC0, 0x45, 0x33, 0xC9))
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3228) -StackArguments @(
+        @{ Kind = 'FrameAddress'; SlotPosition = $availableSlot },
+        @{ Kind = 'Immediate'; Value = 0 }
+    ) # PeekNamedPipe
+    Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
+    Emit-JumpConditional -ConditionCode 0x84 -Label $finalPipeEof
+    Emit-LoadEaxFrame -SlotPosition $availableSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
+    Emit-JumpConditional -ConditionCode 0x84 -Label $captureDone
+
+    Emit-LoadEaxFrame -SlotPosition $outputCountSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x03, 0x85))
+    Emit-I32 -Value (Get-FrameDisp -SlotPosition $availableSlot)
+    Emit-JumpConditional -ConditionCode 0x82 -Label $outputOverflow
+    Emit-Bytes -Bytes ([byte[]]@(0x3D))
+    Emit-I32 -Value 0x100000
+    Emit-JumpConditional -ConditionCode 0x87 -Label $outputOverflow
+
+    Emit-LoadRcxFrame -SlotPosition $pipeReadSlot
+    Emit-LoadRaxFrame -SlotPosition $outputBufferSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC2))
+    Emit-LoadEaxFrame -SlotPosition $outputCountSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x63, 0xC0, 0x48, 0x01, 0xC2))
+    Emit-LoadEaxFrame -SlotPosition $availableSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x41, 0x89, 0xC0))
+    Emit-LeaRaxFrame -SlotPosition $readCountSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x49, 0x89, 0xC1))
+    Emit-Win64CallIat -TargetRva ([UInt32]0x30B0) -StackArguments @(
+        @{ Kind = 'Immediate'; Value = 0 }
+    ) # ReadFile
+    Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
+    Emit-JumpConditional -ConditionCode 0x84 -Label $outputFail
+    Emit-LoadEaxFrame -SlotPosition $readCountSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
+    Emit-JumpConditional -ConditionCode 0x84 -Label $outputFail
+    Emit-LoadEaxFrame -SlotPosition $outputCountSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x03, 0x85))
+    Emit-I32 -Value (Get-FrameDisp -SlotPosition $readCountSlot)
+    Emit-StoreEaxFrame -SlotPosition $outputCountSlot
+    Emit-Jump -Label $finalDrain
+
+    Mark-CodeLabel -Label $finalPipeEof
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3250) -StackArguments @() # GetLastError
+    Emit-Bytes -Bytes ([byte[]]@(0x3D, 0x6D, 0x00, 0x00, 0x00)) # ERROR_BROKEN_PIPE = 109
+    Emit-JumpConditional -ConditionCode 0x85 -Label $outputFail
+    Emit-Jump -Label $captureDone
+
+    Mark-CodeLabel -Label $captureDone
     Emit-LoadRcxFrame -SlotPosition $processSlot
     Emit-LeaRaxFrame -SlotPosition $exitCodeSlot
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC2))
@@ -1628,97 +2069,219 @@ function Emit-DevRunTool {
     Emit-StoreEaxFrame -SlotPosition $resultSlot
     Emit-Jump -Label $cleanup
 
+    Mark-CodeLabel -Label $outputOverflow
+    Emit-Bytes -Bytes ([byte[]]@(0xB8, 0x8E, 0xFF, 0xFF, 0xFF)) # -114: output byte ceiling exceeded
+    Emit-StoreEaxFrame -SlotPosition $resultSlot
+    Emit-Jump -Label $cleanup
+
     Mark-CodeLabel -Label $timeoutFail
-    Emit-LoadRcxFrame -SlotPosition $jobHandleSlot
-    Emit-Bytes -Bytes ([byte[]]@(0xBA, 0x01, 0x00, 0xAD, 0xDE))
-    Emit-Win64CallIat -TargetRva ([UInt32]0x31B0) -StackArguments @() # TerminateJobObject
-    Emit-LoadRaxFrame -SlotPosition $processSlot
-    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1, 0xBA, 0x88, 0x13, 0x00, 0x00))
-    Emit-Win64CallIat -TargetRva ([UInt32]0x30D0) -StackArguments @() # WaitForSingleObject(5000)
     Emit-Bytes -Bytes ([byte[]]@(0xB8, 0x92, 0xFF, 0xFF, 0xFF)) # -110: timeout
+    Emit-StoreEaxFrame -SlotPosition $resultSlot
+    Emit-Jump -Label $cleanup
+
+    Mark-CodeLabel -Label $waitFail
+    Emit-Bytes -Bytes ([byte[]]@(0xB8, 0x93, 0xFF, 0xFF, 0xFF)) # -109: wait/pipe/exit-code failure
     Emit-StoreEaxFrame -SlotPosition $resultSlot
     Emit-Jump -Label $cleanup
 
     Mark-CodeLabel -Label $assignFail
     Emit-LoadRcxFrame -SlotPosition $processSlot
     Emit-Bytes -Bytes ([byte[]]@(0xBA, 0x02, 0x00, 0xAD, 0xDE))
-    Emit-Win64CallIat -TargetRva ([UInt32]0x31C0) -StackArguments @() # TerminateProcess (not yet assigned to job)
-    Emit-LoadRaxFrame -SlotPosition $processSlot
-    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1, 0xBA, 0x88, 0x13, 0x00, 0x00))
-    Emit-Win64CallIat -TargetRva ([UInt32]0x30D0) -StackArguments @()
-    Emit-Bytes -Bytes ([byte[]]@(0xB8, 0x95, 0xFF, 0xFF, 0xFF)) # -107: job assignment failed
+    Emit-Win64CallIat -TargetRva ([UInt32]0x31C0) -StackArguments @() # TerminateProcess; child was never assigned to the Job
+    Emit-LoadRcxFrame -SlotPosition $processSlot
+    Emit-Bytes -Bytes ([byte[]]@(0xBA, 0xFF, 0xFF, 0xFF, 0xFF))
+    Emit-Win64CallIat -TargetRva ([UInt32]0x30D0) -StackArguments @() # wait for suspended process termination
+    Emit-Bytes -Bytes ([byte[]]@(0xB8, 0x95, 0xFF, 0xFF, 0xFF)) # -107: Job Object assignment failed
     Emit-StoreEaxFrame -SlotPosition $resultSlot
     Emit-Jump -Label $cleanup
 
     Mark-CodeLabel -Label $resumeFail
-    Emit-LoadRcxFrame -SlotPosition $jobHandleSlot
-    Emit-Bytes -Bytes ([byte[]]@(0xBA, 0x03, 0x00, 0xAD, 0xDE))
-    Emit-Win64CallIat -TargetRva ([UInt32]0x31B0) -StackArguments @() # TerminateJobObject
-    Emit-LoadRaxFrame -SlotPosition $processSlot
-    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1, 0xBA, 0x88, 0x13, 0x00, 0x00))
-    Emit-Win64CallIat -TargetRva ([UInt32]0x30D0) -StackArguments @()
-    Emit-Bytes -Bytes ([byte[]]@(0xB8, 0x94, 0xFF, 0xFF, 0xFF)) # -108: resume failed
+    Emit-Bytes -Bytes ([byte[]]@(0xB8, 0x94, 0xFF, 0xFF, 0xFF)) # -108: ResumeThread failed
     Emit-StoreEaxFrame -SlotPosition $resultSlot
     Emit-Jump -Label $cleanup
 
-    Mark-CodeLabel -Label $waitFail
-    Emit-LoadRcxFrame -SlotPosition $jobHandleSlot
-    Emit-Bytes -Bytes ([byte[]]@(0xBA, 0x04, 0x00, 0xAD, 0xDE))
-    Emit-Win64CallIat -TargetRva ([UInt32]0x31B0) -StackArguments @() # TerminateJobObject
-    Emit-LoadRaxFrame -SlotPosition $processSlot
-    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1, 0xBA, 0x88, 0x13, 0x00, 0x00))
-    Emit-Win64CallIat -TargetRva ([UInt32]0x30D0) -StackArguments @()
-    Emit-Bytes -Bytes ([byte[]]@(0xB8, 0x93, 0xFF, 0xFF, 0xFF)) # -109: wait/exit-code failure
+    Mark-CodeLabel -Label $createFail
+    Emit-Bytes -Bytes ([byte[]]@(0xB8, 0x96, 0xFF, 0xFF, 0xFF)) # -106: CreateProcessAsUserA failed
+    Emit-StoreEaxFrame -SlotPosition $resultSlot
+    Emit-Jump -Label $cleanup
+
+    Mark-CodeLabel -Label $jobConfigFail
+    Emit-Bytes -Bytes ([byte[]]@(0xB8, 0x97, 0xFF, 0xFF, 0xFF)) # -105: Job Object configuration failed
+    Emit-StoreEaxFrame -SlotPosition $resultSlot
+    Emit-Jump -Label $cleanup
+
+    Mark-CodeLabel -Label $jobFail
+    Emit-Bytes -Bytes ([byte[]]@(0xB8, 0x98, 0xFF, 0xFF, 0xFF)) # -104: CreateJobObjectA failed
+    Emit-StoreEaxFrame -SlotPosition $resultSlot
+    Emit-Jump -Label $cleanup
+
+    Mark-CodeLabel -Label $pipeFail
+    Emit-Bytes -Bytes ([byte[]]@(0xB8, 0x8C, 0xFF, 0xFF, 0xFF)) # -116: pipe/NUL setup failed
+    Emit-StoreEaxFrame -SlotPosition $resultSlot
+    Emit-Jump -Label $cleanup
+
+    Mark-CodeLabel -Label $attributeFail
+    Emit-Bytes -Bytes ([byte[]]@(0xB8, 0x8C, 0xFF, 0xFF, 0xFF)) # -116: startup attribute setup failed
+    Emit-StoreEaxFrame -SlotPosition $resultSlot
+    Emit-Jump -Label $cleanup
+
+    Mark-CodeLabel -Label $outputFail
+    Emit-Bytes -Bytes ([byte[]]@(0xB8, 0x8D, 0xFF, 0xFF, 0xFF)) # -115: output capture file/buffer failed
+    Emit-StoreEaxFrame -SlotPosition $resultSlot
+    Emit-Jump -Label $cleanup
+
+    Mark-CodeLabel -Label $tokenFail
+    Emit-Bytes -Bytes ([byte[]]@(0xB8, 0x90, 0xFF, 0xFF, 0xFF)) # -112: restricted token verification failed
+    Emit-StoreEaxFrame -SlotPosition $resultSlot
+    Emit-Jump -Label $cleanup
+
+    Mark-CodeLabel -Label $aclFail
+    Emit-Bytes -Bytes ([byte[]]@(0xB8, 0x8F, 0xFF, 0xFF, 0xFF)) # -113: workspace ACL update failed
+    Emit-StoreEaxFrame -SlotPosition $resultSlot
+    Emit-Jump -Label $cleanup
+
+    Mark-CodeLabel -Label $appContainerFail
+    Emit-Bytes -Bytes ([byte[]]@(0xB8, 0x90, 0xFF, 0xFF, 0xFF)) # -112: AppContainer profile/SID setup failed
+    Emit-StoreEaxFrame -SlotPosition $resultSlot
+    Emit-Jump -Label $cleanup
+
+    Mark-CodeLabel -Label $mutexFail
+    Emit-Bytes -Bytes ([byte[]]@(0xB8, 0x8B, 0xFF, 0xFF, 0xFF)) # -117: ACL/output serialization failed
     Emit-StoreEaxFrame -SlotPosition $resultSlot
     Emit-Jump -Label $cleanup
 
     Mark-CodeLabel -Label $pathFail
-    Emit-Bytes -Bytes ([byte[]]@(0xB8, 0x9A, 0xFF, 0xFF, 0xFF)) # -102
+    Emit-Bytes -Bytes ([byte[]]@(0xB8, 0x9A, 0xFF, 0xFF, 0xFF)) # -102: System32 PowerShell resolution failed
     Emit-StoreEaxFrame -SlotPosition $resultSlot
     Emit-Jump -Label $cleanup
+
     Mark-CodeLabel -Label $directoryFail
-    Emit-Bytes -Bytes ([byte[]]@(0xB8, 0x99, 0xFF, 0xFF, 0xFF)) # -103
+    Emit-Bytes -Bytes ([byte[]]@(0xB8, 0x99, 0xFF, 0xFF, 0xFF)) # -103: workspace path/reparse validation failed
     Emit-StoreEaxFrame -SlotPosition $resultSlot
     Emit-Jump -Label $cleanup
-    Mark-CodeLabel -Label $jobFail
-    Emit-Bytes -Bytes ([byte[]]@(0xB8, 0x98, 0xFF, 0xFF, 0xFF)) # -104
-    Emit-StoreEaxFrame -SlotPosition $resultSlot
-    Emit-Jump -Label $cleanup
-    Mark-CodeLabel -Label $jobConfigFail
-    Emit-Bytes -Bytes ([byte[]]@(0xB8, 0x97, 0xFF, 0xFF, 0xFF)) # -105
-    Emit-StoreEaxFrame -SlotPosition $resultSlot
-    Emit-Jump -Label $cleanup
-    Mark-CodeLabel -Label $createFail
-    Emit-Bytes -Bytes ([byte[]]@(0xB8, 0x96, 0xFF, 0xFF, 0xFF)) # -106
-    Emit-StoreEaxFrame -SlotPosition $resultSlot
-    Emit-Jump -Label $cleanup
+
     Mark-CodeLabel -Label $cleanup
-    # Close the primary thread, process and job handles. Closing the job also
-    # terminates any remaining descendants because KILL_ON_JOB_CLOSE is set.
-    Emit-LoadRcxFrame -SlotPosition ($processSlot + 8)
-    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x85, 0xC9))
-    $skipThread = New-UniqueLabel -Prefix 'dev_tool_skip_thread'
-    Emit-JumpConditional -ConditionCode 0x84 -Label $skipThread
-    Emit-Win64CallIat -TargetRva ([UInt32]0x30B8) -StackArguments @() # CloseHandle(thread)
-    Mark-CodeLabel -Label $skipThread
-    Emit-LoadRcxFrame -SlotPosition $processSlot
-    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x85, 0xC9))
-    $skipProcess = New-UniqueLabel -Prefix 'dev_tool_skip_process'
-    Emit-JumpConditional -ConditionCode 0x84 -Label $skipProcess
-    Emit-Win64CallIat -TargetRva ([UInt32]0x30B8) -StackArguments @() # CloseHandle(process)
-    Mark-CodeLabel -Label $skipProcess
+    # On every post-create failure, stop the complete job and confirm it is empty before returning.
+    Emit-LoadEaxFrame -SlotPosition $childActiveSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
+    $skipCleanupKill = New-UniqueLabel -Prefix 'dev_tool_skip_cleanup_kill'
+    Emit-JumpConditional -ConditionCode 0x84 -Label $skipCleanupKill
     Emit-LoadRcxFrame -SlotPosition $jobHandleSlot
+    Emit-Bytes -Bytes ([byte[]]@(0xBA, 0x05, 0x00, 0xAD, 0xDE))
+    Emit-Win64CallIat -TargetRva ([UInt32]0x31B0) -StackArguments @() # TerminateJobObject
+    Emit-LoadRcxFrame -SlotPosition $jobHandleSlot
+    Emit-Bytes -Bytes ([byte[]]@(0xBA, 0xFF, 0xFF, 0xFF, 0xFF))
+    Emit-Win64CallIat -TargetRva ([UInt32]0x30D0) -StackArguments @() # WaitForSingleObject(job,INFINITE)
+    Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
+    $cleanupWaitOk = New-UniqueLabel -Prefix 'dev_tool_cleanup_wait_ok'
+    Emit-JumpConditional -ConditionCode 0x84 -Label $cleanupWaitOk
+    Emit-Bytes -Bytes ([byte[]]@(0xB8, 0x93, 0xFF, 0xFF, 0xFF))
+    Emit-StoreEaxFrame -SlotPosition $resultSlot
+    Emit-Jump -Label $skipCleanupKill
+    Mark-CodeLabel -Label $cleanupWaitOk
+    Emit-StoreBits32Frame -SlotPosition $childActiveSlot -Value 0
+    Mark-CodeLabel -Label $skipCleanupKill
+
+    # Persist at most the captured 1 MiB through the same exclusive, non-inherited file handle.
+    Emit-LoadRaxFrame -SlotPosition $outputFileHandleSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x85, 0xC0))
+    $skipPersist = New-UniqueLabel -Prefix 'dev_tool_skip_output_persist'
+    Emit-JumpConditional -ConditionCode 0x84 -Label $skipPersist
+    Emit-LoadRaxFrame -SlotPosition $outputBufferSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x85, 0xC0))
+    Emit-JumpConditional -ConditionCode 0x84 -Label $skipPersist
+    Emit-LoadRcxFrame -SlotPosition $outputFileHandleSlot
+    Emit-LoadRaxFrame -SlotPosition $outputBufferSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC2))
+    Emit-LoadEaxFrame -SlotPosition $outputCountSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x41, 0x89, 0xC0))
+    Emit-LeaRaxFrame -SlotPosition $outputWrittenSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x49, 0x89, 0xC1))
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3078) -StackArguments @(
+        @{ Kind = 'Immediate'; Value = 0 }
+    ) # WriteFile
+    Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
+    $outputPersistOk = New-UniqueLabel -Prefix 'dev_tool_output_persist_ok'
+    Emit-JumpConditional -ConditionCode 0x85 -Label $outputPersistOk
+    Emit-Bytes -Bytes ([byte[]]@(0xB8, 0x8D, 0xFF, 0xFF, 0xFF)) # -115
+    Emit-StoreEaxFrame -SlotPosition $resultSlot
+    Emit-Jump -Label $skipPersist
+    Mark-CodeLabel -Label $outputPersistOk
+    Emit-LoadEaxFrame -SlotPosition $outputWrittenSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x3B, 0x85))
+    Emit-I32 -Value (Get-FrameDisp -SlotPosition $outputCountSlot)
+    $outputLengthOk = New-UniqueLabel -Prefix 'dev_tool_output_length_ok'
+    Emit-JumpConditional -ConditionCode 0x84 -Label $outputLengthOk
+    Emit-Bytes -Bytes ([byte[]]@(0xB8, 0x8D, 0xFF, 0xFF, 0xFF)) # -115: short output write
+    Emit-StoreEaxFrame -SlotPosition $resultSlot
+    Mark-CodeLabel -Label $outputLengthOk
+    Mark-CodeLabel -Label $skipPersist
+
+    # Close every acquired handle and release the serialization mutex last.
+    foreach ($slot in @($pipeReadSlot, $pipeWriteSlot, $nulHandleSlot, $outputFileHandleSlot)) {
+        $skipClose = New-UniqueLabel -Prefix 'dev_tool_skip_close_handle'
+        Emit-LoadRcxFrame -SlotPosition $slot
+        Emit-Bytes -Bytes ([byte[]]@(0x48, 0x85, 0xC9))
+        Emit-JumpConditional -ConditionCode 0x84 -Label $skipClose
+        Emit-Win64CallIat -TargetRva ([UInt32]0x30B8) -StackArguments @() # CloseHandle
+        Mark-CodeLabel -Label $skipClose
+    }
+    foreach ($slot in @(($processSlot + 8), $processSlot)) {
+        $skipCloseProcess = New-UniqueLabel -Prefix 'dev_tool_skip_close_process'
+        Emit-LoadRcxFrame -SlotPosition $slot
+        Emit-Bytes -Bytes ([byte[]]@(0x48, 0x85, 0xC9))
+        Emit-JumpConditional -ConditionCode 0x84 -Label $skipCloseProcess
+        Emit-Win64CallIat -TargetRva ([UInt32]0x30B8) -StackArguments @() # CloseHandle
+        Mark-CodeLabel -Label $skipCloseProcess
+    }
+    foreach ($slot in @($jobHandleSlot, $hashFileHandleSlot, $sourceTokenSlot, $restrictedTokenSlot, $childTokenSlot)) {
+        $skipCloseOther = New-UniqueLabel -Prefix 'dev_tool_skip_close_other'
+        Emit-LoadRcxFrame -SlotPosition $slot
+        Emit-Bytes -Bytes ([byte[]]@(0x48, 0x85, 0xC9))
+        Emit-JumpConditional -ConditionCode 0x84 -Label $skipCloseOther
+        Emit-Win64CallIat -TargetRva ([UInt32]0x30B8) -StackArguments @() # CloseHandle
+        Mark-CodeLabel -Label $skipCloseOther
+    }
+
+    Emit-LoadEaxFrame -SlotPosition $attributeListReadySlot
+    Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
+    $skipDeleteAttributes = New-UniqueLabel -Prefix 'dev_tool_skip_delete_attributes'
+    Emit-JumpConditional -ConditionCode 0x84 -Label $skipDeleteAttributes
+    Emit-LoadRcxFrame -SlotPosition $attributeListSlot
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3240) -StackArguments @() # DeleteProcThreadAttributeList
+    Mark-CodeLabel -Label $skipDeleteAttributes
+
+    foreach ($slot in @($attributeListSlot, $outputBufferSlot)) {
+        $skipFreeMemory = New-UniqueLabel -Prefix 'dev_tool_skip_free_memory'
+        Emit-LoadRcxFrame -SlotPosition $slot
+        Emit-Bytes -Bytes ([byte[]]@(0x48, 0x85, 0xC9))
+        Emit-JumpConditional -ConditionCode 0x84 -Label $skipFreeMemory
+        Emit-Bytes -Bytes ([byte[]]@(0x33, 0xD2, 0x41, 0xB8, 0x00, 0x80, 0x00, 0x00))
+        Emit-Win64CallIat -TargetRva ([UInt32]0x31D8) -StackArguments @() # VirtualFree(MEM_RELEASE)
+        Mark-CodeLabel -Label $skipFreeMemory
+    }
+
+    Emit-LoadRcxFrame -SlotPosition $appContainerSidSlot
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x85, 0xC9))
-    $skipJob = New-UniqueLabel -Prefix 'dev_tool_skip_job'
-    Emit-JumpConditional -ConditionCode 0x84 -Label $skipJob
-    Emit-Win64CallIat -TargetRva ([UInt32]0x30B8) -StackArguments @() # CloseHandle(job)
-    Mark-CodeLabel -Label $skipJob
-    Emit-LoadRcxFrame -SlotPosition $hashFileHandleSlot
+    $skipFreeSid = New-UniqueLabel -Prefix 'dev_tool_skip_free_sid'
+    Emit-JumpConditional -ConditionCode 0x84 -Label $skipFreeSid
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3290) -StackArguments @() # FreeSid
+    Mark-CodeLabel -Label $skipFreeSid
+
+    Emit-LoadEaxFrame -SlotPosition $mutexAcquiredSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
+    $skipReleaseMutex = New-UniqueLabel -Prefix 'dev_tool_skip_release_mutex'
+    Emit-JumpConditional -ConditionCode 0x84 -Label $skipReleaseMutex
+    Emit-LoadRcxFrame -SlotPosition $mutexHandleSlot
+    Emit-Win64CallIat -TargetRva ([UInt32]0x30E0) -StackArguments @() # ReleaseMutex
+    Mark-CodeLabel -Label $skipReleaseMutex
+    $skipCloseMutex = New-UniqueLabel -Prefix 'dev_tool_skip_close_mutex'
+    Emit-LoadRcxFrame -SlotPosition $mutexHandleSlot
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x85, 0xC9))
-    $skipHashFile = New-UniqueLabel -Prefix 'dev_tool_skip_hash_file'
-    Emit-JumpConditional -ConditionCode 0x84 -Label $skipHashFile
-    Emit-Win64CallIat -TargetRva ([UInt32]0x30B8) -StackArguments @() # CloseHandle(pinned script file)
-    Mark-CodeLabel -Label $skipHashFile
+    Emit-JumpConditional -ConditionCode 0x84 -Label $skipCloseMutex
+    Emit-Win64CallIat -TargetRva ([UInt32]0x30B8) -StackArguments @()
+    Mark-CodeLabel -Label $skipCloseMutex
+
     Emit-LoadRdiFrame -SlotPosition $saveRdiSlot
     Emit-LoadRsiFrame -SlotPosition $saveRsiSlot
     Emit-LoadEaxFrame -SlotPosition $resultSlot
