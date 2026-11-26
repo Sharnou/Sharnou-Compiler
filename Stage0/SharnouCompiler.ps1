@@ -4036,11 +4036,11 @@ $importSets = @(
     [pscustomobject]@{ Descriptor = 0xDC; Lookup = 0xDA8; Iat = 0x218; Dll = 'KERNEL32.dll'; Names = @('GetModuleFileNameA', 'SetCurrentDirectoryA') },
     [pscustomobject]@{ Descriptor = 0xF0; Lookup = 0xDC0; Iat = 0x230; Dll = 'KERNEL32.dll'; Names = @('CreatePipe', 'SetHandleInformation', 'PeekNamedPipe', 'InitializeProcThreadAttributeList', 'UpdateProcThreadAttribute', 'DeleteProcThreadAttributeList', 'LocalFree', 'GetLastError') },
     [pscustomobject]@{ Descriptor = 0x104; Lookup = 0xE08; Iat = 0x278; Dll = 'USERENV.dll'; Names = @('CreateAppContainerProfile', 'DeriveAppContainerSidFromAppContainerName') },
-    [pscustomobject]@{ Descriptor = 0x118; Lookup = 0xE20; Iat = 0x290; Dll = 'ADVAPI32.dll'; Names = @('GetNamedSecurityInfoA', 'SetEntriesInAclA', 'SetNamedSecurityInfoA', 'FreeSid', 'OpenProcessToken', 'CreateRestrictedToken', 'CreateProcessAsUserA', 'GetSecurityInfo', 'SetSecurityInfo', 'GetTokenInformation') },
-    [pscustomobject]@{ Descriptor = 0x12C; Lookup = 0xE78; Iat = 0x2E8; Dll = 'KERNEL32.dll'; Names = @('GetFullPathNameA', 'DeleteFileA') }
+    [pscustomobject]@{ Descriptor = 0x118; Lookup = 0xE20; Iat = 0x290; Dll = 'ADVAPI32.dll'; Names = @('GetNamedSecurityInfoA', 'SetEntriesInAclA', 'SetNamedSecurityInfoA', 'FreeSid', 'OpenProcessToken', 'CreateRestrictedToken', 'CreateProcessAsUserA', 'GetSecurityInfo', 'SetSecurityInfo', 'GetTokenInformation', 'GetSecurityDescriptorDacl', 'GetSecurityDescriptorSacl', 'GetSecurityDescriptorLength', 'IsValidSecurityDescriptor') },
+    [pscustomobject]@{ Descriptor = 0x12C; Lookup = 0xE98; Iat = 0x308; Dll = 'KERNEL32.dll'; Names = @('GetFullPathNameA', 'DeleteFileA', 'MoveFileExA', 'FlushFileBuffers') }
 )
 $apiNameRvas = @{}
-$nameCursor = 0x300
+$nameCursor = 0x330
 foreach ($set in $importSets) {
     foreach ($apiName in $set.Names) {
         if (-not $apiNameRvas.ContainsKey($apiName)) {
@@ -4102,7 +4102,8 @@ $script:StdLibIatOffsets = @{
     'CreateAppContainerProfile' = [UInt32]0x278; 'DeriveAppContainerSidFromAppContainerName' = [UInt32]0x280
     'GetNamedSecurityInfoA' = [UInt32]0x290; 'SetEntriesInAclA' = [UInt32]0x298; 'SetNamedSecurityInfoA' = [UInt32]0x2A0; 'FreeSid' = [UInt32]0x2A8
     'OpenProcessToken' = [UInt32]0x2B0; 'CreateRestrictedToken' = [UInt32]0x2B8; 'CreateProcessAsUserA' = [UInt32]0x2C0; 'GetSecurityInfo' = [UInt32]0x2C8; 'SetSecurityInfo' = [UInt32]0x2D0; 'GetTokenInformation' = [UInt32]0x2D8
-    'GetFullPathNameA' = [UInt32]0x2E8; 'DeleteFileA' = [UInt32]0x2F0
+    'GetSecurityDescriptorDacl' = [UInt32]0x2E0; 'GetSecurityDescriptorSacl' = [UInt32]0x2E8; 'GetSecurityDescriptorLength' = [UInt32]0x2F0; 'IsValidSecurityDescriptor' = [UInt32]0x2F8
+    'GetFullPathNameA' = [UInt32]0x308; 'DeleteFileA' = [UInt32]0x310; 'MoveFileExA' = [UInt32]0x318; 'FlushFileBuffers' = [UInt32]0x320
 }
 
 # One DIR64 relocation patches the absolute image-base + entry-point pointer at the dynamic .rdata RVA.
