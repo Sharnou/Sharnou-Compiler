@@ -7,27 +7,27 @@ Date: 2026-11-26
 
 ## Current implementation status - 2026-11-26
 
-Status: PHASE 1 IMPLEMENTED; WINDOWS CI PASS on PR #18 head `2ee44cef7f3d67b4ccdc26aa391a9e789197197b`. This is not yet security-accepted and must not be exposed to model-generated plans.
+Status: PHASE 1 IMPLEMENTED; WINDOWS CI PASS on PR #18 head `7a15892a944c747f9563961d7c050c909dd3d3a4`. This is not yet security-accepted and must not be exposed to model-generated plans.
 
-Validation runs: Stage 7A / combined [45724983298](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45724983298); frozen M1-M6 baseline [45724983299](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45724983299). The combined run passed Stage 7A 24/24, collection imports 2/2, stack-probe/unwind 6/6, Runtime ABI, broker phase-1 adversarial tests, and the integrated M1-M6 83/83 baseline.
+Validation runs: Stage 7A / combined [45772104864](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45772104864); frozen M1-M6 baseline [45772104661](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45772104661). The combined run passed Stage 7A 24/24, collection imports 2/2, stack-probe/unwind 6/6, Runtime ABI including 16-argument calls and 17-argument rejection, broker phase-1 security tests, and the integrated M1-M6 83/83 baseline.
 
 Implemented in the dependent DevAgent broker candidate:
 
 - Public API is typed: `sh_dev_run_tool(tool_id: Integer, timeout_ms: Integer) -> Integer`. It is registered only when the compiler is invoked with `-EnableDevAgentTools`; default compiler builds reject the capability.
 - Six fixed compiler-owned tool IDs. The caller cannot supply a command string, executable path, script path, arguments, or working directory.
 - A SHA-256-pinned `Tests/DevAgentBroker/tool-manifest.json`; the compiler refuses to build the broker fixture if the manifest digest differs from its embedded pin.
-- Each fixed PowerShell command verifies the selected script's SHA-256 before invoking it. The Windows test harness includes a tamper replay that must return status 91 without executing the modified script.
+- Native Windows CNG SHA-256 verification is invoked for the selected script before `CreateProcessA`. The verified script handle is held open through child completion to block write/delete replacement; the final file object is opened with `FILE_FLAG_OPEN_REPARSE_POINT` and its attributes are checked via `GetFileInformationByHandle`.
 - The broker resolves PowerShell from the absolute System32 path returned by `GetSystemDirectoryA`; it does not search PATH.
-- Workspace checks require the current directory and fixed workspace directories/files to exist with the expected file/directory type, and reject `FILE_ATTRIBUTE_REPARSE_POINT` on the checked paths. A junction adversarial test expects rejection before process creation.
+- The workspace root is derived from the broker image path using `GetModuleFileNameA` and a fixed `Build\\DevAgentBroker\\DevAgentBroker.exe` suffix. The broker switches its own current directory to that image-derived root, then checks fixed workspace directories and tool paths for expected types and reparse-point attributes. A Windows test launches from an unrelated temporary working directory and verifies that the broker still resolves the repository root.
 - Child processes are created suspended with `bInheritHandles=FALSE`, assigned to a Job Object before resume, and subject to kill-on-job-close, active-process, process-memory, job-memory, and bounded wait-time policies.
-- Runtime tests cover unknown IDs, invalid timeout, explicit opt-in, fixed tool execution, exit-code propagation, runtime script-hash mismatch, timeout, descendant termination, and reparse-point rejection.
+- Runtime tests cover unknown IDs, invalid timeout, explicit opt-in, pinned-manifest tamper, native script-hash tamper, fixed tool execution, exit-code propagation, foreign-current-directory launch, directory-junction rejection, timeout, and descendant termination.
 
 Important implementation deviations and remaining acceptance gates:
 
-1. Script hashing currently uses a fixed PowerShell wrapper with `Get-FileHash` before script invocation. Native Windows CNG hashing inside the broker remains a future hardening step.
-2. Workspace validation is a fixed-layout/reparse-point gate, not yet full canonicalization of every ancestor, image-relative root discovery, ADS/UNC/device-path rejection, or a complete filesystem sandbox.
+1. Native CNG script hashing is implemented and Windows-tested. The tool-manifest SHA-256 is pinned into the compiler; a modified manifest fails before PE generation and modified script bytes fail before child creation.
+2. Workspace discovery is now image-relative and independent of inherited current directory. Checked directories and the opened script object reject reparse points. Full canonicalization of every ancestor, final-path resolution for the executable image, and explicit ADS/UNC/device-path rejection are NOT yet complete.
 3. The child still uses the caller's token. Restricted-token, low-integrity/AppContainer, and workspace-only ACL enforcement are NOT implemented.
-4. A clean environment block and explicit DLL search policy are NOT implemented.
+4. A clean environment block and explicit DLL search policy are NOT implemented; `CreateProcessA` currently inherits the caller environment.
 5. Bounded stdout/stderr capture with STARTUPINFOEX handle-list isolation and a hard output cap are NOT implemented. The current phase does not claim output containment.
 6. Cooperative cancellation, durable evidence journaling, restart recovery, and policy-versioned audit records are NOT implemented.
 
@@ -128,8 +128,9 @@ The broker is not permitted to execute arbitrary PowerShell, cmd.exe, downloaded
 
 ## 9. Current implementation status
 
-- ABI prerequisites: implementation and Windows CI evidence are being completed on PR #17.
-- Native process broker: NOT IMPLEMENTED.
-- Model access to process execution: DISABLED.
-- The historical PR #7 `sh_dev_run_process(String)` prototype is rejected because it accepts raw command text, inherits standard handles, waits indefinitely, and has no allowlist or process-tree containment.
-- Do not mark DevAgent autonomous or production-ready until the process broker and every adversarial gate above pass on the same Windows commit.
+- Runtime ABI: Windows CI PASS on integrated PR #18 head `7a15892a944c747f9563961d7c050c909dd3d3a4`: Stage 7A 24/24, collection imports 2/2, stack/unwind 6/6, 16-argument ABI tests, 17-argument rejection, and frozen M1-M6 83/83.
+- Native process broker: PHASE 1 IMPLEMENTED and Windows-tested. Typed test-tool API is opt-in only, default disabled; fixed tool IDs; pinned manifest and native CNG script verification; image-derived workspace root; reparse-point checks; suspended process creation; Job Object process-tree containment; timeouts and memory/process limits.
+- Model access to process execution: DISABLED. The broker may be used only by explicitly opted-in test builds; it must not be exposed to model-generated plans.
+- The historical PR #7 `sh_dev_run_process(String)` prototype remains rejected because it accepts raw command text, inherits standard handles, waits indefinitely, and has no allowlist or process-tree containment.
+- Remaining production-security gates: full canonical filesystem and executable-image final-path validation; ADS/UNC/device-path rejection; restricted token/AppContainer and workspace-only ACLs; clean environment and explicit DLL search policy; bounded stdout/stderr capture with handle allowlist; cancellation; durable audit journal/restart recovery.
+- Do not mark DevAgent autonomous or production-ready until every remaining adversarial gate above passes on the same Windows commit.
