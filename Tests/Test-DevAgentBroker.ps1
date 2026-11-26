@@ -61,8 +61,8 @@ try {
         if (-not (Test-Path -LiteralPath $required -PathType Leaf)) { throw "Required broker test input is missing: $required" }
     }
     $compilerSource = [IO.File]::ReadAllText($compilerPath)
-    if (-not $compilerSource.Contains($manifestHash) -or -not $compilerSource.Contains('Get-FileHash -LiteralPath $p -Algorithm SHA256') -or -not $compilerSource.Contains('exit 91')) {
-        throw 'Compiler must pin the tool manifest and verify each tool script SHA-256 before execution.'
+    if (-not $compilerSource.Contains($manifestHash) -or -not $compilerSource.Contains('BCryptHash') -or -not $compilerSource.Contains('BCryptOpenAlgorithmProvider') -or -not $compilerSource.Contains('Emit-DevBrokerVerifyScript')) {
+        throw 'Compiler must pin the manifest and verify each tool script with native CNG before process creation.'
     }
     if ($compilerSource.Contains('sh_dev_run_process')) { throw 'Unsafe raw-command process API must not be present.' }
     if (-not $compilerSource.Contains('[switch] $EnableDevAgentTools') -or -not $compilerSource.Contains("Name = 'sh_dev_run_tool'; Builtin = 'DevRunTool'; ParameterTypes = @('Integer', 'Integer')")) {
