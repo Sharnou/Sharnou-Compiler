@@ -77,6 +77,12 @@ try {
     if (-not $compilerSource.Contains('GetFileAttributesA') -or -not $compilerSource.Contains('0x400')) {
         throw 'Broker workspace path and reparse-point checks are missing.'
     }
+    if (-not $compilerSource.Contains('BCryptOpenAlgorithmProvider') -or -not $compilerSource.Contains('BCryptHash') -or -not $compilerSource.Contains('BCryptCloseAlgorithmProvider')) {
+        throw 'Native Windows CNG SHA-256 verification is missing.'
+    }
+    if (-not $compilerSource.Contains('VirtualAlloc') -or -not $compilerSource.Contains('VirtualFree') -or -not $compilerSource.Contains('0x100000')) {
+        throw 'The bounded native script-hash input buffer is missing.'
+    }
 
     New-Item -ItemType Directory -Path $buildRoot -Force | Out-Null
     Remove-Item -LiteralPath $childPidPath -Force -ErrorAction SilentlyContinue
@@ -148,7 +154,7 @@ try {
         $tamperedExitCode = $LASTEXITCODE
         $tamperedNumericLines = @(Get-BrokerNumericLines -Lines $tamperedLines)
         $tamperedActual = ($tamperedNumericLines -join $nl).TrimEnd([char[]]@([char]13, [char]10))
-        $tamperedExpected = @('-100', '-101', '91', '-110') -join $nl
+        $tamperedExpected = @('-100', '-101', '-111', '-110') -join $nl
         if ($tamperedExitCode -ne 0 -or -not [string]::Equals($tamperedActual, $tamperedExpected, [StringComparison]::Ordinal)) {
             throw "Runtime script hash tampering was not rejected. Expected=[$tamperedExpected] Actual=[$tamperedActual] ExitCode=$tamperedExitCode."
         }
@@ -196,9 +202,11 @@ try {
         Remove-Item -LiteralPath $junctionTarget -Recurse -Force -ErrorAction SilentlyContinue
     }
 
+    Write-Host 'PASS: native Windows CNG SHA-256 verifies every selected tool before CreateProcess' -ForegroundColor Green
+    Write-Host 'PASS: native script hash mismatch rejected before child creation' -ForegroundColor Green
     Write-Host 'PASS: compiler pins manifest SHA-256 and all six tool-script hashes' -ForegroundColor Green
     Write-Host 'PASS: workspace directories and fixed tool paths reject missing/reparse-point entries' -ForegroundColor Green
-    Write-Host 'PASS: runtime SHA-256 mismatch rejected before modified tool execution' -ForegroundColor Green
+    Write-Host 'PASS: runtime CNG SHA-256 mismatch rejected before modified tool execution' -ForegroundColor Green
     Write-Host 'PASS: unknown tool IDs rejected before process creation' -ForegroundColor Green
     Write-Host 'PASS: timeout values below policy minimum rejected' -ForegroundColor Green
     Write-Host 'PASS: fixed allowlisted success tool launched by absolute System32 PowerShell path' -ForegroundColor Green
