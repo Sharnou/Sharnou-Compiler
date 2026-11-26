@@ -498,3 +498,15 @@ Status: PHASE 1 IMPLEMENTED / SECURITY ACCEPTANCE INCOMPLETE. Native CNG hashing
 - The helper functions do not yet participate in the live `Emit-DevRunTool` path. There is no runtime proof of restricted-token execution, AppContainer process creation, workspace ACL enforcement/revocation, or bounded output capture.
 - This is scaffolding only, not completion. The broker remains test-only opt-in and model-facing process execution remains DISABLED.
 - Do not merge, promote, or describe this phase as security-accepted. Next work must implement the full suspended child flow with restricted primary token + no-capability AppContainer, exclusive/verified workspace grants, race-safe ACL cleanup and crash recovery, STARTUPINFOEX handle-list stdout/stderr capture with a strict output cap, Job Object termination/wait checks, plus adversarial Windows CI. Sanitized environment/DLL-search policy and durable evidence journaling are still separate hard gates.
+
+## 2026-11-26 AppContainer helper correctness follow-on
+
+Branch `devagent-appcontainer-helper-hardening-20261126` (draft PR #20, stacked over PR #19) corrects three helper-level issues:
+- Preserves the GetFileAttributesA return value during the C:\ drive-root path probe instead of clobbering EAX while restoring the path byte.
+- Rejects a NULL DACL before attempting to merge/apply a package ACE, preventing accidental conversion of a NULL DACL into a restrictive DACL.
+- Rejects a successful CreateAppContainerProfile/Derive result if no SID pointer was returned.
+- Adds static test assertions for all three invariants.
+
+This is not runtime security acceptance. The helpers remain disconnected from the live process-launch path. There is no restricted-token/AppContainer child execution, no runtime workspace ACL enforcement, no bounded output capture, and no Windows CI evidence for this commit at this time. Model-facing process execution remains DISABLED. Do not merge or promote this scaffold.
+
+Next acceptance work must wire the native child path, make ACL rollback crash-safe, capture stdout/stderr through a strict inherited-handle list and output cap, and prove token, filesystem, network, process-tree, timeout and cleanup behavior in adversarial Windows CI.
