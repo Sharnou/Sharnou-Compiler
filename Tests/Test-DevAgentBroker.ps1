@@ -90,8 +90,11 @@ try {
     if ($brokerEmitterSource.Contains('TargetRva ([UInt32]0x3188)')) {
         throw 'Live broker must not fall back to unrestricted CreateProcessA.'
     }
-    foreach ($requiredApi in @('GetSecurityInfo', 'SetSecurityInfo', 'CreatePipe', 'PeekNamedPipe', 'UpdateProcThreadAttribute', 'DeleteProcThreadAttributeList', '0x100000')) {
+    foreach ($requiredApi in @('CreatePipe', 'PeekNamedPipe', 'UpdateProcThreadAttribute', 'DeleteProcThreadAttributeList', '0x100000')) {
         if (-not $brokerEmitterSource.Contains($requiredApi)) { throw "Required native sandbox/output component is missing: $requiredApi" }
+    }
+    foreach ($requiredApi in @('GetSecurityInfo', 'SetSecurityInfo', 'SetEntriesInAclA')) {
+        if (-not $compilerSource.Contains($requiredApi)) { throw "Required handle-based ACL API is missing: $requiredApi" }
     }
     if (-not $compilerSource.Contains('KILL_ON_JOB_CLOSE') -or -not $compilerSource.Contains('ACTIVE_PROCESS') -or -not $compilerSource.Contains('0x2308')) {
         throw 'Job Object kill-on-close, active-process and memory-limit flags are missing.'
@@ -130,18 +133,20 @@ try {
             throw "Native sandbox security component is missing: $required"
         }
     }
-    $expectedIatCalls = @(
+    $expectedHelperIatCalls = @(
         'TargetRva ([UInt32]0x3260)', # CreateAppContainerProfile
         'TargetRva ([UInt32]0x3268)', # DeriveAppContainerSidFromAppContainerName
         'TargetRva ([UInt32]0x32B0)', # GetSecurityInfo
         'TargetRva ([UInt32]0x3280)', # SetEntriesInAclA
-        'TargetRva ([UInt32]0x32B8)', # SetSecurityInfo
-        'TargetRva ([UInt32]0x32C0)'  # GetTokenInformation
+        'TargetRva ([UInt32]0x32B8)'  # SetSecurityInfo
     )
-    foreach ($expectedCall in $expectedIatCalls) {
-        if (-not $brokerEmitterSource.Contains($expectedCall)) {
-            throw "Sandbox API call does not target its declared IAT slot: $expectedCall"
+    foreach ($expectedCall in $expectedHelperIatCalls) {
+        if (-not $compilerSource.Contains($expectedCall)) {
+            throw "Sandbox helper API call does not target its declared IAT slot: $expectedCall"
         }
+    }
+    if (-not $brokerEmitterSource.Contains('TargetRva ([UInt32]0x32C0)')) {
+        throw 'GetTokenInformation call does not target its declared ADVAPI32 IAT slot.'
     }
     if (-not $brokerEmitterSource.Contains('Emit-DevBrokerUpdateAcl -PathSlot $workspaceRootSlot') -or -not $brokerEmitterSource.Contains('Emit-DevBrokerUpdateAcl -PathSlot $buildPathSlot')) {
         throw 'Broker does not apply the workspace-root and Build ACL policies.'
