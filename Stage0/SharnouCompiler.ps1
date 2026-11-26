@@ -884,8 +884,10 @@ function Emit-DevBrokerVerifyScript {
     $saveRsiSlot = Get-TempSlotPosition -Depth ($BaseDepth + 4)
     $resultSlot = Get-TempSlotPosition -Depth ($BaseDepth + 5)
     $exitCodeSlot = Get-TempSlotPosition -Depth ($BaseDepth + 6)
+    $toolFileHandleSlot = Get-TempSlotPosition -Depth ($BaseDepth + 7)
 
     # Initialize every handle slot before any validation branch can reach cleanup.
+    Emit-StoreZero64Frame -SlotPosition $toolFileHandleSlot
     Emit-StoreZero64Frame -SlotPosition $jobHandleSlot
     for ($i = 0; $i -lt 3; $i++) { Emit-StoreZero64Frame -SlotPosition ($processSlot + ($i * 8)) }
 
@@ -901,6 +903,7 @@ function Emit-DevBrokerVerifyScript {
     )
     $commandReady = New-UniqueLabel -Prefix 'dev_tool_command_ready'
     $pathFail = New-UniqueLabel -Prefix 'dev_tool_path_fail'
+    $hashFail = New-UniqueLabel -Prefix 'dev_tool_hash_fail'
     $directoryFail = New-UniqueLabel -Prefix 'dev_tool_directory_fail'
     $jobFail = New-UniqueLabel -Prefix 'dev_tool_job_fail'
     $jobConfigFail = New-UniqueLabel -Prefix 'dev_tool_job_config_fail'
@@ -952,6 +955,9 @@ function Emit-DevBrokerVerifyScript {
         $commandItems += [pscustomobject]@{
             Id = $fixedTool.Id
             Item = (Register-DataConstant -Value $commandText)
+            PathItem = (Register-DataConstant -Value $fixedTool.Path)
+            Path = $fixedTool.Path
+            Sha256 = $expectedScriptSha256
             Length = $commandLength
         }
     }
@@ -979,6 +985,7 @@ function Emit-DevBrokerVerifyScript {
     for ($i = 0; $i -lt $commandItems.Count; $i++) {
         Mark-CodeLabel -Label $toolLabels[$i]
         Emit-CopyDataConstantToFrame -DataItem $commandItems[$i].Item -SlotPosition $commandLineSlot -Length $commandItems[$i].Length
+        Emit-DevBrokerVerifyScript -PathItem $commandItems[$i].PathItem -ExpectedSha256 $commandItems[$i].Sha256 -PersistentFileHandleSlot $toolFileHandleSlot -FailureLabel $hashFail
         Emit-Jump -Label $commandReady
     }
     Mark-CodeLabel -Label $unknownTool
@@ -1007,6 +1014,7 @@ function Emit-DevBrokerVerifyScript {
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC6, 0xB9))
     Emit-I32 -Value $suffixLength
     Emit-Bytes -Bytes ([byte[]]@(0xF3, 0xA4, 0xC6, 0x07, 0x00)) # append fixed PowerShell suffix and NUL
+    Emit-DevBrokerPathCheck -FrameSlot $applicationSlot -IsDirectory $false -FailureLabel $pathFail
 
     # Capture the caller's current directory as the fixed working directory.
     Emit-Bytes -Bytes ([byte[]]@(0xB9, 0x04, 0x01, 0x00, 0x00)) # RCX = nBufferLength (260)
@@ -1160,6 +1168,11 @@ function Emit-DevBrokerVerifyScript {
     Emit-StoreEaxFrame -SlotPosition $resultSlot
     Emit-Jump -Label $cleanup
 
+    Mark-CodeLabel -Label $hashFail
+    Emit-Bytes -Bytes ([byte[]]@(0xB8, 0x91, 0xFF, 0xFF, 0xFF)) # -111: native CNG script hash verification failed
+    Emit-StoreEaxFrame -SlotPosition $resultSlot
+    Emit-Jump -Label $cleanup
+
     Mark-CodeLabel -Label $pathFail
     Emit-Bytes -Bytes ([byte[]]@(0xB8, 0x9A, 0xFF, 0xFF, 0xFF)) # -102
     Emit-StoreEaxFrame -SlotPosition $resultSlot
@@ -1181,6 +1194,14 @@ function Emit-DevBrokerVerifyScript {
     Emit-StoreEaxFrame -SlotPosition $resultSlot
     Emit-Jump -Label $cleanup
     Mark-CodeLabel -Label $cleanup
+    # Release the read-only script handle only after the child has exited or was terminated.
+    Emit-LoadRcxFrame -SlotPosition $toolFileHandleSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x85, 0xC9))
+    $skipToolFile = New-UniqueLabel -Prefix 'dev_tool_skip_tool_file'
+    Emit-JumpConditional -ConditionCode 0x84 -Label $skipToolFile
+    Emit-Win64CallIat -TargetRva ([UInt32]0x30B8) -StackArguments @() # CloseHandle(script)
+    Mark-CodeLabel -Label $skipToolFile
+
     # Close the primary thread, process and job handles. Closing the job also
     # terminates any remaining descendants because KILL_ON_JOB_CLOSE is set.
     Emit-LoadRcxFrame -SlotPosition ($processSlot + 8)
@@ -2376,7 +2397,7 @@ Write-Warning 'Milestone 6 adds a native D3D11/DXGI solid-clear demo and runtime
     Emit-LoadRcxFrame -SlotPosition $algorithmSlot
     Emit-Bytes -Bytes ([byte[]]@(0x33, 0xD2, 0x45, 0x33, 0xC0))
     Emit-LoadRaxFrame -SlotPosition $bufferSlot
-    Emit-Bytes -Bytes ([byte[]]@(0x4C, 0x89, 0xC1)) # R9 = pbInput
+    Emit-Bytes -Bytes ([byte[]]@(0x49, 0x89, 0xC1)) # R9 = pbInput
     Emit-Win64CallIat -TargetRva ([UInt32]0x31F0) -StackArguments @(
         @{ Kind = 'FrameDword'; SlotPosition = $sizeSlot },
         @{ Kind = 'FrameAddress'; SlotPosition = $digestSlot },
