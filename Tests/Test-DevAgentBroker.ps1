@@ -74,8 +74,11 @@ try {
     if (-not $compilerSource.Contains('KILL_ON_JOB_CLOSE') -or -not $compilerSource.Contains('ACTIVE_PROCESS') -or -not $compilerSource.Contains('0x2308')) {
         throw 'Job Object kill-on-close, active-process and memory-limit flags are missing.'
     }
-    if (-not $compilerSource.Contains('GetFileAttributesA') -or -not $compilerSource.Contains('GetFileInformationByHandle') -or -not $compilerSource.Contains('0x400') -or -not $compilerSource.Contains('0x00200080')) {
-        throw 'Broker path and opened-handle reparse-point checks are missing.'
+    if (-not $compilerSource.Contains('GetFileAttributesA') -or -not $compilerSource.Contains('GetFileInformationByHandle') -or -not $compilerSource.Contains('GetModuleFileNameA') -or -not $compilerSource.Contains('SetCurrentDirectoryA') -or -not $compilerSource.Contains('0x400') -or -not $compilerSource.Contains('0x00200080')) {
+        throw 'Image-relative workspace and opened-handle reparse-point checks are missing.'
+    }
+    if ($compilerSource.Contains('GetCurrentDirectoryA')) {
+        throw 'Broker must not trust the inherited current directory as its workspace root.'
     }
     if (-not $compilerSource.Contains('BCryptOpenAlgorithmProvider') -or -not $compilerSource.Contains('BCryptHash') -or -not $compilerSource.Contains('BCryptCloseAlgorithmProvider')) {
         throw 'Native Windows CNG SHA-256 verification is missing.'
@@ -127,7 +130,11 @@ try {
     & $verifierPath -Path $outputPath
 
     $successOriginalBytes = [IO.File]::ReadAllBytes($successScriptPath)
+    $foreignWorkingDirectory = Join-Path $env:TEMP 'SharnouDevAgent-ForeignWorkingDirectory'
+    Remove-Item -LiteralPath $foreignWorkingDirectory -Recurse -Force -ErrorAction SilentlyContinue
+    New-Item -ItemType Directory -Path $foreignWorkingDirectory -Force | Out-Null
     try {
+        Set-Location -LiteralPath $foreignWorkingDirectory
         $lines = @(& $outputPath 2>&1)
         $exitCode = $LASTEXITCODE
         # Child console diagnostics may be visible; compare only broker numeric return records.
@@ -172,6 +179,8 @@ try {
     }
     finally {
         [IO.File]::WriteAllBytes($successScriptPath, $successOriginalBytes)
+        Set-Location -LiteralPath $repoRoot
+        Remove-Item -LiteralPath $foreignWorkingDirectory -Recurse -Force -ErrorAction SilentlyContinue
     }
 
     $brokerDirectory = Join-Path $repoRoot 'Tests\DevAgentBroker'
@@ -209,6 +218,7 @@ try {
     Write-Host 'PASS: native Windows CNG SHA-256 verifies every selected tool before CreateProcess' -ForegroundColor Green
     Write-Host 'PASS: native script hash mismatch rejected before child creation' -ForegroundColor Green
     Write-Host 'PASS: compiler pins manifest SHA-256 and all six tool-script hashes' -ForegroundColor Green
+    Write-Host 'PASS: broker derives workspace from its image path and ignores a foreign current directory' -ForegroundColor Green
     Write-Host 'PASS: workspace paths and opened script handles reject reparse points' -ForegroundColor Green
     Write-Host 'PASS: runtime CNG SHA-256 mismatch rejected before modified tool execution' -ForegroundColor Green
     Write-Host 'PASS: unknown tool IDs rejected before process creation' -ForegroundColor Green
