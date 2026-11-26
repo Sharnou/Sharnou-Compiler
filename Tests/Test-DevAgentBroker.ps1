@@ -348,7 +348,7 @@ try {
         }
         $childPid = [int](Get-Content -LiteralPath $childPidPath -Raw)
         if ($null -ne (Get-Process -Id $childPid -ErrorAction SilentlyContinue)) {
-            throw "Job Object timeout failed to terminate descendant process PID $childPid."
+            throw "Job Object timeout failed to terminate timed-out broker child PID $childPid."
         }
 
         # Tamper with the fixed success tool after the PE is built. The embedded
@@ -372,7 +372,7 @@ try {
         }
         $tamperedChildPid = [int](Get-Content -LiteralPath $childPidPath -Raw)
         if ($null -ne (Get-Process -Id $tamperedChildPid -ErrorAction SilentlyContinue)) {
-            throw "Job Object timeout failed to terminate descendant process PID $tamperedChildPid during hash-tamper replay."
+            throw "Job Object timeout failed to terminate timed-out broker child PID $tamperedChildPid during hash-tamper replay."
         }
     }
     finally {
