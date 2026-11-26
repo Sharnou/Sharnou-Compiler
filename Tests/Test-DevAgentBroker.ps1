@@ -77,7 +77,13 @@ try {
     if (-not $compilerSource.Contains('GetFileAttributesA') -or -not $compilerSource.Contains('GetFileInformationByHandle') -or -not $compilerSource.Contains('GetModuleFileNameA') -or -not $compilerSource.Contains('SetCurrentDirectoryA') -or -not $compilerSource.Contains('0x400') -or -not $compilerSource.Contains('0x00200080')) {
         throw 'Image-relative workspace and opened-handle reparse-point checks are missing.'
     }
-    if ($compilerSource.Contains('GetCurrentDirectoryA')) {
+    $brokerEmitterStart = $compilerSource.IndexOf('function Emit-DevRunTool')
+    $brokerEmitterEnd = $compilerSource.IndexOf('function Emit-BuiltinCall', $brokerEmitterStart)
+    if ($brokerEmitterStart -lt 0 -or $brokerEmitterEnd -le $brokerEmitterStart) {
+        throw 'Native DevAgent broker emitter could not be isolated for policy checks.'
+    }
+    $brokerEmitterSource = $compilerSource.Substring($brokerEmitterStart, $brokerEmitterEnd - $brokerEmitterStart)
+    if ($brokerEmitterSource.Contains('GetCurrentDirectoryA')) {
         throw 'Broker must not trust the inherited current directory as its workspace root.'
     }
     if (-not $compilerSource.Contains('BCryptOpenAlgorithmProvider') -or -not $compilerSource.Contains('BCryptHash') -or -not $compilerSource.Contains('BCryptCloseAlgorithmProvider')) {
