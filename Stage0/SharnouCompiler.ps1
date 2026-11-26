@@ -1330,6 +1330,7 @@ function Emit-DevBrokerRestoreSecurityDescriptor {
     $saclSlot = $scratch + 0xD70
     $saclDefaultedSlot = $scratch + 0xD78
     $restoreStageSlot = $scratch + 0xE80
+    $restoreErrorSlot = $scratch + 0xE84
     $failed = New-UniqueLabel -Prefix 'dev_acl_restore_failed'
     $done = New-UniqueLabel -Prefix 'dev_acl_restore_done'
     Emit-StoreZero64Frame -SlotPosition $handleSlot
@@ -1409,6 +1410,7 @@ function Emit-DevBrokerRestoreSecurityDescriptor {
         @{ Kind = 'FrameQword'; SlotPosition = $daclSlot },
         @{ Kind = 'FrameQword'; SlotPosition = $saclSlot }
     )
+    Emit-StoreEaxFrame -SlotPosition $restoreErrorSlot # SetSecurityInfo returns a Win32 error code directly
     Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
     Emit-JumpConditional -ConditionCode 0x85 -Label $failed
     Emit-StoreBits32Frame -SlotPosition $daclPresentSlot -Value 1
@@ -3048,7 +3050,17 @@ function Emit-DevRunTool {
 
     Mark-CodeLabel -Label $aclRollbackRootFail
     Emit-LoadEaxFrame -SlotPosition ($scratch + 0xE80)
-    Emit-Bytes -Bytes ([byte[]]@(0x89, 0xC2, 0xB8, 0x38, 0xFF, 0xFF, 0xFF, 0x29, 0xD0)) # -200 - restore stage
+    Emit-Bytes -Bytes ([byte[]]@(0x83, 0xF8, 0x06))
+    $rootSetSecurityFailed = New-UniqueLabel -Prefix 'dev_tool_root_set_security_failed'
+    $rootRestoreStatusReady = New-UniqueLabel -Prefix 'dev_tool_root_restore_status_ready'
+    Emit-JumpConditional -ConditionCode 0x84 -Label $rootSetSecurityFailed
+    Emit-LoadEaxFrame -SlotPosition ($scratch + 0xE80)
+    Emit-Bytes -Bytes ([byte[]]@(0x89, 0xC2, 0xB8, 0x38, 0xFF, 0xFF, 0xFF, 0x29, 0xD0)) # -200 - pre-SetSecurityInfo stage
+    Emit-Jump -Label $rootRestoreStatusReady
+    Mark-CodeLabel -Label $rootSetSecurityFailed
+    Emit-LoadEaxFrame -SlotPosition ($scratch + 0xE84)
+    Emit-Bytes -Bytes ([byte[]]@(0x89, 0xC2, 0xB8, 0x48, 0xF4, 0xFF, 0xFF, 0x29, 0xD0)) # -3000 - Win32 SetSecurityInfo error
+    Mark-CodeLabel -Label $rootRestoreStatusReady
     Emit-StoreEaxFrame -SlotPosition $resultSlot
     Emit-Jump -Label $skipAclRollback
 
