@@ -2229,60 +2229,6 @@ function Emit-DevRunTool {
     Emit-DevBrokerBuildWorkspacePath -RootSlot $workspaceRootSlot -RootLengthSlot $rootLengthSlot -SuffixItem $brokerSuffixItem -SuffixLength $brokerSuffixLength -DestinationSlot $brokerDirectorySlot
     Emit-DevBrokerBuildWorkspacePath -RootSlot $workspaceRootSlot -RootLengthSlot $rootLengthSlot -SuffixItem $captureSuffixItem -SuffixLength $captureSuffixLength -DestinationSlot $outputPathSlot
 
-    # Hash only the selected immutable script by absolute path; keep its opened file handle.
-    $verifyLabels = @()
-    for ($i = 0; $i -lt $fixedToolPaths.Count; $i++) { $verifyLabels += New-UniqueLabel -Prefix 'dev_tool_verify_hash' }
-    Emit-LoadEaxFrame -SlotPosition $ToolSlot
-    for ($i = 0; $i -lt $fixedToolPaths.Count; $i++) {
-        Emit-Bytes -Bytes ([byte[]]@(0x3D))
-        Emit-I32 -Value $fixedToolPaths[$i].Id
-        Emit-JumpConditional -ConditionCode 0x84 -Label $verifyLabels[$i]
-    }
-    Emit-Jump -Label $unknownTool
-    for ($i = 0; $i -lt $fixedToolPaths.Count; $i++) {
-        Mark-CodeLabel -Label $verifyLabels[$i]
-        Emit-DevBrokerBuildWorkspacePath -RootSlot $workspaceRootSlot -RootLengthSlot $rootLengthSlot -SuffixItem $fixedToolPaths[$i].SuffixItem -SuffixLength $fixedToolPaths[$i].SuffixLength -DestinationSlot $pathScratchSlot
-        Emit-LoadEaxFrame -SlotPosition $rootLengthSlot
-        Emit-Bytes -Bytes ([byte[]]@(0x05))
-        Emit-I32 -Value $fixedToolPaths[$i].SuffixLength
-        Emit-StoreEaxFrame -SlotPosition $modulePathLengthSlot
-        Emit-DevBrokerVerifyScript -FrameSlot $pathScratchSlot -ExpectedSha256 $fixedToolPaths[$i].Sha256 -PersistentFileHandleSlot $hashFileHandleSlot -FailureLabel $hashFail
-        Emit-Jump -Label $hashVerified
-    }
-    Mark-CodeLabel -Label $hashFail
-    Emit-Bytes -Bytes ([byte[]]@(0xB8, 0x91, 0xFF, 0xFF, 0xFF)) # -111: selected script hash failed
-    Emit-StoreEaxFrame -SlotPosition $resultSlot
-    Emit-Jump -Label $cleanup
-    Mark-CodeLabel -Label $hashVerified
-
-    # Build commandLineSlot = fixed prefix + the exact SHA-256-verified absolute script path + suffix.
-    Emit-DataAddress -DataItem $commandPrefixItem
-    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC6)) # RSI = command prefix
-    Emit-LeaRaxFrame -SlotPosition $commandLineSlot
-    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC7)) # RDI = command buffer
-    Emit-Bytes -Bytes ([byte[]]@(0xB9))
-    Emit-I32 -Value $commandPrefixLength
-    Emit-Bytes -Bytes ([byte[]]@(0xFC, 0xF3, 0xA4)) # CLD; copy prefix
-
-    Emit-LeaRaxFrame -SlotPosition $pathScratchSlot
-    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC6)) # RSI = verified absolute path
-    Emit-LeaRaxFrame -SlotPosition $commandLineSlot
-    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC7, 0x48, 0x81, 0xC7))
-    Emit-I32 -Value $commandPrefixLength # RDI = command buffer + prefix length
-    Emit-LoadEaxFrame -SlotPosition $modulePathLengthSlot
-    Emit-Bytes -Bytes ([byte[]]@(0x89, 0xC1, 0xFC, 0xF3, 0xA4)) # copy exact path bytes (no NUL)
-
-    Emit-DataAddress -DataItem $commandSuffixItem
-    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC6)) # RSI = command suffix
-    Emit-LeaRaxFrame -SlotPosition $commandLineSlot
-    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC7, 0x48, 0x81, 0xC7))
-    Emit-I32 -Value $commandPrefixLength
-    Emit-LoadEaxFrame -SlotPosition $modulePathLengthSlot
-    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x63, 0xC0, 0x48, 0x01, 0xC7)) # RDI += absolute path length
-    Emit-Bytes -Bytes ([byte[]]@(0xB9))
-    Emit-I32 -Value $commandSuffixLength
-    Emit-Bytes -Bytes ([byte[]]@(0xFC, 0xF3, 0xA4, 0xC6, 0x07, 0x00)) # copy suffix + NUL
-
     # Journal files live in the checked workspace root. The temporary file is
     # atomically renamed only after all three original descriptors are flushed.
     Emit-DevBrokerBuildWorkspacePath -RootSlot $workspaceRootSlot -RootLengthSlot $rootLengthSlot -SuffixItem $journalSuffixItem -SuffixLength $journalSuffixLength -DestinationSlot $journalPathSlot
@@ -2349,6 +2295,68 @@ function Emit-DevRunTool {
     Emit-Win64CallIat -TargetRva ([UInt32]0x3220) -StackArguments @() # SetCurrentDirectoryA
     Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
     Emit-JumpConditional -ConditionCode 0x84 -Label $directoryFailCwd
+
+    # Verify the selected tool only after crash recovery has restored source-tree
+    # DACLs. A killed prior broker may leave the AppContainer ACE in place until
+    # this point; do not make manifest/script access a prerequisite for rollback.
+    # Hash only the selected immutable script by absolute path; keep its opened file handle.
+    $verifyLabels = @()
+    for ($i = 0; $i -lt $fixedToolPaths.Count; $i++) { $verifyLabels += New-UniqueLabel -Prefix 'dev_tool_verify_hash' }
+    Emit-LoadEaxFrame -SlotPosition $ToolSlot
+    for ($i = 0; $i -lt $fixedToolPaths.Count; $i++) {
+        Emit-Bytes -Bytes ([byte[]]@(0x3D))
+        Emit-I32 -Value $fixedToolPaths[$i].Id
+        Emit-JumpConditional -ConditionCode 0x84 -Label $verifyLabels[$i]
+    }
+    Emit-Jump -Label $unknownTool
+    for ($i = 0; $i -lt $fixedToolPaths.Count; $i++) {
+        Mark-CodeLabel -Label $verifyLabels[$i]
+        Emit-DevBrokerBuildWorkspacePath -RootSlot $workspaceRootSlot -RootLengthSlot $rootLengthSlot -SuffixItem $fixedToolPaths[$i].SuffixItem -SuffixLength $fixedToolPaths[$i].SuffixLength -DestinationSlot $pathScratchSlot
+        Emit-LoadEaxFrame -SlotPosition $rootLengthSlot
+        Emit-Bytes -Bytes ([byte[]]@(0x05))
+        Emit-I32 -Value $fixedToolPaths[$i].SuffixLength
+        Emit-StoreEaxFrame -SlotPosition $modulePathLengthSlot
+        Emit-DevBrokerVerifyScript -FrameSlot $pathScratchSlot -ExpectedSha256 $fixedToolPaths[$i].Sha256 -PersistentFileHandleSlot $hashFileHandleSlot -FailureLabel $hashFail
+        Emit-Jump -Label $hashVerified
+    }
+    Mark-CodeLabel -Label $hashFail
+    Emit-Bytes -Bytes ([byte[]]@(0xB8, 0x91, 0xFF, 0xFF, 0xFF)) # -111: selected script hash failed
+    Emit-StoreEaxFrame -SlotPosition $resultSlot
+    Emit-Jump -Label $cleanup
+    Mark-CodeLabel -Label $hashVerified
+
+    # Build commandLineSlot = fixed prefix + the exact SHA-256-verified absolute script path + suffix.
+    Emit-DataAddress -DataItem $commandPrefixItem
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC6)) # RSI = command prefix
+    Emit-LeaRaxFrame -SlotPosition $commandLineSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC7)) # RDI = command buffer
+    Emit-Bytes -Bytes ([byte[]]@(0xB9))
+    Emit-I32 -Value $commandPrefixLength
+    Emit-Bytes -Bytes ([byte[]]@(0xFC, 0xF3, 0xA4)) # CLD; copy prefix
+
+    Emit-LeaRaxFrame -SlotPosition $pathScratchSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC6)) # RSI = verified absolute path
+    Emit-LeaRaxFrame -SlotPosition $commandLineSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC7, 0x48, 0x81, 0xC7))
+    Emit-I32 -Value $commandPrefixLength # RDI = command buffer + prefix length
+    Emit-LoadEaxFrame -SlotPosition $modulePathLengthSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x89, 0xC1, 0xFC, 0xF3, 0xA4)) # copy exact path bytes (no NUL)
+
+    Emit-DataAddress -DataItem $commandSuffixItem
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC6)) # RSI = command suffix
+    Emit-LeaRaxFrame -SlotPosition $commandLineSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC7, 0x48, 0x81, 0xC7))
+    Emit-I32 -Value $commandPrefixLength
+    Emit-LoadEaxFrame -SlotPosition $modulePathLengthSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x63, 0xC0, 0x48, 0x01, 0xC7)) # RDI += absolute path length
+    Emit-Bytes -Bytes ([byte[]]@(0xB9))
+    Emit-I32 -Value $commandSuffixLength
+    Emit-Bytes -Bytes ([byte[]]@(0xFC, 0xF3, 0xA4, 0xC6, 0x07, 0x00)) # copy suffix + NUL
+
+
+    # pathScratchSlot is also journalPathSlot. Hash-path construction borrowed it,
+    # so rebuild the committed journal target before the next transaction starts.
+    Emit-DevBrokerBuildWorkspacePath -RootSlot $workspaceRootSlot -RootLengthSlot $rootLengthSlot -SuffixItem $journalSuffixItem -SuffixLength $journalSuffixLength -DestinationSlot $journalPathSlot
 
     # Retire grants written by the pre-journal broker. REVOKE_ACCESS only narrows
     # access; no permission expansion is allowed until a durable snapshot commits.
