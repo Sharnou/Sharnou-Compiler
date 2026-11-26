@@ -1080,6 +1080,7 @@ function Emit-DevBrokerUpdateAcl {
         [int] $SidSlot,
         [UInt32] $AccessMask,
         [UInt32] $AccessMode,
+        [bool] $SetLowIntegrityLabel = $false,
         [string] $FailureLabel
     )
     $scratch = [int]$script:ActiveContext.ScratchPosition
@@ -1090,6 +1091,7 @@ function Emit-DevBrokerUpdateAcl {
     $newAclSlot = $scratch + 0xD60
     $explicitSlot = $scratch + 0xD70
     $failedSlot = $scratch + 0xDA0
+    $mandatoryLabelAclSlot = $scratch + 0xDA8
     $failed = New-UniqueLabel -Prefix 'dev_acl_handle_failed'
     $done = New-UniqueLabel -Prefix 'dev_acl_handle_done'
     Emit-StoreZero64Frame -SlotPosition $handleSlot
@@ -1099,9 +1101,10 @@ function Emit-DevBrokerUpdateAcl {
     Emit-StoreBits32Frame -SlotPosition $failedSlot -Value 0
     for ($i = 0; $i -lt 7; $i++) { Emit-StoreZero64Frame -SlotPosition ($fileInfoSlot + ($i * 8)) }
 
-    # Open the directory itself with READ_CONTROL | WRITE_DAC and do not follow a reparse point.
+    # Open the directory itself with READ_CONTROL | WRITE_DAC | WRITE_OWNER and
+    # OPEN_REPARSE_POINT. WRITE_OWNER is needed for LABEL_SECURITY_INFORMATION.
     Emit-LeaRaxFrame -SlotPosition $PathSlot
-    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1, 0xBA, 0x00, 0x00, 0x06, 0x00, 0x41, 0xB8, 0x07, 0x00, 0x00, 0x00, 0x45, 0x33, 0xC9))
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1, 0xBA, 0x00, 0x00, 0x0E, 0x00, 0x41, 0xB8, 0x07, 0x00, 0x00, 0x00, 0x45, 0x33, 0xC9))
     Emit-Win64CallIat -TargetRva ([UInt32]0x30A0) -StackArguments @(
         @{ Kind = 'Immediate'; Value = 3 },          # OPEN_EXISTING
         @{ Kind = 'Immediate'; Value = 0x02200080 }, # BACKUP_SEMANTICS | OPEN_REPARSE_POINT | NORMAL
@@ -1113,7 +1116,7 @@ function Emit-DevBrokerUpdateAcl {
     Emit-JumpConditional -ConditionCode 0x84 -Label $failed
     Emit-StoreRaxFrame -SlotPosition $handleSlot
 
-    # Confirm this exact opened object is a directory and is not a reparse point.
+    # Validate the exact opened directory object; path-string checks are not enough.
     Emit-LoadRcxFrame -SlotPosition $handleSlot
     Emit-LeaRaxFrame -SlotPosition $fileInfoSlot
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC2))
@@ -1141,7 +1144,7 @@ function Emit-DevBrokerUpdateAcl {
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x85, 0xC0))
     Emit-JumpConditional -ConditionCode 0x84 -Label $failed # a NULL DACL is never accepted
 
-    # EXPLICIT_ACCESS_A (48 bytes). SET_ACCESS makes repeated runs idempotent.
+    # EXPLICIT_ACCESS_A (48 bytes), package SID trustee. SET_ACCESS is idempotent.
     Emit-StoreBits32Frame -SlotPosition $explicitSlot -Value $AccessMask
     Emit-StoreBits32Frame -SlotPosition ($explicitSlot + 4) -Value $AccessMode
     Emit-StoreBits32Frame -SlotPosition ($explicitSlot + 8) -Value 3 # OBJECT_INHERIT_ACE | CONTAINER_INHERIT_ACE
@@ -1162,13 +1165,34 @@ function Emit-DevBrokerUpdateAcl {
     Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
     Emit-JumpConditional -ConditionCode 0x85 -Label $failed
 
-    # SetSecurityInfo changes only the DACL of the same validated handle; unrelated ACEs were merged.
+    # A low-integrity AppContainer is subject to MIC before DACL evaluation.
+    # SetSecurityInfo(LABEL_SECURITY_INFORMATION) installs an inheritable Low IL
+    # SYSTEM_MANDATORY_LABEL_ACE on Build staging only; workspace source remains
+    # at its existing integrity level and is read-only in the package DACL.
+    if ($SetLowIntegrityLabel) {
+        # ACL header: revision 2, size 28, one ACE. ACE: SYSTEM_MANDATORY_LABEL,
+        # OI|CI, size 20, NO_WRITE_UP, SID S-1-16-4096 (Low Mandatory Level).
+        Emit-StoreImm64Frame -SlotPosition $mandatoryLabelAclSlot -Value ([UInt64]0x00000001001C0002)
+        Emit-StoreBits32Frame -SlotPosition ($mandatoryLabelAclSlot + 8) -Value 0x00140311
+        Emit-StoreBits32Frame -SlotPosition ($mandatoryLabelAclSlot + 12) -Value 1
+        Emit-StoreImm64Frame -SlotPosition ($mandatoryLabelAclSlot + 16) -Value ([UInt64]0x1000000000000101)
+        Emit-StoreBits32Frame -SlotPosition ($mandatoryLabelAclSlot + 24) -Value 0x00001000
+        $securityInformation = 0x14 # DACL_SECURITY_INFORMATION | LABEL_SECURITY_INFORMATION
+        $saclArgument = @{ Kind = 'FrameAddress'; SlotPosition = $mandatoryLabelAclSlot }
+    }
+    else {
+        $securityInformation = 0x04 # DACL_SECURITY_INFORMATION only
+        $saclArgument = @{ Kind = 'Immediate'; Value = 0 }
+    }
+
     Emit-LoadRcxFrame -SlotPosition $handleSlot
-    Emit-Bytes -Bytes ([byte[]]@(0xBA, 0x01, 0x00, 0x00, 0x00, 0x41, 0xB8, 0x04, 0x00, 0x00, 0x00, 0x45, 0x33, 0xC9))
+    Emit-Bytes -Bytes ([byte[]]@(0xBA, 0x01, 0x00, 0x00, 0x00, 0x41, 0xB8))
+    Emit-I32 -Value $securityInformation
+    Emit-Bytes -Bytes ([byte[]]@(0x45, 0x33, 0xC9)) # pOwner = NULL
     Emit-Win64CallIat -TargetRva ([UInt32]0x32D0) -StackArguments @(
         @{ Kind = 'Immediate'; Value = 0 }, # pSidGroup
         @{ Kind = 'FrameQword'; SlotPosition = $newAclSlot },
-        @{ Kind = 'Immediate'; Value = 0 }  # pSacl
+        $saclArgument
     ) # SetSecurityInfo
     Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
     Emit-JumpConditional -ConditionCode 0x85 -Label $failed
@@ -1639,8 +1663,8 @@ function Emit-DevRunTool {
     # workspace root = read/execute; Build and its broker subdirectory = read/write/execute.
     Emit-DevBrokerEnsureAppContainerSid -SidSlot $appContainerSidSlot -FailureLabel $appContainerFail
     Emit-DevBrokerUpdateAcl -PathSlot $workspaceRootSlot -SidSlot $appContainerSidSlot -AccessMask ([UInt32]0x001200A9) -AccessMode 2 -FailureLabel $aclFail
-    Emit-DevBrokerUpdateAcl -PathSlot $buildPathSlot -SidSlot $appContainerSidSlot -AccessMask ([UInt32]0x001201FF) -AccessMode 2 -FailureLabel $aclFail
-    Emit-DevBrokerUpdateAcl -PathSlot $brokerDirectorySlot -SidSlot $appContainerSidSlot -AccessMask ([UInt32]0x001201FF) -AccessMode 2 -FailureLabel $aclFail
+    Emit-DevBrokerUpdateAcl -PathSlot $buildPathSlot -SidSlot $appContainerSidSlot -AccessMask ([UInt32]0x001201FF) -AccessMode 2 -SetLowIntegrityLabel $true -FailureLabel $aclFail
+    Emit-DevBrokerUpdateAcl -PathSlot $brokerDirectorySlot -SidSlot $appContainerSidSlot -AccessMask ([UInt32]0x001201FF) -AccessMode 2 -SetLowIntegrityLabel $true -FailureLabel $aclFail
 
     # Create a new exclusive capture file before launch. CREATE_NEW cannot reopen an old
     # reparse point or hard link; the held non-inheritable handle is reused for persistence.
