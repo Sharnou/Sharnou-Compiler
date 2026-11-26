@@ -277,7 +277,7 @@ $foundDlls = [System.Collections.Generic.HashSet[string]]::new([System.StringCom
 $foundImports = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
 $descriptorIndex = 0
 while ($true) {
-    if ($descriptorIndex -gt 15) { Fail-PE 'Import descriptor array has no null terminator.' }
+    if ($descriptorIndex -gt 16) { Fail-PE 'Import descriptor array has no null terminator.' }
     $d = $importOffset + ($descriptorIndex * 20)
     if (($d + 20) -gt ($importOffset + $importSize)) { Fail-PE 'Import descriptor array is truncated.' }
     $oft = [UInt64](Read-U32 -Bytes $bytes -Offset $d)
