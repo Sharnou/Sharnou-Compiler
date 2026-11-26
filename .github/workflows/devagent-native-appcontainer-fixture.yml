@@ -1,0 +1,49 @@
+name: Sharnou DevAgent Native ABI and AppContainer Fixture
+
+on:
+  push:
+    branches:
+      - devagent-secure-process-broker-20261126
+  pull_request:
+    branches:
+      - Sharnou-Compiler
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-native-interop-security-fixture:
+    runs-on: windows-2025
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Verify source encoding
+        shell: powershell
+        run: |
+          $paths = @(
+            'Tests\DevAgentBroker\native-abi-manifest.json',
+            'Tests\DevAgentBroker\NativeInterop.ps1',
+            'Tests\Test-DevAgentNativeAbiRuntime.ps1',
+            'Tests\Test-DevAgentAppContainerFixture.ps1'
+          )
+          foreach ($path in $paths) {
+            $bytes = [IO.File]::ReadAllBytes((Join-Path $PWD $path))
+            if ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF) {
+              throw "UTF-8 BOM is not allowed: $path"
+            }
+            foreach ($byte in $bytes) {
+              if ($byte -gt 127) { throw "Non-ASCII byte: $path" }
+            }
+          }
+          Write-Host 'PASS: Phase 2B.2 test sources are ASCII without BOM.'
+
+      - name: Execute Windows x64 interop layout probe
+        shell: powershell
+        run: .\Tests\Test-DevAgentNativeAbiRuntime.ps1
+
+      - name: Execute fixed suspended AppContainer token fixture
+        shell: powershell
+        run: .\Tests\Test-DevAgentAppContainerFixture.ps1

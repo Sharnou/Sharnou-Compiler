@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "status": "PHASE_2B_1_ABI_CONTRACT_ONLY",
+  "status": "PHASE_2B_2_RUNTIME_INTEROP_PROBE_AND_TEST_ONLY_APPCONTAINER_FIXTURE",
   "target": {
     "architecture": "x86-64",
     "pointerSize": 8,
@@ -10,7 +10,8 @@
   "evidence": {
     "level": "Windows SDK header declaration and field-order verification plus deterministic x64 layout computation",
     "notProven": "No native sizeof/offsetof execution, no native compiler invocation, no generated PE, no process creation, and no sandbox proof.",
-    "note": "SDK field order and the arithmetic x64 ABI model are statically cross-checked. This is not an executed compiler sizeof/offsetof probe, and must not be used alone to ship native structure offsets."
+    "note": "SDK field order and the arithmetic x64 ABI model are statically cross-checked. This is not an executed compiler sizeof/offsetof probe, and must not be used alone to ship native structure offsets.",
+    "next": "Phase 2B.2 validation executes the .NET Framework unmanaged interop marshaler on 64-bit Windows and performs real USERENV/KERNEL32/ADVAPI32 calls. Runtime Marshal.SizeOf/OffsetOf is an independent CLR native-marshalling measurement, not a C/C++ compiler sizeof/offsetof build. The test-only child is a fixed absolute System32 whoami.exe process created suspended, inspected before resume, and terminated without any user entry-point execution. No compiler PE import table or production emitter is modified."
   },
   "currentImportTable": {
     "descriptorBase": "0xA00",
@@ -829,5 +830,244 @@
       "header": "um/securitybaseapi.h",
       "callingConvention": "WINAPI / Microsoft x64"
     }
-  ]
+  ],
+  "testFixtureApis": [
+    {
+      "name": "CreateAppContainerProfile",
+      "dll": "USERENV.dll",
+      "returnType": "HRESULT",
+      "parameters": [
+        "PCWSTR",
+        "PCWSTR",
+        "PCWSTR",
+        "PSID_AND_ATTRIBUTES",
+        "DWORD",
+        "PSID*"
+      ],
+      "header": "um/userenv.h",
+      "setLastError": false
+    },
+    {
+      "name": "DeleteAppContainerProfile",
+      "dll": "USERENV.dll",
+      "returnType": "HRESULT",
+      "parameters": [
+        "PCWSTR"
+      ],
+      "header": "um/userenv.h",
+      "setLastError": false
+    },
+    {
+      "name": "InitializeProcThreadAttributeList",
+      "dll": "KERNEL32.dll",
+      "returnType": "BOOL",
+      "parameters": [
+        "LPPROC_THREAD_ATTRIBUTE_LIST",
+        "DWORD",
+        "DWORD",
+        "PSIZE_T"
+      ],
+      "header": "um/processthreadsapi.h",
+      "setLastError": true
+    },
+    {
+      "name": "UpdateProcThreadAttribute",
+      "dll": "KERNEL32.dll",
+      "returnType": "BOOL",
+      "parameters": [
+        "LPPROC_THREAD_ATTRIBUTE_LIST",
+        "DWORD",
+        "DWORD_PTR",
+        "PVOID",
+        "SIZE_T",
+        "PVOID",
+        "PSIZE_T"
+      ],
+      "header": "um/processthreadsapi.h",
+      "setLastError": true
+    },
+    {
+      "name": "DeleteProcThreadAttributeList",
+      "dll": "KERNEL32.dll",
+      "returnType": "VOID",
+      "parameters": [
+        "LPPROC_THREAD_ATTRIBUTE_LIST"
+      ],
+      "header": "um/processthreadsapi.h",
+      "setLastError": false
+    },
+    {
+      "name": "CreateProcessW",
+      "dll": "KERNEL32.dll",
+      "returnType": "BOOL",
+      "parameters": [
+        "LPCWSTR",
+        "LPWSTR",
+        "LPSECURITY_ATTRIBUTES",
+        "LPSECURITY_ATTRIBUTES",
+        "BOOL",
+        "DWORD",
+        "LPVOID",
+        "LPCWSTR",
+        "LPSTARTUPINFOW",
+        "LPPROCESS_INFORMATION"
+      ],
+      "header": "um/processthreadsapi.h",
+      "setLastError": true
+    },
+    {
+      "name": "OpenProcessToken",
+      "dll": "ADVAPI32.dll",
+      "returnType": "BOOL",
+      "parameters": [
+        "HANDLE",
+        "DWORD",
+        "PHANDLE"
+      ],
+      "header": "um/processthreadsapi.h",
+      "setLastError": true
+    },
+    {
+      "name": "GetTokenInformation",
+      "dll": "ADVAPI32.dll",
+      "returnType": "BOOL",
+      "parameters": [
+        "HANDLE",
+        "TOKEN_INFORMATION_CLASS",
+        "LPVOID",
+        "DWORD",
+        "PDWORD"
+      ],
+      "header": "um/securitybaseapi.h",
+      "setLastError": true
+    },
+    {
+      "name": "IsValidSid",
+      "dll": "ADVAPI32.dll",
+      "returnType": "BOOL",
+      "parameters": [
+        "PSID"
+      ],
+      "header": "um/securitybaseapi.h",
+      "setLastError": true
+    },
+    {
+      "name": "EqualSid",
+      "dll": "ADVAPI32.dll",
+      "returnType": "BOOL",
+      "parameters": [
+        "PSID",
+        "PSID"
+      ],
+      "header": "um/securitybaseapi.h",
+      "setLastError": true
+    },
+    {
+      "name": "GetSidSubAuthorityCount",
+      "dll": "ADVAPI32.dll",
+      "returnType": "PUCHAR",
+      "parameters": [
+        "PSID"
+      ],
+      "header": "um/securitybaseapi.h",
+      "setLastError": true
+    },
+    {
+      "name": "GetSidSubAuthority",
+      "dll": "ADVAPI32.dll",
+      "returnType": "PDWORD",
+      "parameters": [
+        "PSID",
+        "DWORD"
+      ],
+      "header": "um/securitybaseapi.h",
+      "setLastError": true
+    },
+    {
+      "name": "FreeSid",
+      "dll": "ADVAPI32.dll",
+      "returnType": "PVOID",
+      "parameters": [
+        "PSID"
+      ],
+      "header": "um/securitybaseapi.h",
+      "setLastError": false
+    },
+    {
+      "name": "GetCurrentProcess",
+      "dll": "KERNEL32.dll",
+      "returnType": "HANDLE",
+      "parameters": [
+        "VOID"
+      ],
+      "header": "um/processthreadsapi.h",
+      "setLastError": false
+    },
+    {
+      "name": "GetExitCodeProcess",
+      "dll": "KERNEL32.dll",
+      "returnType": "BOOL",
+      "parameters": [
+        "HANDLE",
+        "PDWORD"
+      ],
+      "header": "um/processthreadsapi.h",
+      "setLastError": true
+    },
+    {
+      "name": "TerminateProcess",
+      "dll": "KERNEL32.dll",
+      "returnType": "BOOL",
+      "parameters": [
+        "HANDLE",
+        "DWORD"
+      ],
+      "header": "um/processthreadsapi.h",
+      "setLastError": true
+    },
+    {
+      "name": "WaitForSingleObject",
+      "dll": "KERNEL32.dll",
+      "returnType": "DWORD",
+      "parameters": [
+        "HANDLE",
+        "DWORD"
+      ],
+      "header": "um/synchapi.h",
+      "setLastError": true
+    },
+    {
+      "name": "CloseHandle",
+      "dll": "KERNEL32.dll",
+      "returnType": "BOOL",
+      "parameters": [
+        "HANDLE"
+      ],
+      "header": "um/handleapi.h",
+      "setLastError": true
+    }
+  ],
+  "testFixture": {
+    "profileNamePattern": "[-_. A-Za-z0-9]+",
+    "maximumProfileNameLength": 64,
+    "requestedCapabilityCount": 0,
+    "securityCapabilitiesAttribute": "0x00020009",
+    "creationFlags": "0x00080404",
+    "inheritHandles": false,
+    "startupInfoExCb": 112,
+    "childImage": "%SystemRoot%\\System32\\whoami.exe",
+    "childPolicy": "CREATE_SUSPENDED; token queried before any resume; process terminated while primary thread remains suspended; no command or path supplied by user/model",
+    "tokenInformationClasses": [
+      25,
+      29,
+      30,
+      31
+    ],
+    "expectedTokenIsAppContainer": 1,
+    "expectedTokenCapabilitiesCount": 0,
+    "maximumIntegrityRid": "0x00001000",
+    "profileCollisionHresult": "0x800700B7",
+    "evidenceLimit": "Runtime proof of Windows API interop, real profile SID, actual child token, zero capabilities, low integrity, and suspended termination. Does not modify compiler-generated PE imports, invoke the Sharnou native emitter, or establish production broker readiness.",
+    "evidence": "The fixture makes no command-line, executable path, environment, or tool choice user/model configurable. It has no ResumeThread import or call. The only child image is %SystemRoot%\\System32\\whoami.exe, started CREATE_SUSPENDED and terminated before its primary thread runs."
+  }
 }
