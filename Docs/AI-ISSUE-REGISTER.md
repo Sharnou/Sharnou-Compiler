@@ -498,3 +498,23 @@ Status: PHASE 1 IMPLEMENTED / SECURITY ACCEPTANCE INCOMPLETE. Native CNG hashing
 - The helper functions do not yet participate in the live `Emit-DevRunTool` path. There is no runtime proof of restricted-token execution, AppContainer process creation, workspace ACL enforcement/revocation, or bounded output capture.
 - This is scaffolding only, not completion. The broker remains test-only opt-in and model-facing process execution remains DISABLED.
 - Do not merge, promote, or describe this phase as security-accepted. Next work must implement the full suspended child flow with restricted primary token + no-capability AppContainer, exclusive/verified workspace grants, race-safe ACL cleanup and crash recovery, STARTUPINFOEX handle-list stdout/stderr capture with a strict output cap, Job Object termination/wait checks, plus adversarial Windows CI. Sanitized environment/DLL-search policy and durable evidence journaling are still separate hard gates.
+
+## 2026-11-26 - live AppContainer / restricted-token / bounded-output candidate
+
+Branch `devagent-sandbox-runtime-20261126` now wires the previously helper-only AppContainer and ACL work into the live native `Emit-DevRunTool` emitter. The source also includes restricted primary-token creation and token verification before resume, STARTUPINFOEX handle-list isolation, a strict combined stdout/stderr capture buffer, exact 1 MiB read clamping, and Low IL mandatory-label application on the writable Build staging directories.
+
+Source-level checks completed:
+- IAT and import lookup arrays were re-audited across all 16 descriptors, including zero terminators; no overlap or unmapped native call target was found.
+- The Build-only mandatory-label policy and exact output-cap path have static assertions in `Tests/Test-DevAgentBroker.ps1`.
+- New probes cover writing within Build, denied write in Tests, and 1 MiB + 1 byte combined output.
+
+This is not a Windows CI pass. Do not infer runtime isolation from source review. The new branch still requires Windows tests proving: AppContainer token identity, zero capabilities, Build write success / source write denial, output capture exact-cap and overflow termination, Job Object emptiness, cleanup and repeat-run behavior.
+
+Residual hard blockers:
+1. Persistent AppContainer profile SID and persistent DACL grants have no per-run identity or durable crash-recovery/rollback transaction. A broker crash can leave stale access.
+2. The child inherits the broker environment. A sanitized environment and DLL search hardening are still required.
+3. Full canonical final-path and race-free ancestor confinement are not complete.
+4. Network denial and explicit cancellation need adversarial runtime tests.
+5. Windows runtime CI has not yet passed on this branch.
+
+Status: **IMPLEMENTATION CANDIDATE / NOT SECURITY-ACCEPTED / NOT MODEL-ENABLED**. Keep the test broker behind explicit opt-in. Model-facing process execution stays DISABLED. Do not merge or release based on static checks alone.

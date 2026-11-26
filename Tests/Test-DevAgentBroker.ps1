@@ -22,13 +22,18 @@ $fixturePath = Join-Path $PSScriptRoot 'DevAgentBroker\DevAgentBroker.sharnou'
 $timeoutScriptPath = Join-Path $PSScriptRoot 'DevAgentBroker\TimeoutProbe.ps1'
 $toolManifestPath = Join-Path $PSScriptRoot 'DevAgentBroker\tool-manifest.json'
 $successScriptPath = Join-Path $PSScriptRoot 'DevAgentBroker\SuccessProbe.ps1'
+$sandboxScriptPath = Join-Path $PSScriptRoot 'DevAgentBroker\SandboxProbe.ps1'
+$overflowScriptPath = Join-Path $PSScriptRoot 'DevAgentBroker\OverflowProbe.ps1'
 $disabledFixturePath = Join-Path $PSScriptRoot 'DevAgentBroker\Disabled.sharnou'
 $disabledOutputPath = Join-Path $repoRoot 'Build\DevAgentBroker\DevAgentBrokerDisabled.exe'
 $buildRoot = Join-Path $repoRoot 'Build\DevAgentBroker'
 $outputPath = Join-Path $buildRoot 'DevAgentBroker.exe'
 $childPidPath = Join-Path $buildRoot 'child.pid'
+$sandboxMarkerPath = Join-Path $buildRoot 'sandbox-write-probe.ok'
+$deniedMarkerPath = Join-Path $PSScriptRoot 'DevAgentBroker\denied-write-probe.tmp'
+$capturedOutputPath = Join-Path $buildRoot 'captured-output.bin'
 $nl = [string][char]10
-$expected = @('-100', '-101', '37', '-110') -join $nl
+$expected = @('-100', '-101', '37', '-110', '0', '-114') -join $nl
 $originalLocation = Get-Location
 $toolHashInputs = @(
     [pscustomobject]@{ Id = 1; Path = 'Tests\Test-Stage7A.ps1' },
@@ -36,7 +41,9 @@ $toolHashInputs = @(
     [pscustomobject]@{ Id = 3; Path = 'Tests\BaselineM6\Test-Milestone6Baseline.ps1' },
     [pscustomobject]@{ Id = 4; Path = 'Tests\Test-StackProbeUnwind.ps1' },
     [pscustomobject]@{ Id = 5; Path = 'Tests\DevAgentBroker\TimeoutProbe.ps1' },
-    [pscustomobject]@{ Id = 6; Path = 'Tests\DevAgentBroker\SuccessProbe.ps1' }
+    [pscustomobject]@{ Id = 6; Path = 'Tests\DevAgentBroker\SuccessProbe.ps1' },
+    [pscustomobject]@{ Id = 7; Path = 'Tests\DevAgentBroker\SandboxProbe.ps1' },
+    [pscustomobject]@{ Id = 8; Path = 'Tests\DevAgentBroker\OverflowProbe.ps1' }
 )
 
 try {
@@ -57,7 +64,7 @@ try {
         Write-Host ("DEVAGENT_TOOL_SHA256|{0}|{1}|{2}" -f $tool.Id, $tool.Path, $toolHash)
     }
     Set-Location -LiteralPath $repoRoot
-    foreach ($required in @($compilerPath, $verifierPath, $fixturePath, $timeoutScriptPath, $successScriptPath, $disabledFixturePath, $toolManifestPath)) {
+    foreach ($required in @($compilerPath, $verifierPath, $fixturePath, $timeoutScriptPath, $successScriptPath, $sandboxScriptPath, $overflowScriptPath, $disabledFixturePath, $toolManifestPath)) {
         if (-not (Test-Path -LiteralPath $required -PathType Leaf)) { throw "Required broker test input is missing: $required" }
     }
     $compilerSource = [IO.File]::ReadAllText($compilerPath)
@@ -68,8 +75,26 @@ try {
     if (-not $compilerSource.Contains('[switch] $EnableDevAgentTools') -or -not $compilerSource.Contains("Name = 'sh_dev_run_tool'; Builtin = 'DevRunTool'; ParameterTypes = @('Integer', 'Integer')")) {
         throw 'Typed integer-only process broker API is missing.'
     }
-    if (-not $compilerSource.Contains('bInheritHandles = FALSE') -or -not $compilerSource.Contains('CREATE_SUSPENDED')) {
-        throw 'Broker must create suspended children without inherited handles.'
+    $brokerEmitterStart = $compilerSource.IndexOf('function Emit-DevRunTool')
+    $brokerEmitterEnd = $compilerSource.IndexOf('function Emit-BuiltinCall', $brokerEmitterStart)
+    if ($brokerEmitterStart -lt 0 -or $brokerEmitterEnd -le $brokerEmitterStart) {
+        throw 'Native DevAgent broker emitter could not be isolated for policy checks.'
+    }
+    $brokerEmitterSource = $compilerSource.Substring($brokerEmitterStart, $brokerEmitterEnd - $brokerEmitterStart)
+    if (-not $brokerEmitterSource.Contains('bInheritHandles TRUE') -or -not $brokerEmitterSource.Contains('HANDLE_LIST') -or -not $brokerEmitterSource.Contains('CREATE_SUSPENDED')) {
+        throw 'Broker must use STARTUPINFOEX with an explicit inherited-handle allowlist and suspended creation.'
+    }
+    if (-not $brokerEmitterSource.Contains('CreateProcessAsUserA') -or -not $brokerEmitterSource.Contains('CreateRestrictedToken') -or -not $brokerEmitterSource.Contains('TokenIsAppContainer') -or -not $brokerEmitterSource.Contains('TokenHasRestrictions') -or -not $brokerEmitterSource.Contains('TokenCapabilities')) {
+        throw 'Broker must create and verify a restricted AppContainer primary token before resume.'
+    }
+    if ($brokerEmitterSource.Contains('TargetRva ([UInt32]0x3188)')) {
+        throw 'Live broker must not fall back to unrestricted CreateProcessA.'
+    }
+    foreach ($requiredApi in @('CreatePipe', 'PeekNamedPipe', 'UpdateProcThreadAttribute', 'DeleteProcThreadAttributeList', '0x100000')) {
+        if (-not $brokerEmitterSource.Contains($requiredApi)) { throw "Required native sandbox/output component is missing: $requiredApi" }
+    }
+    foreach ($requiredApi in @('GetSecurityInfo', 'SetSecurityInfo', 'SetEntriesInAclA')) {
+        if (-not $compilerSource.Contains($requiredApi)) { throw "Required handle-based ACL API is missing: $requiredApi" }
     }
     if (-not $compilerSource.Contains('KILL_ON_JOB_CLOSE') -or -not $compilerSource.Contains('ACTIVE_PROCESS') -or -not $compilerSource.Contains('0x2308')) {
         throw 'Job Object kill-on-close, active-process and memory-limit flags are missing.'
@@ -77,14 +102,23 @@ try {
     if (-not $compilerSource.Contains('GetFileAttributesA') -or -not $compilerSource.Contains('GetFileInformationByHandle') -or -not $compilerSource.Contains('GetModuleFileNameA') -or -not $compilerSource.Contains('SetCurrentDirectoryA') -or -not $compilerSource.Contains('0x400') -or -not $compilerSource.Contains('0x00200080')) {
         throw 'Image-relative workspace and opened-handle reparse-point checks are missing.'
     }
-    $brokerEmitterStart = $compilerSource.IndexOf('function Emit-DevRunTool')
-    $brokerEmitterEnd = $compilerSource.IndexOf('function Emit-BuiltinCall', $brokerEmitterStart)
-    if ($brokerEmitterStart -lt 0 -or $brokerEmitterEnd -le $brokerEmitterStart) {
-        throw 'Native DevAgent broker emitter could not be isolated for policy checks.'
-    }
-    $brokerEmitterSource = $compilerSource.Substring($brokerEmitterStart, $brokerEmitterEnd - $brokerEmitterStart)
     if ($brokerEmitterSource.Contains('GetCurrentDirectoryA')) {
         throw 'Broker must not trust the inherited current directory as its workspace root.'
+    }
+    if (-not $brokerEmitterSource.Contains('BuildWorkspacePath -RootSlot $workspaceRootSlot') -or
+        -not $brokerEmitterSource.Contains('Build commandLineSlot = fixed prefix + the exact SHA-256-verified absolute script path + suffix')) {
+        throw 'PowerShell command must be constructed from the hash-verified absolute workspace script path.'
+    }
+
+    foreach ($moduleBootstrap in @(
+        '$env:PSModulePath',
+        'Microsoft.PowerShell.Management',
+        'Microsoft.PowerShell.Utility',
+        'ipmo'
+    )) {
+        if (-not $brokerEmitterSource.Contains($moduleBootstrap)) {
+            throw "Restricted PowerShell child is missing its explicit built-in module bootstrap: $moduleBootstrap"
+        }
     }
     if (-not $compilerSource.Contains('BCryptOpenAlgorithmProvider') -or -not $compilerSource.Contains('BCryptHash') -or -not $compilerSource.Contains('BCryptCloseAlgorithmProvider')) {
         throw 'Native Windows CNG SHA-256 verification is missing.'
@@ -93,41 +127,144 @@ try {
         throw 'The bounded native script-hash input buffer is missing.'
     }
 
-    # Security primitives are staged as native compiler emitters, but this test
-    # does not treat their presence as runtime acceptance. Verify their IATs map
-    # to the actual import table offsets before the next integration phase.
     foreach ($required in @(
         'function Emit-DevBrokerEnsureAppContainerSid',
         'function Emit-DevBrokerUpdateAcl',
         'CreateAppContainerProfile',
         'DeriveAppContainerSidFromAppContainerName',
-        'GetNamedSecurityInfoA',
+        'CreateRestrictedToken',
+        'CreateProcessAsUserA',
+        'TokenIsAppContainer',
+        'TokenHasRestrictions',
+        'TokenCapabilities',
+        'GetSecurityInfo',
+        'SetSecurityInfo',
         'SetEntriesInAclA',
-        'SetNamedSecurityInfoA',
         'TRUSTEE_IS_SID',
-        'CreateRestrictedToken'
+        'PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES',
+        'HANDLE_LIST'
     )) {
         if (-not $compilerSource.Contains($required)) {
-            throw "Native sandbox security primitive is missing: $required"
+            throw "Native sandbox security component is missing: $required"
         }
     }
-    $expectedIatCalls = @(
-        'TargetRva ([UInt32]0x3260)', # CreateAppContainerProfile: USERENV IAT 0x260
-        'TargetRva ([UInt32]0x3268)', # DeriveAppContainerSidFromAppContainerName: USERENV IAT 0x268
-        'TargetRva ([UInt32]0x3278)', # GetNamedSecurityInfoA: ADVAPI32 IAT 0x278
-        'TargetRva ([UInt32]0x3280)', # SetEntriesInAclA: ADVAPI32 IAT 0x280
-        'TargetRva ([UInt32]0x3288)'  # SetNamedSecurityInfoA: ADVAPI32 IAT 0x288
+    $importArrayMatch = [regex]::Match($compilerSource, '\$importSets\s*=\s*@\(([\s\S]*?)\r?\n\)')
+    if (-not $importArrayMatch.Success) { throw 'Native import-set declarations could not be parsed.' }
+    $importRecords = [regex]::Matches($importArrayMatch.Groups[1].Value, "Descriptor = (0x[0-9A-Fa-f]+); Lookup = (0x[0-9A-Fa-f]+); Iat = (0x[0-9A-Fa-f]+); Dll = '([^']+)'; Names = @\(([^)]*)\)")
+    if ($importRecords.Count -ne 16) { throw "Expected 16 import descriptors, found $($importRecords.Count)." }
+    $iatRanges = @()
+    $lookupRanges = @()
+    foreach ($record in $importRecords) {
+        $iatStart = [Convert]::ToInt32($record.Groups[3].Value.Substring(2), 16)
+        $lookupStart = [Convert]::ToInt32($record.Groups[2].Value.Substring(2), 16)
+        $apiCount = [regex]::Matches($record.Groups[5].Value, "'[^']+'").Count
+        if ($apiCount -lt 1) { throw 'An import descriptor contains no API names.' }
+        $iatRanges += [pscustomobject]@{ Start = $iatStart; End = $iatStart + (($apiCount + 1) * 8); Dll = $record.Groups[4].Value }
+        $lookupRanges += [pscustomobject]@{ Start = $lookupStart; End = $lookupStart + (($apiCount + 1) * 8); Dll = $record.Groups[4].Value }
+    }
+    for ($i = 0; $i -lt $iatRanges.Count; $i++) {
+        for ($j = $i + 1; $j -lt $iatRanges.Count; $j++) {
+            if ($iatRanges[$i].Start -lt $iatRanges[$j].End -and $iatRanges[$j].Start -lt $iatRanges[$i].End) {
+                throw "IAT arrays overlap, including their terminators: $($iatRanges[$i].Dll) and $($iatRanges[$j].Dll)."
+            }
+            if ($lookupRanges[$i].Start -lt $lookupRanges[$j].End -and $lookupRanges[$j].Start -lt $lookupRanges[$i].End) {
+                throw "Import lookup tables overlap, including their terminators: $($lookupRanges[$i].Dll) and $($lookupRanges[$j].Dll)."
+            }
+        }
+    }
+    $iatEnd = ($iatRanges | Measure-Object -Property End -Maximum).Maximum
+    if ($iatEnd -ne 0x300 -or -not $compilerSource.Contains('Value 0x290')) {
+        throw "Import Address Table extent must include the final zero thunk through offset 0x300; actual end=$('{0:X}' -f $iatEnd)."
+    }
+    Write-Host 'PASS: import lookup and IAT arrays are disjoint, including each module terminator' -ForegroundColor Green
+
+    $expectedHelperIatCalls = @(
+        'TargetRva ([UInt32]0x3278)', # CreateAppContainerProfile
+        'TargetRva ([UInt32]0x3280)', # DeriveAppContainerSidFromAppContainerName
+        'TargetRva ([UInt32]0x32C8)', # GetSecurityInfo
+        'TargetRva ([UInt32]0x3298)', # SetEntriesInAclA
+        'TargetRva ([UInt32]0x32D0)'  # SetSecurityInfo
     )
-    foreach ($expectedCall in $expectedIatCalls) {
+    foreach ($expectedCall in $expectedHelperIatCalls) {
         if (-not $compilerSource.Contains($expectedCall)) {
-            throw "Sandbox API call does not target its declared IAT slot: $expectedCall"
+            throw "Sandbox helper API call does not target its declared IAT slot: $expectedCall"
         }
     }
-    Write-Host 'PASS: AppContainer/ACL helper declarations and IAT targets are statically consistent; child execution is not yet sandbox-accepted' -ForegroundColor Green
+    if (-not $brokerEmitterSource.Contains('TargetRva ([UInt32]0x32D8)')) {
+        throw 'GetTokenInformation call does not target its declared ADVAPI32 IAT slot.'
+    }
+    if (-not $brokerEmitterSource.Contains('Emit-DevBrokerUpdateAcl -PathSlot $workspaceRootSlot') -or -not $brokerEmitterSource.Contains('Emit-DevBrokerUpdateAcl -PathSlot $buildPathSlot')) {
+        throw 'Broker does not apply the workspace-root and Build ACL policies.'
+    }
+    if (-not $brokerEmitterSource.Contains('CreatePipe') -or -not $brokerEmitterSource.Contains('PeekNamedPipe') -or -not $brokerEmitterSource.Contains('0x100000')) {
+        throw 'Broker does not provide the hard-capped native output drain.'
+    }
+
+    foreach ($aclSlot in @('$workspaceAclGrantedSlot', '$buildAclGrantedSlot', '$brokerAclGrantedSlot')) {
+        if (-not $brokerEmitterSource.Contains($aclSlot)) {
+            throw "Broker does not track successful DACL grant state: $aclSlot"
+        }
+    }
+    $aclRevokeMarker = $brokerEmitterSource.IndexOf('Revoke package-SID DACL grants only after the Job Object has been confirmed empty', [StringComparison]::Ordinal)
+    $aclFreeSidMarker = $brokerEmitterSource.IndexOf('# FreeSid', [StringComparison]::Ordinal)
+    $aclReleaseMutexMarker = $brokerEmitterSource.IndexOf('# ReleaseMutex', [StringComparison]::Ordinal)
+    if ($aclRevokeMarker -lt 0 -or $aclFreeSidMarker -le $aclRevokeMarker -or $aclReleaseMutexMarker -le $aclRevokeMarker) {
+        throw 'Package DACL revocation must precede SID release and mutex release.'
+    }
+    if (-not $brokerEmitterSource.Contains('-AccessMode 4 -FailureLabel $brokerAclRevokeFailed') -or
+        -not $brokerEmitterSource.Contains('-AccessMode 4 -FailureLabel $buildAclRevokeFailed') -or
+        -not $brokerEmitterSource.Contains('-AccessMode 4 -FailureLabel $workspaceAclRevokeFailed')) {
+        throw 'Broker must revoke all three package-SID DACL grants on normal cleanup.'
+    }
+    Write-Host 'PASS: package-SID DACL revocation is emitted in reverse order after job drain and before SID/mutex release (static assertion)' -ForegroundColor Green
+
+    # Mandatory Integrity Control is evaluated before the DACL. A low-IL
+    # AppContainer therefore needs an inheritable Low IL label on the writable
+    # Build subtree; the source workspace must not receive that label.
+    foreach ($required in @(
+        'SYSTEM_MANDATORY_LABEL_ACE',
+        'LABEL_SECURITY_INFORMATION',
+        'WRITE_OWNER',
+        'S-1-16-4096',
+        '0x00001000',
+        '0x00000001001C0002',
+        '0x00140311'
+    )) {
+        if (-not $compilerSource.Contains($required)) {
+            throw "Low-integrity mandatory-label implementation is missing: $required"
+        }
+    }
+    $brokerEmitterLines = $brokerEmitterSource -split '\r?\n'
+    $workspaceAclLine = $brokerEmitterLines | Where-Object { $_.Contains('Emit-DevBrokerUpdateAcl -PathSlot $workspaceRootSlot') } | Select-Object -First 1
+    $buildAclLine = $brokerEmitterLines | Where-Object { $_.Contains('Emit-DevBrokerUpdateAcl -PathSlot $buildPathSlot') } | Select-Object -First 1
+    $brokerBuildAclLine = $brokerEmitterLines | Where-Object { $_.Contains('Emit-DevBrokerUpdateAcl -PathSlot $brokerDirectorySlot') } | Select-Object -First 1
+    if ([string]::IsNullOrWhiteSpace($workspaceAclLine) -or
+        [string]::IsNullOrWhiteSpace($buildAclLine) -or
+        [string]::IsNullOrWhiteSpace($brokerBuildAclLine)) {
+        throw 'Expected workspace, Build, and Build\\DevAgentBroker ACL grants were not all found.'
+    }
+    if ($workspaceAclLine.Contains('-SetLowIntegrityLabel')) {
+        throw 'The workspace source root must not be relabeled Low IL.'
+    }
+    if (-not $buildAclLine.Contains('-SetLowIntegrityLabel $true') -or
+        -not $brokerBuildAclLine.Contains('-SetLowIntegrityLabel $true')) {
+        throw 'Both writable Build directories must receive the Low IL mandatory label.'
+    }
+    if (-not $brokerEmitterSource.Contains('mainCapReadReady') -or
+        -not $brokerEmitterSource.Contains('finalCapReadReady') -or
+        ($brokerEmitterSource.IndexOf('read only the remaining capacity', [StringComparison]::OrdinalIgnoreCase) -lt 0)) {
+        throw 'Output capture must consume up to exactly 1 MiB before reporting overflow.'
+    }
+    Write-Host 'PASS: Low IL is applied only to writable Build staging; the source workspace keeps its existing integrity label' -ForegroundColor Green
+    Write-Host 'PASS: capture reads the remaining 1 MiB capacity before classifying subsequent bytes as overflow' -ForegroundColor Green
+    Write-Host 'PASS: broker source declares restricted-token, AppContainer, handle-based ACL and bounded-output runtime gates' -ForegroundColor Green
 
     New-Item -ItemType Directory -Path $buildRoot -Force | Out-Null
     Remove-Item -LiteralPath $childPidPath -Force -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $outputPath -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $sandboxMarkerPath -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $deniedMarkerPath -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $capturedOutputPath -Force -ErrorAction SilentlyContinue
 
     Remove-Item -LiteralPath $disabledOutputPath -Force -ErrorAction SilentlyContinue
     $disabledRejected = $false
@@ -180,7 +317,32 @@ try {
         $actual = ($numericLines -join $nl).TrimEnd([char[]]@([char]13, [char]10))
         if ($exitCode -ne 0) { throw "Broker fixture process exited with code $exitCode. Output=[$actual]." }
         if (-not [string]::Equals($actual, $expected, [StringComparison]::Ordinal)) {
+            if (Test-Path -LiteralPath $capturedOutputPath -PathType Leaf) {
+                $diagnosticBytes = [IO.File]::ReadAllBytes($capturedOutputPath)
+                $diagnosticLength = [Math]::Min(4096, $diagnosticBytes.Length)
+                $diagnosticText = [Text.Encoding]::UTF8.GetString($diagnosticBytes, 0, $diagnosticLength)
+                Write-Host ("DEVAGENT_CAPTURE_DIAGNOSTIC|length={0}|sample={1}" -f $diagnosticBytes.Length, $diagnosticText)
+            }
             throw "Broker fixture output mismatch. Expected=[$expected] Actual=[$actual]."
+        }
+        if (-not (Test-Path -LiteralPath $sandboxMarkerPath -PathType Leaf)) {
+            if (Test-Path -LiteralPath $capturedOutputPath -PathType Leaf) {
+                $sandboxDiagnostic = [IO.File]::ReadAllBytes($capturedOutputPath)
+                $sandboxDiagnosticLength = [Math]::Min(4096, $sandboxDiagnostic.Length)
+                $sandboxDiagnosticText = [Text.Encoding]::UTF8.GetString($sandboxDiagnostic, 0, $sandboxDiagnosticLength)
+                Write-Host ("DEVAGENT_SANDBOX_DIAGNOSTIC|length={0}|sample={1}" -f $sandboxDiagnostic.Length, $sandboxDiagnosticText)
+            }
+            throw 'AppContainer could not write to the designated Build staging directory.'
+        }
+        if (Test-Path -LiteralPath $deniedMarkerPath -PathType Leaf) {
+            throw 'AppContainer unexpectedly wrote into the read-only Tests workspace.'
+        }
+        if (-not (Test-Path -LiteralPath $capturedOutputPath -PathType Leaf)) {
+            throw 'Bounded stdout/stderr capture did not persist captured-output.bin.'
+        }
+        $capturedLength = (Get-Item -LiteralPath $capturedOutputPath).Length
+        if ($capturedLength -ne 1MB) {
+            throw "Output overflow probe must persist exactly 1 MiB before returning -114; captured=$capturedLength bytes."
         }
 
         if (-not (Test-Path -LiteralPath $childPidPath -PathType Leaf)) {
@@ -203,7 +365,7 @@ try {
         $tamperedExitCode = $LASTEXITCODE
         $tamperedNumericLines = @(Get-BrokerNumericLines -Lines $tamperedLines)
         $tamperedActual = ($tamperedNumericLines -join $nl).TrimEnd([char[]]@([char]13, [char]10))
-        $tamperedExpected = @('-100', '-101', '-111', '-110') -join $nl
+        $tamperedExpected = @('-100', '-101', '-111', '-110', '0', '-114') -join $nl
         if ($tamperedExitCode -ne 0 -or -not [string]::Equals($tamperedActual, $tamperedExpected, [StringComparison]::Ordinal)) {
             throw "Runtime script hash tampering was not rejected. Expected=[$tamperedExpected] Actual=[$tamperedActual] ExitCode=$tamperedExitCode."
         }
@@ -235,7 +397,7 @@ try {
         $reparseExitCode = $LASTEXITCODE
         $reparseNumericLines = @(Get-BrokerNumericLines -Lines $reparseLines)
         $reparseActual = ($reparseNumericLines -join $nl).TrimEnd([char[]]@([char]13, [char]10))
-        $reparseExpected = @('-100', '-101', '-103', '-103') -join $nl
+        $reparseExpected = @('-100', '-101', '-103', '-103', '-103', '-103') -join $nl
         if ($reparseExitCode -ne 0 -or -not [string]::Equals($reparseActual, $reparseExpected, [StringComparison]::Ordinal)) {
             throw "Workspace reparse-point rejection failed. Expected=[$reparseExpected] Actual=[$reparseActual] ExitCode=$reparseExitCode."
         }
@@ -255,7 +417,10 @@ try {
 
     Write-Host 'PASS: native Windows CNG SHA-256 verifies every selected tool before CreateProcess' -ForegroundColor Green
     Write-Host 'PASS: native script hash mismatch rejected before child creation' -ForegroundColor Green
-    Write-Host 'PASS: compiler pins manifest SHA-256 and all six tool-script hashes' -ForegroundColor Green
+    Write-Host 'PASS: compiler pins manifest SHA-256 and all eight tool-script hashes' -ForegroundColor Green
+    Write-Host 'PASS: AppContainer token identity and zero-capability token are checked before resume' -ForegroundColor Green
+    Write-Host 'PASS: AppContainer writes are confined to Build and denied in Tests' -ForegroundColor Green
+    Write-Host 'PASS: merged stdout/stderr capture is capped at exactly 1 MiB and persisted through one exclusive handle' -ForegroundColor Green
     Write-Host 'PASS: broker derives workspace from its image path and ignores a foreign current directory' -ForegroundColor Green
     Write-Host 'PASS: workspace paths and opened script handles reject reparse points' -ForegroundColor Green
     Write-Host 'PASS: runtime CNG SHA-256 mismatch rejected before modified tool execution' -ForegroundColor Green
@@ -273,4 +438,6 @@ catch {
 }
 finally {
     Set-Location -LiteralPath $originalLocation
+    Remove-Item -LiteralPath $sandboxMarkerPath -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $deniedMarkerPath -Force -ErrorAction SilentlyContinue
 }

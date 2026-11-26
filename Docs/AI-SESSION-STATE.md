@@ -1041,3 +1041,37 @@ Important scope boundary:
 - Do not merge the follow-on branch or mark the security target complete on this evidence.
 
 Required next gates: wire the restricted primary token and no-capability AppContainer into suspended process creation; apply and reliably revoke least-privilege workspace DACL entries; capture combined stdout/stderr through an explicit STARTUPINFOEX handle list under a hard byte cap; terminate and confirm the entire job on timeout/overflow/failure; then add adversarial Windows tests for token identity, denied filesystem/network access, ACL rollback/restart, handle isolation, output cap, timeout and descendant termination. Clean environment/DLL-search policy and durable evidence journaling remain separate gates.
+
+## Native AppContainer broker integration checkpoint - 2026-11-26
+
+Active implementation branch: `devagent-sandbox-runtime-20261126`, stacked on draft PR #19. Current checkpoint source contains a live `Emit-DevRunTool` execution path for restricted-token/AppContainer startup, handle-based workspace ACLs, and bounded stdout/stderr capture. This supersedes the earlier helper-only checkpoint on PR #19.
+
+Implemented in source (not yet Windows-runtime validated on this branch):
+- Eight fixed test-tool IDs and compiler-pinned manifest SHA-256; per-script CNG verification remains in the existing phase-1 path.
+- A restricted primary token created with `CreateRestrictedToken(DISABLE_MAX_PRIVILEGE)`.
+- A no-capability AppContainer SID attached through `PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES`; before `ResumeThread`, the child primary token is queried for `TokenIsAppContainer`, `TokenHasRestrictions`, and an empty `TokenCapabilities` group list.
+- `STARTUPINFOEX` uses a two-call, bounded `InitializeProcThreadAttributeList` sizing sequence and an explicit handle list containing only NUL stdin and the stdout/stderr pipe writer. The parent capture handle and output-file handle are not inherited.
+- DACL updates now open the actual directory with `OPEN_REPARSE_POINT`, validate the opened directory handle, preserve unrelated DACL entries through `GetSecurityInfo` + `SetEntriesInAclA`, and apply the merged DACL through `SetSecurityInfo`.
+- The source workspace root receives read/execute access for the package SID. Writable access is limited to `Build` and `Build\\DevAgentBroker`.
+- The AppContainer runs at Low IL. Mandatory Integrity Control is evaluated before the DACL, so the writable Build directories also receive an inheritable Low IL mandatory label with `NO_WRITE_UP`; the source workspace root is deliberately not relabeled.
+- Combined stdout/stderr is drained while the process runs. The read size is clamped to the remaining capacity so a 1 MiB + 1 byte test writes exactly 1 MiB to the captured file and then returns overflow. Output is persisted through the same exclusive, non-inherited output-file handle.
+- The child is created suspended, assigned to the Job Object before resume, and termination paths wait for Job Object emptiness before returning.
+
+Static validation performed during source review:
+- 16 import descriptors.
+- 66 unique imported API names.
+- Per-module IAT arrays include their terminating zero thunk and do not overlap.
+- Import lookup arrays do not overlap.
+- All `Emit-Win64CallIat` targets map to declared imported API slots.
+- The exact output-cap reader logic is asserted by the regression script.
+- A static regression assertion now verifies Low IL labeling is restricted to the two writable Build directories.
+
+Not yet demonstrated:
+- No Windows Actions run has passed for this implementation branch at this checkpoint. Source presence and static layout assertions are not execution evidence.
+- The 1 MiB overflow, sandbox write/deny, and token-identity probes must pass on an actual Windows runner before runtime acceptance.
+- Persistent package SID and persistent package ACL grants are used. There is no per-invocation random AppContainer identity, transactional DACL rollback, or durable stale-ACL recovery journal. A broker crash can leave a package SID grant behind; treat this as a security blocker.
+- The child currently receives an inherited environment block (`lpEnvironment = NULL)); environment sanitization and DLL search-order hardening remain outstanding.
+- Full final-path/ancestor race elimination and executable-image provenance remain open.
+- Network-denial and explicit cancellation adversarial tests remain open. No network capability SID is declared, but that alone is not a passed network-isolation test.
+
+The branch is **IMPLEMENTATION CANDIDATE / NOT SECURITY-ACCEPTED**. PR #20 must remain draft and unmerged pending Windows CI and adversarial review. The broker remains test-build opt-in only; model-facing process execution remains **DISABLED**. No release or executable publication occurred.

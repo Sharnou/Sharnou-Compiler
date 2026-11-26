@@ -30,6 +30,16 @@
       "id": 6,
       "path": "Tests\\DevAgentBroker\\SuccessProbe.ps1",
       "sha256": "D70BAD9C7556ED0EF16BC7BE3EB48A8D7D645D4798A95F7ECC55D84F9C6FC279"
+    },
+    {
+      "id": 7,
+      "path": "Tests\\DevAgentBroker\\SandboxProbe.ps1",
+      "sha256": "239E33785492F6EBE49922562D0897A57EAD111EDAC450D13FD4C886F2A24708"
+    },
+    {
+      "id": 8,
+      "path": "Tests\\DevAgentBroker\\OverflowProbe.ps1",
+      "sha256": "4C648254B715CEBE00854665E811BC3DF26239465854AACB7286C6CD0349F3EF"
     }
   ]
 }
