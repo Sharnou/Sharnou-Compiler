@@ -201,9 +201,10 @@ try {
             throw "Low-integrity mandatory-label implementation is missing: $required"
         }
     }
-    $workspaceAclLine = [regex]::Match($brokerEmitterSource, '(?m)^\\s*Emit-DevBrokerUpdateAcl -PathSlot \\$workspaceRootSlot[^\\r\\n]*').Value
-    $buildAclLine = [regex]::Match($brokerEmitterSource, '(?m)^\\s*Emit-DevBrokerUpdateAcl -PathSlot \\$buildPathSlot[^\\r\\n]*').Value
-    $brokerBuildAclLine = [regex]::Match($brokerEmitterSource, '(?m)^\\s*Emit-DevBrokerUpdateAcl -PathSlot \\$brokerDirectorySlot[^\\r\\n]*').Value
+    $brokerEmitterLines = $brokerEmitterSource -split '\r?\n'
+    $workspaceAclLine = $brokerEmitterLines | Where-Object { $_.Contains('Emit-DevBrokerUpdateAcl -PathSlot $workspaceRootSlot') } | Select-Object -First 1
+    $buildAclLine = $brokerEmitterLines | Where-Object { $_.Contains('Emit-DevBrokerUpdateAcl -PathSlot $buildPathSlot') } | Select-Object -First 1
+    $brokerBuildAclLine = $brokerEmitterLines | Where-Object { $_.Contains('Emit-DevBrokerUpdateAcl -PathSlot $brokerDirectorySlot') } | Select-Object -First 1
     if ([string]::IsNullOrWhiteSpace($workspaceAclLine) -or
         [string]::IsNullOrWhiteSpace($buildAclLine) -or
         [string]::IsNullOrWhiteSpace($brokerBuildAclLine)) {
