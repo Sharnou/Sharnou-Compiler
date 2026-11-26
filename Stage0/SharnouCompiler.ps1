@@ -1494,7 +1494,7 @@ function Emit-DevRunTool {
         if ($entry.Count -ne 1 -or [string]$entry[0].path -cne $fixedTool.Path -or [string]$entry[0].sha256 -cne $toolHash) {
             throw "Pinned DevAgent tool manifest path/hash mismatch for tool ID $($fixedTool.Id)."
         }
-        $commandCode = '$ErrorActionPreference=''Stop'';$p=''{0}'';$global:SHARNOU_TOOL_EXIT_CODE=$null;try{{& $p;if($null -ne $global:SHARNOU_TOOL_EXIT_CODE){{exit [int]$global:SHARNOU_TOOL_EXIT_CODE}};if(-not $?) {{exit 1}};exit 0}}catch{{[Console]::Error.WriteLine([string]$_);exit 1}}' -f $fixedTool.Path
+        $commandCode = '$ErrorActionPreference=''Stop'';$p=''.\{0}'';$global:SHARNOU_TOOL_EXIT_CODE=$null;try{{& $p;if($null -ne $global:SHARNOU_TOOL_EXIT_CODE){{exit [int]$global:SHARNOU_TOOL_EXIT_CODE}};if(-not $?) {{exit 1}};exit 0}}catch{{[Console]::Error.WriteLine([string]$_);exit 1}}' -f $fixedTool.Path
         $commandText = 'powershell.exe -NoLogo -NoProfile -NonInteractive -Command "' + $commandCode + '"'
         $commandLength = [System.Text.Encoding]::ASCII.GetByteCount($commandText)
         if ($commandLength -ge 0x220) { throw "Pinned DevAgent command for tool ID $($fixedTool.Id) exceeds its fixed buffer." }
