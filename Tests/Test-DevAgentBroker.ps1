@@ -240,9 +240,11 @@ try {
     $abandonedBranch = $mutexBlock.IndexOf("New-UniqueLabel -Prefix 'dev_tool_mutex_abandoned'", [StringComparison]::Ordinal)
     $abandonedReturn = $mutexBlock.IndexOf('0x8A, 0xFF, 0xFF, 0xFF', [StringComparison]::Ordinal)
     $abandonedCleanup = $mutexBlock.IndexOf('Emit-Jump -Label $cleanup', $abandonedReturn)
-    $sidCreation = $mutexBlock.IndexOf('Emit-DevBrokerEnsureAppContainerSid', [StringComparison]::Ordinal)
+    # SID creation is intentionally after the mutex-block end marker: the marker
+    # precedes the normal-acquisition path. Search the full emitter from that point.
+    $sidCreation = $brokerEmitterSource.IndexOf('Emit-DevBrokerEnsureAppContainerSid', $mutexBlockEnd, [StringComparison]::Ordinal)
     if ($abandonedBranch -lt 0 -or $abandonedReturn -le $abandonedBranch -or
-        $abandonedCleanup -le $abandonedReturn -or $sidCreation -le $abandonedCleanup -or
+        $abandonedCleanup -le $abandonedReturn -or $sidCreation -le $mutexBlockEnd -or
         -not $mutexBlock.Substring($abandonedReturn, $abandonedCleanup - $abandonedReturn).Contains('Emit-StoreEaxFrame -SlotPosition $resultSlot')) {
         throw 'WAIT_ABANDONED must return -118 and branch to cleanup before AppContainer SID/ACL work.'
     }
