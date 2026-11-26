@@ -1,6 +1,6 @@
 # AI Session State - Sharnou Compiler
 
-**Last updated:** 2026-11-22 Africa/Cairo
+**Last updated:** 2026-11-26 Africa/Cairo
 **Repository:** `Sharnou/Sharnou-Compiler`  
 **Branch:** `Sharnou-Compiler`  
 **Purpose:** Latest durable status for every future AI-assisted compiler/Engine generation, debugging, testing, and repair session.
@@ -11,14 +11,14 @@
 
 - **Accepted project direction:** self-contained Sharnou compiler, PE32+ linker, runtime/standard library, Engine, IDE, and Honour War for Windows x64.
 - **User-reported completed history:** Milestones 1-6 passed on the user's Windows PC.
-- **Current development focus:** Milestone 7A implementation is present and Windows-CI verified; the next bounded task is a Milestone 7B proposal and isolated patch plan only.
+- **Current development focus:** Default Milestone 7A remains Windows-CI verified (23/23). Draft PR #18 now contains an integrated baseline/ABI/typed-process-broker candidate at `3cefcd4dc9ecdd68dee137749a1dbd27f145e88c`; its exact-head Windows workflows pass, but the 32-path/149-commit candidate is unmerged and the broker is not security-accepted. Milestone 7B remains unaccepted.
 - **Persistent AI status tracker:** [GitHub issue #8](https://github.com/Sharnou/Sharnou-Compiler/issues/8); update its body and this file after every completed AI generation/repair session.
-- **Actionable blockers:** [Issue #9 - restore exact 83-case baseline](https://github.com/Sharnou/Sharnou-Compiler/issues/9); [Issue #10 - Milestone 7A Windows acceptance](https://github.com/Sharnou/Sharnou-Compiler/issues/10).
+- **Actionable blockers:** [Issue #1 - Windows x64 ABI and R25-R4 provenance](https://github.com/Sharnou/Sharnou-Compiler/issues/1); [Issue #9 - frozen 83-case baseline](https://github.com/Sharnou/Sharnou-Compiler/issues/9); [Issue #10 - user-local Milestone 7A acceptance](https://github.com/Sharnou/Sharnou-Compiler/issues/10); [Issue #14 - autonomous SharnouDevAgent](https://github.com/Sharnou/Sharnou-Compiler/issues/14).
 - **Milestone 7A repository implementation:** present on the `Sharnou-Compiler` branch; implementation commit `943d24d857b89b9b30a426c8fb4025c05413d6a8`.
 - **Plan-map documentation commits:** `c403b4b725200000ba89944798a4bcca618c9885` (AI preflight), `5a5b2c89d0c0c0a4d85bb4111ecb145a83be7cb9` (master plan), `aeb086429bc98e5094bf4d881c02b9100e4cb893` (issue register), and `e47dd7d5634ed5ccc9302d2d59241790f6de3bdc` (README links). The current state file was subsequently updated to include GitHub issue numbers.
-- **Milestone 7A Windows CI:** current default-branch run 45004368571 passed 23/23 on HEAD 45c83e1941fd74ca1ce94a4f0bc9ffe72a43efe3. User-local 7A acceptance is still NOT REPORTED separately.
-- **Frozen 83-case repository baseline:** WINDOWS CI PASS 83/83 on open PR #11 head 135b7eec7bf13fc147756dfaeeb3f92eab57a250, with the 7A 23/23 suite passing on that same head. The five baseline paths remain PR-only and are not yet on default.
-- **Next action:** review PR #11 through the normal process without auto-merging; complete the R25-R4 archive comparison; retain ABI gates; prepare 7B as a proposal only until implementation/write authorization.
+- **Milestone 7A Windows CI:** latest default run [45638680338](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45638680338) passed 23/23 on `6899a086bb9b212a7a1e714d1e8fba375ae28fb6`; current default HEAD `f80dae6fc6efccce84bc733a7529664085b3250e` is three documentation commits ahead, with only the session-state file changed. User-local acceptance remains NOT REPORTED.
+- **Frozen 83-case repository baseline:** PR #18 exact head `3cefcd4dc9ecdd68dee137749a1dbd27f145e88c` passes 83/83 in runs [45772673986](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45772673986) and [45772673929](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45772673929); the latter also passes the combined 7A/collection/ABI/broker gate. The baseline remains PR-only and is not on default.
+- **Next action:** keep PR #18 draft for bounded human review; complete baseline provenance and remaining ABI/broker gates; keep 7B as a proposal until explicit acceptance.
 
 ## Verified project history (as reported by the user)
 
@@ -895,3 +895,32 @@ Normal human review of PR #11 remains the integration decision; do not auto-merg
 - Disposition: REPOSITORY PRESENT / STATIC REVIEWED for the current compiler/repository/PR audit; WINDOWS CI PASS only for the historical Stage 7A and orchestrator runs described above; NOT IMPLEMENTED / NOT RUN for the current DevAgent and Reverse Engineering Agent; BLOCKED for safe model-controlled execution by issues #1 and #9.
 - No compiler, verifier, agent, Engine, IDE, example, fixture, test, or workflow source was changed. No PR was rebased, merged or edited; no workflow was dispatched; no external compiler/toolchain was used.
 - Next dependency-ordered work: (1) complete normal human review/integration and provenance work for the frozen baseline; (2) close the ABI runtime gates; (3) build and adversarially test a typed, allowlisted process broker with workspace confinement, bounded output, timeout/cancellation, Job Object containment and rollback; (4) implement the read-only PE/DLL/export/relocation/unwind analyzer and separate D3DCompiler shader adapter; (5) integrate local inference/planning and bounded source repair only after the tool and recovery/security gates pass. Keep issues #12 and #14 open.
+
+## Scheduled live compiler and DevAgent audit - 2026-11-26 Africa/Cairo
+
+### Repository and PR state
+- Default branch HEAD: `f80dae6fc6efccce84bc733a7529664085b3250e`. Latest default Stage 7A run [45638680338](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45638680338) succeeded 23/23 on `6899a086bb9b212a7a1e714d1e8fba375ae28fb6`; compare shows the three commits to current default changed only `Docs/AI-SESSION-STATE.md`, so compiler/test/workflow blobs are unchanged.
+- PR #6 remains OPEN / UNMERGED at `9dfe1bc09685a6f7deb9d29b5192b1aae0686039`, 15 ahead / 55 behind. Latest branch runs [44700641397](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/44700641397) (83/83) and [44700641419](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/44700641419) (Stage 7A 23/23) succeeded. Do not merge PR #6.
+- PR #18, branch `devagent-secure-process-broker-20261126`, remains OPEN / DRAFT at `3cefcd4dc9ecdd68dee137749a1dbd27f145e88c`; compare is 149 ahead / 0 behind with 32 changed paths. The latest head commit is documentation-only; compiler, verifier, fixtures and tests are unchanged from the tested code at `7a15892a944c747f9563961d7c050c909dd3d3a4`.
+- PR #5 remains an unaccepted 7B proposal. PR #7 remains the older raw-command DevAgent orchestrator proposal.
+
+### Exact-head Windows CI on PR #18
+- [45772673929](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45772673929), `windows-stage7a`, SUCCESS on exact head `3cefcd4d...`: Stage 7A 24/24 (9 positive runtime, 12 negative diagnostics, 3 instruction checks); Stage 5 collection imports 2/2; stack-probe/unwind 6/6; Runtime ABI PASS; DevAgent broker phase-1 PASS (14 named assertions); M1-M6 baseline 83/83; Combined result PASS.
+- [45772673986](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45772673986), `windows-m6-83`, SUCCESS on the same exact head: 83/83. Push equivalents [45772670498](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45772670498) and [45772670450](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45772670450) also succeeded on the same commit.
+- CI-reported source hashes: Stage 0 compiler SHA-256 `855d4e67b47030557efd7a58945c102eb8b2419cb866ae31e487e74ffe304141`; PE verifier SHA-256 `db360b5ca511119cce5362aa6ce2e74fc4b4d81bcdfbbf668930eb1f9da691df`.
+- Earlier run [45771836551](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45771836551) failed at the broker fixture on prior head `4f03b25841dd3e35e48abb6713024a075fdcd08b` with a broker output mismatch. The later single-separator image-suffix correction at `7a15892a...` was followed by successful exact-head runs; current PR18 head adds only documentation.
+
+### ABI and native broker findings
+- Stack probe and unwind suite: 6/6 PASS, including a native multi-page frame, both UWOP_ALLOC_LARGE forms, epilogue checks, and two malformed-metadata rejection cases. Runtime ABI PASS covers integer argument values through 16, rejection of 17, RBX/RBP/RSI/RDI/R12-R15 sentinels, live RSP alignment, and higher-arity Win32 probes.
+- `Emit-Win64CallIat` is a checked stack-argument emitter for up to 12 typed descriptors with shadow-space reservation and 16-byte alignment. The first four register arguments remain manually prepared at call sites; a complete signature registry/type-driven register-and-stack marshaller is not established. No explicit OS `RtlVirtualUnwind` / exception-dispatch runtime test was found. Keep issue #1 open.
+- PR #18 process broker API is typed `sh_dev_run_tool(tool_id, timeout_ms)`, opt-in only via `-EnableDevAgentTools`, with six fixed compiler-owned tools, a pinned manifest, native CNG script hashing, image-derived workspace discovery, reparse checks, absolute System32 PowerShell, suspended child creation, no inherited handles, Job Object assignment before resume, memory/process limits, timeout and descendant termination. Fourteen named broker assertions pass.
+- Security acceptance remains incomplete: no restricted token/low-integrity/AppContainer or workspace-only ACL; environment is inherited; no bounded stdout/stderr capture or output cap; no cooperative cancellation; no durable evidence journal/restart recovery; no full ancestor canonicalization or ADS/UNC/device-path rejection. The broker changes process-wide current directory and does not restore it; serialize or eliminate that side effect before concurrent use. Model-generated execution remains disabled.
+- The PR18 security design document was updated in its latest docs-only commits to reflect native CNG and image-derived workspace discovery. It still references the earlier tested code head `7a15892a...`, while current head `3cefcd4...` is docs-only.
+
+### Baseline and evidence classification
+- M1-M6 inventory: Stage 2 25, Stage 4 20, PE verifier 4, Stage 5 25, Stage 6 9 = 83. The runner reports suite totals, not polarity; prior 36/47 classification is by case intent only.
+- Candidate manifest explicitly records `members_verified_against_original_sha256_manifest: false`; the runner verifies the compressed payload and embedded member hashes but does not independently load original `SHA256SUMS.txt`. Original M6 archive SHA-256 `0b6bf15445a5dfd8cbf93450af7fd2f5fd6239d4ed082ab18b09878a94b8b164`; payload SHA-256 `3dd1d7417874159c0bc625edbbc1e8cee1ae7d8a6ea42f30b4dd80ba92102748`; original manifest digest `61539cb577b3c116d25739cdb8286e3de38410af1d1a39fa1418893799f3c9c9`.
+- R25-R4 archive file-by-file comparison (SHA-256 `CA01AEACB2E35C6E8039E58F15202A01399DAEA3E0A24E7B4D357772C8EF1274`) remains NOT RUN. The baseline is not on default.
+- Default branch changes made by this run: `Docs/AI-SESSION-STATE.md` and `Docs/AI-ISSUE-REGISTER.md` only. No compiler/verifier/test/build/runtime/Engine/IDE/game source changes, no PR modification, no workflow dispatch, no merge.
+- Evidence: WINDOWS CI PASS for default 7A and PR #6 / PR #18 branch tests; REPOSITORY PRESENT / STATIC REVIEWED for compiler, PE and broker design; NOT RUN for R25-R4 comparison, OS unwind walking, user-local retest of PR #18, native self-hosted compiler, local inference, and autonomous-agent restart/deployment.
+- Next bounded task: keep PR #18 draft for human review and split its baseline, ABI, and broker work into small reviewable increments; finish provenance and remaining ABI/security gates. Do not start 7B implementation until its scope is explicitly accepted.
