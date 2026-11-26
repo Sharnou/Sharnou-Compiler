@@ -22,13 +22,18 @@ $fixturePath = Join-Path $PSScriptRoot 'DevAgentBroker\DevAgentBroker.sharnou'
 $timeoutScriptPath = Join-Path $PSScriptRoot 'DevAgentBroker\TimeoutProbe.ps1'
 $toolManifestPath = Join-Path $PSScriptRoot 'DevAgentBroker\tool-manifest.json'
 $successScriptPath = Join-Path $PSScriptRoot 'DevAgentBroker\SuccessProbe.ps1'
+$sandboxScriptPath = Join-Path $PSScriptRoot 'DevAgentBroker\SandboxProbe.ps1'
+$overflowScriptPath = Join-Path $PSScriptRoot 'DevAgentBroker\OverflowProbe.ps1'
 $disabledFixturePath = Join-Path $PSScriptRoot 'DevAgentBroker\Disabled.sharnou'
 $disabledOutputPath = Join-Path $repoRoot 'Build\DevAgentBroker\DevAgentBrokerDisabled.exe'
 $buildRoot = Join-Path $repoRoot 'Build\DevAgentBroker'
 $outputPath = Join-Path $buildRoot 'DevAgentBroker.exe'
 $childPidPath = Join-Path $buildRoot 'child.pid'
+$sandboxMarkerPath = Join-Path $buildRoot 'sandbox-write-probe.ok'
+$deniedMarkerPath = Join-Path $PSScriptRoot 'DevAgentBroker\denied-write-probe.tmp'
+$capturedOutputPath = Join-Path $buildRoot 'captured-output.bin'
 $nl = [string][char]10
-$expected = @('-100', '-101', '37', '-110') -join $nl
+$expected = @('-100', '-101', '37', '-110', '0', '-114') -join $nl
 $originalLocation = Get-Location
 $toolHashInputs = @(
     [pscustomobject]@{ Id = 1; Path = 'Tests\Test-Stage7A.ps1' },
@@ -36,7 +41,9 @@ $toolHashInputs = @(
     [pscustomobject]@{ Id = 3; Path = 'Tests\BaselineM6\Test-Milestone6Baseline.ps1' },
     [pscustomobject]@{ Id = 4; Path = 'Tests\Test-StackProbeUnwind.ps1' },
     [pscustomobject]@{ Id = 5; Path = 'Tests\DevAgentBroker\TimeoutProbe.ps1' },
-    [pscustomobject]@{ Id = 6; Path = 'Tests\DevAgentBroker\SuccessProbe.ps1' }
+    [pscustomobject]@{ Id = 6; Path = 'Tests\DevAgentBroker\SuccessProbe.ps1' },
+    [pscustomobject]@{ Id = 7; Path = 'Tests\DevAgentBroker\SandboxProbe.ps1' },
+    [pscustomobject]@{ Id = 8; Path = 'Tests\DevAgentBroker\OverflowProbe.ps1' }
 )
 
 try {
@@ -57,7 +64,7 @@ try {
         Write-Host ("DEVAGENT_TOOL_SHA256|{0}|{1}|{2}" -f $tool.Id, $tool.Path, $toolHash)
     }
     Set-Location -LiteralPath $repoRoot
-    foreach ($required in @($compilerPath, $verifierPath, $fixturePath, $timeoutScriptPath, $successScriptPath, $disabledFixturePath, $toolManifestPath)) {
+    foreach ($required in @($compilerPath, $verifierPath, $fixturePath, $timeoutScriptPath, $successScriptPath, $sandboxScriptPath, $overflowScriptPath, $disabledFixturePath, $toolManifestPath)) {
         if (-not (Test-Path -LiteralPath $required -PathType Leaf)) { throw "Required broker test input is missing: $required" }
     }
     $compilerSource = [IO.File]::ReadAllText($compilerPath)
@@ -68,8 +75,23 @@ try {
     if (-not $compilerSource.Contains('[switch] $EnableDevAgentTools') -or -not $compilerSource.Contains("Name = 'sh_dev_run_tool'; Builtin = 'DevRunTool'; ParameterTypes = @('Integer', 'Integer')")) {
         throw 'Typed integer-only process broker API is missing.'
     }
-    if (-not $compilerSource.Contains('bInheritHandles = FALSE') -or -not $compilerSource.Contains('CREATE_SUSPENDED')) {
-        throw 'Broker must create suspended children without inherited handles.'
+    $brokerEmitterStart = $compilerSource.IndexOf('function Emit-DevRunTool')
+    $brokerEmitterEnd = $compilerSource.IndexOf('function Emit-BuiltinCall', $brokerEmitterStart)
+    if ($brokerEmitterStart -lt 0 -or $brokerEmitterEnd -le $brokerEmitterStart) {
+        throw 'Native DevAgent broker emitter could not be isolated for policy checks.'
+    }
+    $brokerEmitterSource = $compilerSource.Substring($brokerEmitterStart, $brokerEmitterEnd - $brokerEmitterStart)
+    if (-not $brokerEmitterSource.Contains('bInheritHandles TRUE') -or -not $brokerEmitterSource.Contains('HANDLE_LIST') -or -not $brokerEmitterSource.Contains('CREATE_SUSPENDED')) {
+        throw 'Broker must use STARTUPINFOEX with an explicit inherited-handle allowlist and suspended creation.'
+    }
+    if (-not $brokerEmitterSource.Contains('CreateProcessAsUserA') -or -not $brokerEmitterSource.Contains('CreateRestrictedToken') -or -not $brokerEmitterSource.Contains('TokenIsAppContainer') -or -not $brokerEmitterSource.Contains('TokenHasRestrictions') -or -not $brokerEmitterSource.Contains('TokenCapabilities')) {
+        throw 'Broker must create and verify a restricted AppContainer primary token before resume.'
+    }
+    if ($brokerEmitterSource.Contains('TargetRva ([UInt32]0x3188)')) {
+        throw 'Live broker must not fall back to unrestricted CreateProcessA.'
+    }
+    foreach ($requiredApi in @('GetSecurityInfo', 'SetSecurityInfo', 'CreatePipe', 'PeekNamedPipe', 'UpdateProcThreadAttribute', 'DeleteProcThreadAttributeList', '0x100000')) {
+        if (-not $brokerEmitterSource.Contains($requiredApi)) { throw "Required native sandbox/output component is missing: $requiredApi" }
     }
     if (-not $compilerSource.Contains('KILL_ON_JOB_CLOSE') -or -not $compilerSource.Contains('ACTIVE_PROCESS') -or -not $compilerSource.Contains('0x2308')) {
         throw 'Job Object kill-on-close, active-process and memory-limit flags are missing.'
@@ -77,12 +99,6 @@ try {
     if (-not $compilerSource.Contains('GetFileAttributesA') -or -not $compilerSource.Contains('GetFileInformationByHandle') -or -not $compilerSource.Contains('GetModuleFileNameA') -or -not $compilerSource.Contains('SetCurrentDirectoryA') -or -not $compilerSource.Contains('0x400') -or -not $compilerSource.Contains('0x00200080')) {
         throw 'Image-relative workspace and opened-handle reparse-point checks are missing.'
     }
-    $brokerEmitterStart = $compilerSource.IndexOf('function Emit-DevRunTool')
-    $brokerEmitterEnd = $compilerSource.IndexOf('function Emit-BuiltinCall', $brokerEmitterStart)
-    if ($brokerEmitterStart -lt 0 -or $brokerEmitterEnd -le $brokerEmitterStart) {
-        throw 'Native DevAgent broker emitter could not be isolated for policy checks.'
-    }
-    $brokerEmitterSource = $compilerSource.Substring($brokerEmitterStart, $brokerEmitterEnd - $brokerEmitterStart)
     if ($brokerEmitterSource.Contains('GetCurrentDirectoryA')) {
         throw 'Broker must not trust the inherited current directory as its workspace root.'
     }
@@ -93,41 +109,54 @@ try {
         throw 'The bounded native script-hash input buffer is missing.'
     }
 
-    # Security primitives are staged as native compiler emitters, but this test
-    # does not treat their presence as runtime acceptance. Verify their IATs map
-    # to the actual import table offsets before the next integration phase.
     foreach ($required in @(
         'function Emit-DevBrokerEnsureAppContainerSid',
         'function Emit-DevBrokerUpdateAcl',
         'CreateAppContainerProfile',
         'DeriveAppContainerSidFromAppContainerName',
-        'GetNamedSecurityInfoA',
+        'CreateRestrictedToken',
+        'CreateProcessAsUserA',
+        'TokenIsAppContainer',
+        'TokenHasRestrictions',
+        'TokenCapabilities',
+        'GetSecurityInfo',
+        'SetSecurityInfo',
         'SetEntriesInAclA',
-        'SetNamedSecurityInfoA',
         'TRUSTEE_IS_SID',
-        'CreateRestrictedToken'
+        'PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES',
+        'HANDLE_LIST'
     )) {
         if (-not $compilerSource.Contains($required)) {
-            throw "Native sandbox security primitive is missing: $required"
+            throw "Native sandbox security component is missing: $required"
         }
     }
     $expectedIatCalls = @(
-        'TargetRva ([UInt32]0x3260)', # CreateAppContainerProfile: USERENV IAT 0x260
-        'TargetRva ([UInt32]0x3268)', # DeriveAppContainerSidFromAppContainerName: USERENV IAT 0x268
-        'TargetRva ([UInt32]0x3278)', # GetNamedSecurityInfoA: ADVAPI32 IAT 0x278
-        'TargetRva ([UInt32]0x3280)', # SetEntriesInAclA: ADVAPI32 IAT 0x280
-        'TargetRva ([UInt32]0x3288)'  # SetNamedSecurityInfoA: ADVAPI32 IAT 0x288
+        'TargetRva ([UInt32]0x3260)', # CreateAppContainerProfile
+        'TargetRva ([UInt32]0x3268)', # DeriveAppContainerSidFromAppContainerName
+        'TargetRva ([UInt32]0x32B0)', # GetSecurityInfo
+        'TargetRva ([UInt32]0x3280)', # SetEntriesInAclA
+        'TargetRva ([UInt32]0x32B8)', # SetSecurityInfo
+        'TargetRva ([UInt32]0x32C0)'  # GetTokenInformation
     )
     foreach ($expectedCall in $expectedIatCalls) {
-        if (-not $compilerSource.Contains($expectedCall)) {
+        if (-not $brokerEmitterSource.Contains($expectedCall)) {
             throw "Sandbox API call does not target its declared IAT slot: $expectedCall"
         }
     }
-    Write-Host 'PASS: AppContainer/ACL helper declarations and IAT targets are statically consistent; child execution is not yet sandbox-accepted' -ForegroundColor Green
+    if (-not $brokerEmitterSource.Contains('Emit-DevBrokerUpdateAcl -PathSlot $workspaceRootSlot') -or -not $brokerEmitterSource.Contains('Emit-DevBrokerUpdateAcl -PathSlot $buildPathSlot')) {
+        throw 'Broker does not apply the workspace-root and Build ACL policies.'
+    }
+    if (-not $brokerEmitterSource.Contains('CreatePipe') -or -not $brokerEmitterSource.Contains('PeekNamedPipe') -or -not $brokerEmitterSource.Contains('0x100000')) {
+        throw 'Broker does not provide the hard-capped native output drain.'
+    }
+    Write-Host 'PASS: broker source declares restricted-token, AppContainer, handle-based ACL and bounded-output runtime gates' -ForegroundColor Green
 
     New-Item -ItemType Directory -Path $buildRoot -Force | Out-Null
     Remove-Item -LiteralPath $childPidPath -Force -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $outputPath -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $sandboxMarkerPath -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $deniedMarkerPath -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $capturedOutputPath -Force -ErrorAction SilentlyContinue
 
     Remove-Item -LiteralPath $disabledOutputPath -Force -ErrorAction SilentlyContinue
     $disabledRejected = $false
@@ -182,6 +211,19 @@ try {
         if (-not [string]::Equals($actual, $expected, [StringComparison]::Ordinal)) {
             throw "Broker fixture output mismatch. Expected=[$expected] Actual=[$actual]."
         }
+        if (-not (Test-Path -LiteralPath $sandboxMarkerPath -PathType Leaf)) {
+            throw 'AppContainer could not write to the designated Build staging directory.'
+        }
+        if (Test-Path -LiteralPath $deniedMarkerPath -PathType Leaf) {
+            throw 'AppContainer unexpectedly wrote into the read-only Tests workspace.'
+        }
+        if (-not (Test-Path -LiteralPath $capturedOutputPath -PathType Leaf)) {
+            throw 'Bounded stdout/stderr capture did not persist captured-output.bin.'
+        }
+        $capturedLength = (Get-Item -LiteralPath $capturedOutputPath).Length
+        if ($capturedLength -ne 1MB) {
+            throw "Output overflow probe must persist exactly 1 MiB before returning -114; captured=$capturedLength bytes."
+        }
 
         if (-not (Test-Path -LiteralPath $childPidPath -PathType Leaf)) {
             throw 'Timeout probe did not publish the child PID before the broker timeout.'
@@ -203,7 +245,7 @@ try {
         $tamperedExitCode = $LASTEXITCODE
         $tamperedNumericLines = @(Get-BrokerNumericLines -Lines $tamperedLines)
         $tamperedActual = ($tamperedNumericLines -join $nl).TrimEnd([char[]]@([char]13, [char]10))
-        $tamperedExpected = @('-100', '-101', '-111', '-110') -join $nl
+        $tamperedExpected = @('-100', '-101', '-111', '-110', '0', '-114') -join $nl
         if ($tamperedExitCode -ne 0 -or -not [string]::Equals($tamperedActual, $tamperedExpected, [StringComparison]::Ordinal)) {
             throw "Runtime script hash tampering was not rejected. Expected=[$tamperedExpected] Actual=[$tamperedActual] ExitCode=$tamperedExitCode."
         }
@@ -235,7 +277,7 @@ try {
         $reparseExitCode = $LASTEXITCODE
         $reparseNumericLines = @(Get-BrokerNumericLines -Lines $reparseLines)
         $reparseActual = ($reparseNumericLines -join $nl).TrimEnd([char[]]@([char]13, [char]10))
-        $reparseExpected = @('-100', '-101', '-103', '-103') -join $nl
+        $reparseExpected = @('-100', '-101', '-103', '-103', '-103', '-103') -join $nl
         if ($reparseExitCode -ne 0 -or -not [string]::Equals($reparseActual, $reparseExpected, [StringComparison]::Ordinal)) {
             throw "Workspace reparse-point rejection failed. Expected=[$reparseExpected] Actual=[$reparseActual] ExitCode=$reparseExitCode."
         }
@@ -255,7 +297,10 @@ try {
 
     Write-Host 'PASS: native Windows CNG SHA-256 verifies every selected tool before CreateProcess' -ForegroundColor Green
     Write-Host 'PASS: native script hash mismatch rejected before child creation' -ForegroundColor Green
-    Write-Host 'PASS: compiler pins manifest SHA-256 and all six tool-script hashes' -ForegroundColor Green
+    Write-Host 'PASS: compiler pins manifest SHA-256 and all eight tool-script hashes' -ForegroundColor Green
+    Write-Host 'PASS: AppContainer token identity and zero-capability token are checked before resume' -ForegroundColor Green
+    Write-Host 'PASS: AppContainer writes are confined to Build and denied in Tests' -ForegroundColor Green
+    Write-Host 'PASS: merged stdout/stderr capture is capped at exactly 1 MiB and persisted through one exclusive handle' -ForegroundColor Green
     Write-Host 'PASS: broker derives workspace from its image path and ignores a foreign current directory' -ForegroundColor Green
     Write-Host 'PASS: workspace paths and opened script handles reject reparse points' -ForegroundColor Green
     Write-Host 'PASS: runtime CNG SHA-256 mismatch rejected before modified tool execution' -ForegroundColor Green
@@ -273,4 +318,6 @@ catch {
 }
 finally {
     Set-Location -LiteralPath $originalLocation
+    Remove-Item -LiteralPath $sandboxMarkerPath -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $deniedMarkerPath -Force -ErrorAction SilentlyContinue
 }
