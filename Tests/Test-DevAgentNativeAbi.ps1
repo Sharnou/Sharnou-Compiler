@@ -181,6 +181,10 @@ foreach($api in $manifest.plannedApiSignatures){
     $header=$headerCache[$expectedHeader]
     $prototypeMatch=[regex]::Match($header,'\b'+[regex]::Escape([string]$api.name)+'\s*\(')
     Assert-Contract $prototypeMatch.Success ("SDK prototype not found for {0}" -f $api.name)
+    $declarationStart=$header.LastIndexOf(';',[int]$prototypeMatch.Index)
+    $declarationPrefixStart=[Math]::Max(0,$declarationStart+1)
+    $declarationPrefix=$header.Substring($declarationPrefixStart,[int]$prototypeMatch.Index-$declarationPrefixStart)
+    Assert-Contract ([regex]::IsMatch($declarationPrefix,'\b'+[regex]::Escape([string]$api.returnType)+'\b')) ("SDK return type mismatch for {0}: expected {1}" -f $api.name,$api.returnType)
     $openParen=$header.IndexOf('(',[int]$prototypeMatch.Index)
     Assert-Contract ($openParen -ge 0) ("SDK prototype opening parenthesis missing for {0}" -f $api.name)
     $depth=0; $closeParen=-1
