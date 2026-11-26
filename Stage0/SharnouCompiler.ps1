@@ -1070,6 +1070,9 @@ function Emit-DevBrokerEnsureAppContainerSid {
     Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
     Emit-JumpConditional -ConditionCode 0x85 -Label $FailureLabel
     Mark-CodeLabel -Label $done
+    Emit-LoadRaxFrame -SlotPosition $SidSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x85, 0xC0))
+    Emit-JumpConditional -ConditionCode 0x84 -Label $FailureLabel
 }
 function Emit-DevBrokerUpdateAcl {
     param(
@@ -1080,32 +1083,65 @@ function Emit-DevBrokerUpdateAcl {
         [string] $FailureLabel
     )
     $scratch = [int]$script:ActiveContext.ScratchPosition
-    $explicitSlot = $scratch + 0xD00
-    $oldAclSlot = $scratch + 0xD30
-    $securityDescriptorSlot = $scratch + 0xD38
-    $newAclSlot = $scratch + 0xD40
-    $failedSlot = $scratch + 0xD48
-    $failed = New-UniqueLabel -Prefix 'dev_acl_update_failed'
-    $cleanup = New-UniqueLabel -Prefix 'dev_acl_update_cleanup'
-    $done = New-UniqueLabel -Prefix 'dev_acl_update_done'
+    $handleSlot = $scratch + 0xD10
+    $fileInfoSlot = $scratch + 0xD18
+    $oldAclSlot = $scratch + 0xD50
+    $securityDescriptorSlot = $scratch + 0xD58
+    $newAclSlot = $scratch + 0xD60
+    $explicitSlot = $scratch + 0xD70
+    $failedSlot = $scratch + 0xDA0
+    $failed = New-UniqueLabel -Prefix 'dev_acl_handle_failed'
+    $done = New-UniqueLabel -Prefix 'dev_acl_handle_done'
+    Emit-StoreZero64Frame -SlotPosition $handleSlot
     Emit-StoreZero64Frame -SlotPosition $oldAclSlot
     Emit-StoreZero64Frame -SlotPosition $securityDescriptorSlot
     Emit-StoreZero64Frame -SlotPosition $newAclSlot
     Emit-StoreBits32Frame -SlotPosition $failedSlot -Value 0
+    for ($i = 0; $i -lt 7; $i++) { Emit-StoreZero64Frame -SlotPosition ($fileInfoSlot + ($i * 8)) }
 
-    # Read the current DACL; preserve unrelated owner/group/ACE entries.
+    # Open the directory itself with READ_CONTROL | WRITE_DAC and do not follow a reparse point.
     Emit-LeaRaxFrame -SlotPosition $PathSlot
-    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1, 0xBA, 0x01, 0x00, 0x00, 0x00, 0x41, 0xB8, 0x04, 0x00, 0x00, 0x00, 0x45, 0x33, 0xC9))
-    Emit-Win64CallIat -TargetRva ([UInt32]0x3278) -StackArguments @(
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1, 0xBA, 0x00, 0x00, 0x06, 0x00, 0x41, 0xB8, 0x07, 0x00, 0x00, 0x00, 0x45, 0x33, 0xC9))
+    Emit-Win64CallIat -TargetRva ([UInt32]0x30A0) -StackArguments @(
+        @{ Kind = 'Immediate'; Value = 3 },          # OPEN_EXISTING
+        @{ Kind = 'Immediate'; Value = 0x02200080 }, # BACKUP_SEMANTICS | OPEN_REPARSE_POINT | NORMAL
+        @{ Kind = 'Immediate'; Value = 0 }
+    ) # CreateFileA(directory)
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x83, 0xF8, 0xFF))
+    Emit-JumpConditional -ConditionCode 0x84 -Label $failed
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x85, 0xC0))
+    Emit-JumpConditional -ConditionCode 0x84 -Label $failed
+    Emit-StoreRaxFrame -SlotPosition $handleSlot
+
+    # Confirm this exact opened object is a directory and is not a reparse point.
+    Emit-LoadRcxFrame -SlotPosition $handleSlot
+    Emit-LeaRaxFrame -SlotPosition $fileInfoSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC2))
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3200) -StackArguments @() # GetFileInformationByHandle
+    Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
+    Emit-JumpConditional -ConditionCode 0x84 -Label $failed
+    Emit-LoadEaxFrame -SlotPosition $fileInfoSlot
+    Emit-Bytes -Bytes ([byte[]]@(0xA9, 0x10, 0x00, 0x00, 0x00))
+    Emit-JumpConditional -ConditionCode 0x84 -Label $failed # FILE_ATTRIBUTE_DIRECTORY required
+    Emit-Bytes -Bytes ([byte[]]@(0xA9, 0x00, 0x04, 0x00, 0x00))
+    Emit-JumpConditional -ConditionCode 0x85 -Label $failed # FILE_ATTRIBUTE_REPARSE_POINT forbidden
+
+    # GetSecurityInfo(handle, SE_FILE_OBJECT, DACL_SECURITY_INFORMATION, NULL, NULL, &oldDacl, NULL, &sd).
+    Emit-LoadRcxFrame -SlotPosition $handleSlot
+    Emit-Bytes -Bytes ([byte[]]@(0xBA, 0x01, 0x00, 0x00, 0x00, 0x41, 0xB8, 0x04, 0x00, 0x00, 0x00, 0x45, 0x33, 0xC9))
+    Emit-Win64CallIat -TargetRva ([UInt32]0x32B0) -StackArguments @(
         @{ Kind = 'Immediate'; Value = 0 }, # ppsidGroup
         @{ Kind = 'FrameAddress'; SlotPosition = $oldAclSlot },
         @{ Kind = 'Immediate'; Value = 0 }, # ppSacl
         @{ Kind = 'FrameAddress'; SlotPosition = $securityDescriptorSlot }
-    ) # GetNamedSecurityInfoA
+    ) # GetSecurityInfo
     Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
     Emit-JumpConditional -ConditionCode 0x85 -Label $failed
+    Emit-LoadRaxFrame -SlotPosition $oldAclSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x85, 0xC0))
+    Emit-JumpConditional -ConditionCode 0x84 -Label $failed # a NULL DACL is never accepted
 
-    # EXPLICIT_ACCESS_A (48 bytes), using the AppContainer package SID as TRUSTEE_IS_SID.
+    # EXPLICIT_ACCESS_A (48 bytes). SET_ACCESS makes repeated runs idempotent.
     Emit-StoreBits32Frame -SlotPosition $explicitSlot -Value $AccessMask
     Emit-StoreBits32Frame -SlotPosition ($explicitSlot + 4) -Value $AccessMode
     Emit-StoreBits32Frame -SlotPosition ($explicitSlot + 8) -Value 3 # OBJECT_INHERIT_ACE | CONTAINER_INHERIT_ACE
@@ -1113,54 +1149,55 @@ function Emit-DevBrokerUpdateAcl {
     Emit-StoreBits32Frame -SlotPosition ($explicitSlot + 24) -Value 0 # NO_MULTIPLE_TRUSTEE
     Emit-StoreBits32Frame -SlotPosition ($explicitSlot + 28) -Value 0 # TRUSTEE_IS_SID
     Emit-StoreBits32Frame -SlotPosition ($explicitSlot + 32) -Value 1 # TRUSTEE_IS_USER
-    Emit-StoreZero64Frame -SlotPosition ($explicitSlot + 40)
     Emit-LoadRaxFrame -SlotPosition $SidSlot
     Emit-StoreRaxFrame -SlotPosition ($explicitSlot + 40)
 
-    Emit-Bytes -Bytes ([byte[]]@(0xB9, 0x01, 0x00, 0x00, 0x00))
+    Emit-Bytes -Bytes ([byte[]]@(0xB9, 0x01, 0x00, 0x00, 0x00)) # count = 1
     Emit-LeaRaxFrame -SlotPosition $explicitSlot
-    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC2))
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC2)) # RDX = EXPLICIT_ACCESS
     Emit-LoadRaxFrame -SlotPosition $oldAclSlot
-    Emit-Bytes -Bytes ([byte[]]@(0x49, 0x89, 0xC0))
+    Emit-Bytes -Bytes ([byte[]]@(0x49, 0x89, 0xC0)) # R8 = old DACL
     Emit-LeaR9Frame -SlotPosition $newAclSlot
     Emit-Win64CallIat -TargetRva ([UInt32]0x3280) -StackArguments @() # SetEntriesInAclA
     Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
     Emit-JumpConditional -ConditionCode 0x85 -Label $failed
 
-    # Replace only the DACL. A NULL DACL is never supplied.
-    Emit-LeaRaxFrame -SlotPosition $PathSlot
-    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1, 0xBA, 0x01, 0x00, 0x00, 0x00, 0x41, 0xB8, 0x04, 0x00, 0x00, 0x00, 0x45, 0x33, 0xC9))
-    Emit-Win64CallIat -TargetRva ([UInt32]0x3288) -StackArguments @(
+    # SetSecurityInfo changes only the DACL of the same validated handle; unrelated ACEs were merged.
+    Emit-LoadRcxFrame -SlotPosition $handleSlot
+    Emit-Bytes -Bytes ([byte[]]@(0xBA, 0x01, 0x00, 0x00, 0x00, 0x41, 0xB8, 0x04, 0x00, 0x00, 0x00, 0x45, 0x33, 0xC9))
+    Emit-Win64CallIat -TargetRva ([UInt32]0x32B8) -StackArguments @(
         @{ Kind = 'Immediate'; Value = 0 }, # pSidGroup
         @{ Kind = 'FrameQword'; SlotPosition = $newAclSlot },
         @{ Kind = 'Immediate'; Value = 0 }  # pSacl
-    ) # SetNamedSecurityInfoA
+    ) # SetSecurityInfo
     Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
     Emit-JumpConditional -ConditionCode 0x85 -Label $failed
-    Emit-Jump -Label $cleanup
+    Emit-Jump -Label $done
 
     Mark-CodeLabel -Label $failed
     Emit-StoreBits32Frame -SlotPosition $failedSlot -Value 1
-    Mark-CodeLabel -Label $cleanup
-    Emit-LoadRcxFrame -SlotPosition $newAclSlot
+    Mark-CodeLabel -Label $done
+
+    # LocalFree both allocations returned by the security APIs; close the directory handle.
+    foreach ($slot in @($newAclSlot, $securityDescriptorSlot)) {
+        $skipFree = New-UniqueLabel -Prefix 'dev_acl_handle_skip_free'
+        Emit-LoadRcxFrame -SlotPosition $slot
+        Emit-Bytes -Bytes ([byte[]]@(0x48, 0x85, 0xC9))
+        Emit-JumpConditional -ConditionCode 0x84 -Label $skipFree
+        Emit-Win64CallIat -TargetRva ([UInt32]0x3248) -StackArguments @() # LocalFree
+        Mark-CodeLabel -Label $skipFree
+    }
+    $skipClose = New-UniqueLabel -Prefix 'dev_acl_handle_skip_close'
+    Emit-LoadRcxFrame -SlotPosition $handleSlot
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x85, 0xC9))
-    $skipNewAcl = New-UniqueLabel -Prefix 'dev_acl_skip_new_free'
-    Emit-JumpConditional -ConditionCode 0x84 -Label $skipNewAcl
-    Emit-Win64CallIat -TargetRva ([UInt32]0x3248) -StackArguments @() # LocalFree(new ACL)
-    Mark-CodeLabel -Label $skipNewAcl
-    Emit-LoadRcxFrame -SlotPosition $securityDescriptorSlot
-    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x85, 0xC9))
-    $skipDescriptor = New-UniqueLabel -Prefix 'dev_acl_skip_sd_free'
-    Emit-JumpConditional -ConditionCode 0x84 -Label $skipDescriptor
-    Emit-Win64CallIat -TargetRva ([UInt32]0x3248) -StackArguments @() # LocalFree(security descriptor)
-    Mark-CodeLabel -Label $skipDescriptor
+    Emit-JumpConditional -ConditionCode 0x84 -Label $skipClose
+    Emit-Win64CallIat -TargetRva ([UInt32]0x30B8) -StackArguments @() # CloseHandle
+    Mark-CodeLabel -Label $skipClose
+
     Emit-LoadEaxFrame -SlotPosition $failedSlot
     Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
     Emit-JumpConditional -ConditionCode 0x85 -Label $FailureLabel
-    Emit-Jump -Label $done
-    Mark-CodeLabel -Label $done
 }
-
 function Emit-DevBrokerBuildWorkspacePath {
     param([int] $RootSlot, [int] $RootLengthSlot, [object] $SuffixItem, [int] $SuffixLength, [int] $DestinationSlot)
     if ($SuffixLength -lt 1 -or $SuffixLength -gt 240) { throw 'Invalid DevAgent workspace path suffix length.' }
@@ -1183,8 +1220,6 @@ function Emit-DevBrokerCheckDirectoryChain {
     $scanComponents = New-UniqueLabel -Prefix 'dev_path_scan_components'
     $nextComponent = New-UniqueLabel -Prefix 'dev_path_next_component'
     $checkFinal = New-UniqueLabel -Prefix 'dev_path_check_final'
-    $checkRoot = New-UniqueLabel -Prefix 'dev_path_check_drive_root'
-    $rootChecked = New-UniqueLabel -Prefix 'dev_path_drive_root_checked'
 
     # Require a drive-qualified DOS absolute path. UNC/device paths fail closed.
     Emit-Bytes -Bytes ([byte[]]@(0x0F, 0xB6, 0x85))
@@ -1222,18 +1257,20 @@ function Emit-DevBrokerCheckDirectoryChain {
     # Validate C:\ itself before walking subsequent components.
     Emit-LeaRaxFrame -SlotPosition ($PathSlot + 3)
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC6))
-    Emit-Bytes -Bytes ([byte[]]@(0x8A, 0x06, 0x88, 0x06)) # save first component byte into AH? replaced below
     # Use a dedicated byte slot rather than relying on a caller register across API calls.
     $savedByteSlot = [int]$script:ActiveContext.ScratchPosition + 0xDF0
     Emit-StoreZero64Frame -SlotPosition $savedByteSlot
+    $rootAttributesSlot = [int]$script:ActiveContext.ScratchPosition + 0xDF8
     Emit-Bytes -Bytes ([byte[]]@(0x8A, 0x06, 0x88, 0x85))
     Emit-I32 -Value (Get-FrameDisp -SlotPosition $savedByteSlot)
     Emit-Bytes -Bytes ([byte[]]@(0xC6, 0x06, 0x00)) # temporarily end at C:\
     Emit-LeaRaxFrame -SlotPosition $PathSlot
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1))
-    Emit-Win64CallIat -TargetRva ([UInt32]0x31C8) -StackArguments @()
+    Emit-Win64CallIat -TargetRva ([UInt32]0x31C8) -StackArguments @() # GetFileAttributesA(C:\)
+    Emit-StoreEaxFrame -SlotPosition $rootAttributesSlot
     Emit-LoadEaxFrame -SlotPosition $savedByteSlot
     Emit-Bytes -Bytes ([byte[]]@(0x88, 0x06)) # restore first component byte
+    Emit-LoadEaxFrame -SlotPosition $rootAttributesSlot
     Emit-Bytes -Bytes ([byte[]]@(0x3D, 0xFF, 0xFF, 0xFF, 0xFF))
     Emit-JumpConditional -ConditionCode 0x84 -Label $FailureLabel
     Emit-Bytes -Bytes ([byte[]]@(0xA9, 0x10, 0x00, 0x00, 0x00))
