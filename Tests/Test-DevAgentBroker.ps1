@@ -301,6 +301,13 @@ try {
     }
     Write-Host 'PASS: WAIT_ABANDONED acquires the mutex and recovers the durable ACL journal before any new child' -ForegroundColor Green
     Write-Host 'PASS: all ACL expansions occur after a flushed, write-through journal commit' -ForegroundColor Green
+    foreach ($noProfileProbe in @($timeoutScriptPath, $crashProbeScriptPath)) {
+        $probeText = [IO.File]::ReadAllText($noProfileProbe)
+        if ($probeText.Contains('Start-Sleep') -or -not $probeText.Contains('[Threading.Thread]::Sleep(')) {
+            throw "No-profile AppContainer probe must use .NET Thread.Sleep, not profile-dependent Start-Sleep: $noProfileProbe"
+        }
+    }
+    Write-Host 'PASS: timeout and crash probes use profile-independent .NET Thread.Sleep'
     Write-Host 'PASS: broker source declares restricted-token, AppContainer, handle-based ACL and bounded-output runtime gates' -ForegroundColor Green
 
     New-Item -ItemType Directory -Path $buildRoot -Force | Out-Null
