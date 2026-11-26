@@ -1,6 +1,6 @@
 # Sharnou Compiler and Engine - Accepted Development Plan
 
-**Last maintained:** 2026-11-25
+**Last maintained:** 2026-11-27
 **Repository:** `Sharnou/Sharnou-Compiler`  
 **Default branch observed:** `Sharnou-Compiler`  
 **Current focus:** Milestone 7A - native control flow  
@@ -275,3 +275,17 @@ The native DevAgent test-tool process broker phase 1 is now implemented and vali
 Evidence: combined run [45772104864](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45772104864), frozen baseline run [45772104661](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45772104661). PR #18 remains draft/unmerged.
 
 Remaining work before any model-controlled execution: complete executable/workspace canonicalization and ADS/UNC/device rejection; restricted token/AppContainer and workspace-only ACLs; clean environment and DLL-search policy; bounded stdout/stderr capture with STARTUPINFOEX handle isolation; cancellation; durable tool evidence and restart recovery. Until those gates pass, the broker remains disabled for model-generated plans.
+
+
+## 2026-11-27 - DevAgent Phase 2B.2 native interop and test-only AppContainer fixture
+
+Phase 2B.2 is implemented and Windows-CI validated on PR #18 candidate head `7804e3663cdd6325a39b61204e4e526b7bb0c0a5`:
+- [Native interop/AppContainer test fixture](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45912115900): PASS. Runtime CLR interop layout measurement checked 10 structure sizes and 53 field offsets. A test-only P/Invoke fixture made 18 reviewed Win32 API bindings, created a real AppContainer profile, verified the actual fixed child process token (AppContainer=1, exact profile SID, integrity RID <= Low, zero capabilities), checked a normal parent-token negative control, and terminated the suspended child without calling ResumeThread. Result: 11 assertions passed.
+- [Frozen M1-M6 baseline](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45912115910): 83/83 PASS.
+- [Crash-safe workspace transaction](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45912115940): 44/44 PASS.
+- [Native ABI SDK contract](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45912117189): PASS.
+- [Integrated Stage 7A](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45912115911): PASS, Stage 7A 24/24, collection imports 2/2, stack probe/unwind 6/6, Runtime ABI PASS and combined regression PASS.
+
+Evidence qualification: the layout runtime probe uses the .NET Framework unmanaged interop marshaler; it is not a native Sharnou compiler-generated `sizeof`/`offsetof` probe. The AppContainer child is started from PowerShell through in-memory P/Invoke, not through the native compiler emitter. The fixture uses a NULL environment pointer, never resumes the child, terminates it immediately after token checks, and does not prove output containment, workspace ACL access, network denial or production broker integration. No native production PE import descriptors or compiler emitter code were modified.
+
+Next accepted DevAgent dependency: Phase 2B.3 - bind the real per-execution AppContainer SID to the dedicated workspace DACL with the narrowest necessary access, integrate that with the already-tested crash-safe ACL transaction, and verify exact descriptor rollback/recovery. Model-controlled process execution remains disabled until every later gate (restricted-token decision, Job Object, handle list, bounded dual-stream output, cancellation and full adversarial tests) passes.

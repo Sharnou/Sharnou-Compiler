@@ -1,6 +1,6 @@
 # AI Issue Register - Sharnou Compiler
 
-**Last reviewed:** 2026-11-22
+**Last reviewed:** 2026-11-27
 **Live session tracker:** [Issue #8 - AI Development Plan and Live Session State](https://github.com/Sharnou/Sharnou-Compiler/issues/8)
 
 This register separates active blockers from historical findings. Do not close an issue or mark a risk resolved without the stated evidence.
@@ -491,3 +491,19 @@ This entry supersedes the earlier 2ee44... status note. Integrated PR #18 head `
 Evidence: combined Windows run [45772104864](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45772104864); frozen baseline [45772104661](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45772104661); PR [#18](https://github.com/Sharnou/Sharnou-Compiler/pull/18).
 
 Status: PHASE 1 IMPLEMENTED / SECURITY ACCEPTANCE INCOMPLETE. Native CNG hashing and image-relative workspace derivation are implemented and tested. Remaining blockers are complete final-path/ancestor canonicalization, ADS/UNC/device-path rejection, restricted token or AppContainer plus workspace ACLs, clean environment/DLL-search policy, bounded stdout/stderr capture with explicit handle list, cooperative cancellation, and durable evidence journal/restart recovery. The broker is still test-build opt-in; model-generated process execution remains DISABLED. PR #18 stays draft and unmerged.
+
+
+## Issue #14 - DevAgent Phase 2B.2 native interop and AppContainer fixture - 2026-11-27
+
+Latest candidate: PR #18, branch `devagent-secure-process-broker-20261126`, head `7804e3663cdd6325a39b61204e4e526b7bb0c0a5`. PR remains OPEN / DRAFT / UNMERGED.
+
+Windows evidence on the same head:
+- Native interop/AppContainer workflow [45912115900](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45912115900): PASS. CLR runtime layout measurement 10 structures / 53 field offsets; test-only AppContainer fixture 11 assertions. Actual child token verification: AppContainer=1, exact profile SID, Low-or-lower integrity (observed 0x1000), zero TokenCapabilities; parent negative control; suspended child terminated without ResumeThread.
+- Frozen M1-M6 baseline [45912115910](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45912115910): 83/83 PASS.
+- Crash-safe workspace transaction [45912115940](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45912115940): 44/44 PASS.
+- Native SDK/API ABI contract [45912117189](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45912117189): PASS.
+- Integrated Stage 7A [45912115911](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45912115911): PASS; Stage 7A 24/24, collection import 2/2, stack probe/unwind 6/6, runtime ABI PASS, full combined result PASS.
+
+The test fixture uses real USERENV, KERNEL32 and ADVAPI32 calls from in-memory PowerShell/.NET P/Invoke stubs. It does not compile native code, add compiler PE imports, invoke the Sharnou native process emitter, or run arbitrary user/model-selected tools. The fixed child is `%SystemRoot%\System32\whoami.exe`, created suspended, inspected, and terminated without resume. The fixture inherits the CI environment via a NULL environment pointer; clean explicit environment remains a separate production gate. This is not proof of workspace ACL integration, no-network access, bounded output, Job Object integration, or production process-broker security.
+
+Status: PHASE 2B.2 TEST FIXTURE WINDOWS CI PASS / PRODUCTION APP CONTAINER BROKER NOT INTEGRATED. Model-generated process execution remains DISABLED. Next dependency: Phase 2B.3, bind the actual package SID to per-execution least-privilege workspace ACLs and prove exact crash-safe restoration.

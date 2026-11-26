@@ -1,6 +1,6 @@
 # AI Session State - Sharnou Compiler
 
-**Last updated:** 2026-11-22 Africa/Cairo
+**Last updated:** 2026-11-27 Africa/Cairo
 **Repository:** `Sharnou/Sharnou-Compiler`  
 **Branch:** `Sharnou-Compiler`  
 **Purpose:** Latest durable status for every future AI-assisted compiler/Engine generation, debugging, testing, and repair session.
@@ -1028,3 +1028,26 @@ DevAgent native process broker phase 1 is implemented and Windows-tested:
 - Windows broker tests pass for explicit opt-in, manifest tamper, script tamper, foreign-CWD launch, reparse/junction rejection, invalid tool IDs/timeouts, exit-code propagation, timeout, and descendant termination.
 
 Security acceptance remains incomplete; model-generated process execution is DISABLED. Remaining work: final-path/ancestor canonicalization and ADS/UNC/device-path rejection; restricted token or AppContainer with workspace-only ACLs; clean environment and explicit DLL-search policy; bounded stdout/stderr capture and STARTUPINFOEX handle isolation; cooperative cancellation; durable evidence journal and restart recovery. This is a test-tool broker foundation, not yet a production sandbox. No merge, release, or executable publication occurred.
+
+
+## 2026-11-27 - DevAgent Phase 2B.2 native interop and AppContainer fixture
+
+Starting branch head for this session: `256ffaad261bfa5d7472d8a63f40dce0440c7bbd`. Latest code/test candidate head: `7804e3663cdd6325a39b61204e4e526b7bb0c0a5`. Repository: `Sharnou/Sharnou-Compiler`; branch: `devagent-secure-process-broker-20261126`; PR #18 remains OPEN / DRAFT / UNMERGED.
+
+Phase 2B.2 implementation is present and Windows-CI validated as a **test-only fixture**:
+- [Windows native interop/AppContainer fixture run 45912115900](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45912115900) completed SUCCESS.
+- Runtime CLR interop layout probe: 10/10 structure sizes and 53/53 member offsets passed. It used .NET Framework `Marshal.SizeOf(Type)` / `Marshal.OffsetOf(Type,String)` at runtime on x64 Windows. It is not a native Sharnou compiler `sizeof` / `offsetof` executable.
+- Real AppContainer fixture: 11 assertions passed. It created an OS-owned profile SID; verified duplicate-profile rejection; initialized the process attribute list; applied a zero-capability `SECURITY_CAPABILITIES`; created fixed System32 `whoami.exe` suspended; verified the actual child token as AppContainer, exact package SID, Low-or-lower integrity (observed RID `0x1000`), and zero capability SIDs; verified the non-AppContainer parent as a negative control; then terminated/reaped the child without resuming its primary thread.
+- Windows runner: Server 2025 / OS 10.0.26100.0 / x64 / Windows PowerShell 5.1.26100.33822.
+- Child image SHA-256: `23240EF9F8B0A9A324110B1C2331DE31DC1B0E08F5359CB707E51A939AF56CD3`.
+- Fixture source SHA-256: `407E3E820DF23716E57B9E677D2A4EF16484FBD016A1A401E3A481817B0CE436`; interop helper SHA-256: `0B23042E5C6AB408D48D69A8E327F8130347720F8BCAC495879DC66BAC254949`; runtime layout test SHA-256: `A9E1DEBE7CE7E0487DE9928F0B4538DDD3D4596591B363515C63951D1B1EF937`; manifest SHA-256: `CE1FBE1A289CF7908D9B09EBE91E95965082CC573DA099FD75C0BDF69D3DE381`.
+
+Same candidate head retained the other regressions:
+- [Frozen Milestone 6 baseline run 45912115910](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45912115910): PASS 83/83 (Stage 2 25, Stage 4 20, PE verifier 4, Stage 5 25, Stage 6 9).
+- [Crash-safe workspace security run 45912115940](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45912115940): PASS 44/44.
+- [Native ABI SDK contract run 45912117189](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45912117189): PASS; 53 field/offset declarations, 10 structure layouts, 12 import groups, 44 IAT entries, 17 planned SDK API signatures and 3 token information classes.
+- [Integrated Stage 7A run 45912115911](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45912115911): PASS; Stage 7A 24/24, Stage 5 collection imports 2/2, stack-probe/unwind 6/6, Runtime ABI PASS, frozen M1-M6 83/83 in the full combined runner, and Combined result PASS. It also reports the D3D11 60-frame clear/present sample.
+
+Evidence boundary: the AppContainer test uses in-memory PowerShell/.NET P/Invoke, not the compiler-generated PE or production `Emit-DevRunTool`. Its test child inherits the CI environment through a NULL environment pointer, is never resumed, and is terminated before user-mode entry; the production clean-environment gate remains open. No production PE imports or compiler emitter were changed. Workspace ACL binding to the genuine package SID, restricted-primary-token composition, Job Object binding for the AppContainer launch, explicit handle-list inheritance, bounded output capture, and adversarial network/resource access attempts remain NOT IMPLEMENTED / NOT RUN. The fixture proves an actual suspended child token, not a production-ready sandbox.
+
+Model-facing process execution remains DISABLED. Next dependency: Phase 2B.3, genuine AppContainer SID to per-execution workspace ACL binding with least-privilege rights and exact crash-safe ACL rollback; only after that proceed to production suspended launch integration.

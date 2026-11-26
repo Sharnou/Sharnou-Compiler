@@ -1,6 +1,6 @@
 # DevAgent Phase 2B - Native AppContainer Process Boundary
 
-Status: DESIGN GATE / NOT IMPLEMENTED. This document defines the native Windows integration contract. It does not authorize process execution and must not be interpreted as evidence that an AppContainer or restricted token has been created.
+Status: DESIGN / PRODUCTION BROKER INTEGRATION NOT IMPLEMENTED. Phase 2B.2 now has a Windows-CI-validated test-only AppContainer fixture. This document does not authorize model-facing process execution and the fixture is not a production sandbox.
 
 Target: Windows x64, Sharnou-generated PE32+, Windows PowerShell 5.1 test host.
 Prerequisite: Phase 2A workspace transaction prototype, Windows adversarial suite 44/44.
@@ -164,3 +164,52 @@ Windows Phase 2B.1 contract evidence (2026-11-26): run 45909475426 completed suc
 
 
 The ABI contract test was strengthened after initial Windows failures: it now compares the ordered parameter-type tokens and declared return type for each planned API against the correct SDK header, in addition to checking the import-group DLL mapping and declaration presence. The final Windows run 45909933391 passed all these checks. The 17 API declarations are a future import manifest only; they have not been inserted into the PE import table or compiler emitter in Phase 2B.1.
+
+
+## 11. Phase 2B.2 - runtime x64 interop probe and test-only AppContainer fixture
+
+Status: WINDOWS CI PASS for the isolated test fixture on commit `7804e3663cdd6325a39b61204e4e526b7bb0c0a5`. Workflow: [run 45912115900](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45912115900). Runner: Microsoft Windows Server 2025, OS version 10.0.26100.0, 64-bit Windows PowerShell 5.1.26100.33822.
+
+Implemented files:
+- `Tests/DevAgentBroker/NativeInterop.ps1`: test-only in-memory Reflection.Emit support for explicit P/Invoke signatures, runtime struct layout types, unmanaged allocations, and explicit CLR marshaller overload selection.
+- `Tests/DevAgentBroker/native-abi-manifest.json`: adds the 18 explicitly reviewed test-fixture API declarations and the test execution/evidence boundary.
+- `Tests/Test-DevAgentNativeAbiRuntime.ps1`: performs runtime `Marshal.SizeOf(Type)` and `Marshal.OffsetOf(Type,String)` checks for all 10 manifested x64 structures and 53 field offsets.
+- `Tests/Test-DevAgentAppContainerFixture.ps1`: creates a uniquely named AppContainer profile, tests profile collision, builds a process attribute list, supplies a zero-capability `SECURITY_CAPABILITIES` structure, launches only the absolute System32 `whoami.exe` image suspended, reads the real process token, and terminates the child without resuming its primary thread.
+- `.github/workflows/devagent-native-appcontainer-fixture.yml`: executes the two fixtures on `windows-2025`.
+
+Runtime ABI result:
+- 64-bit pointers: 8 bytes.
+- Structure sizes: 10/10 matched.
+- Member offsets: 53/53 matched.
+- Critical layouts measured at runtime: `SECURITY_CAPABILITIES=24`, `STARTUPINFOEXW=112`, `PROCESS_INFORMATION=24`.
+- This measurement is performed by the .NET Framework CLR unmanaged interop marshaler at runtime. It is an independent runtime layout measurement, **not** a native Sharnou compiler `sizeof`/`offsetof` executable and not a C/C++ helper build.
+
+AppContainer fixture result: **11 assertions passed**.
+- 18 native P/Invoke entrypoints were bound in memory without `Add-Type`, a C# compiler, or an external toolchain.
+- `CreateAppContainerProfile` returned a valid OS-generated package SID.
+- A second create with the same profile name returned `HRESULT_FROM_WIN32(ERROR_ALREADY_EXISTS)`; the duplicate path did not acquire ownership.
+- `InitializeProcThreadAttributeList` size query and initialization succeeded (48-byte runtime size on this runner).
+- `PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES` accepted the 24-byte structure with the exact returned SID and zero capability entries.
+- `CreateProcessW` created a fixed System32 `whoami.exe` child with `EXTENDED_STARTUPINFO_PRESENT | CREATE_SUSPENDED | CREATE_UNICODE_ENVIRONMENT`, no inherited handles, and no user/model-selected arguments or paths.
+- Before resuming the primary thread, the fixture opened the actual child token and verified `TokenIsAppContainer=1`, the package SID was valid and exactly equal to the profile SID, the integrity RID was no higher than Low (`0x1000`), and `TokenCapabilities` count was zero.
+- Negative control: the ordinary PowerShell parent token reported `TokenIsAppContainer=0` and a NULL AppContainer SID.
+- `GetExitCodeProcess` confirmed the child remained active while suspended; the fixture then terminated and reaped it without importing or calling `ResumeThread`.
+- The execution-owned profile was deleted only after the child and all handles were closed.
+
+Run output evidence:
+- Fixed child image SHA-256: `23240EF9F8B0A9A324110B1C2331DE31DC1B0E08F5359CB707E51A939AF56CD3`.
+- Profile SID from the recorded run: `S-1-15-2-2453041417-291811665-2106074910-2650472592-495154603-1960595871-3433844368`.
+- AppContainer fixture source SHA-256: `407E3E820DF23716E57B9E677D2A4EF16484FBD016A1A401E3A481817B0CE436`.
+- Interop helper SHA-256: `0B23042E5C6AB408D48D69A8E327F8130347720F8BCAC495879DC66BAC254949`.
+- Runtime layout test SHA-256: `A9E1DEBE7CE7E0487DE9928F0B4538DDD3D4596591B363515C63951D1B1EF937`.
+- Manifest SHA-256: `CE1FBE1A289CF7908D9B09EBE91E95965082CC573DA099FD75C0BDF69D3DE381`.
+
+Fixture-only limitations and remaining gates:
+- The test passes a NULL environment pointer, inheriting the workflow runner environment. This fixture never resumes the child, so user-mode code does not execute; a clean explicit environment block remains a production launch requirement and was not validated here.
+- This test creates the process through an in-memory P/Invoke adapter under PowerShell, not through the Sharnou-generated PE or `Emit-DevRunTool`. No production PE import table, compiler source, or process broker emitter was modified.
+- No AppContainer workspace ACL binding, restricted primary-token composition, Job Object binding for this fixture, handle-list inheritance, bounded stdout/stderr capture, or network-denial access attempt was tested here.
+- A zero `TokenCapabilities` list is verified; this is not a full adversarial network/resource-access test.
+- The primary thread was deliberately never resumed. This proves token establishment and pre-entry inspection, not execution of the child inside the AppContainer.
+- Model-facing execution remains DISABLED. PR #18 remains draft/open/unmerged.
+
+Phase 2B.3 must next bind the genuine profile SID to a per-execution workspace DACL using least-privilege rights, then prove exact ACL restoration and crash recovery. It must not yet enable model-facing execution.
