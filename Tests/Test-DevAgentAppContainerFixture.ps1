@@ -83,9 +83,9 @@ try {
     $types = New-SharnouRuntimeStructTypes -Module $module -StructureManifest @($manifest.structureLayouts)
 
     $apiManifest = @($manifest.testFixtureApis)
-    if ($apiManifest.Count -ne 18) { throw 'Test fixture API manifest must contain exactly 18 reviewed native entrypoints.' }
+    if ($apiManifest.Count -ne 22) { throw 'Test fixture API manifest must contain exactly 22 reviewed native entrypoints.' }
     $apiType = New-SharnouNativeApiType -Module $module -ApiManifest $apiManifest
-    Add-AppContainerPass '18 reviewed USERENV, KERNEL32 and ADVAPI32 entrypoints were bound in-memory without Add-Type or a compiler.'
+    Add-AppContainerPass '22 reviewed USERENV, KERNEL32 and ADVAPI32 entrypoints were bound in-memory without Add-Type or a compiler.'
 
     $profileNamePointer = New-SharnouTrackedUnicodeString -Value $profileName -Allocations $allocations
     $displayNamePointer = New-SharnouTrackedUnicodeString -Value 'Sharnou DevAgent Native AppContainer Probe' -Allocations $allocations

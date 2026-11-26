@@ -194,6 +194,11 @@ try {
     $idsB = @($rulesB | ForEach-Object { $_.IdentityReference.Value } | Sort-Object)
     Assert-WorkspaceTest -Condition ($idsA.Count -eq 3 -and $idsA -contains $supervisorSid -and $idsA -contains $executionSidA -and $idsA -contains $systemSid -and $idsA -notcontains $executionSidB) -Message 'execution A DACL contains only supervisor, execution A and SYSTEM'
     Assert-WorkspaceTest -Condition ($idsB.Count -eq 3 -and $idsB -contains $supervisorSid -and $idsB -contains $executionSidB -and $idsB -contains $systemSid -and $idsB -notcontains $executionSidA) -Message 'execution B DACL contains only supervisor, execution B and SYSTEM'
+    $minimalWorkspaceRights = Get-SharnouExecutionWorkspaceRights
+    $executionRuleA = @($rulesA | Where-Object { $_.IdentityReference.Value -ceq $executionSidA })
+    $executionRuleB = @($rulesB | Where-Object { $_.IdentityReference.Value -ceq $executionSidB })
+    Assert-WorkspaceTest -Condition ($executionRuleA.Count -eq 1 -and $executionRuleA[0].FileSystemRights -eq $minimalWorkspaceRights -and $executionRuleA[0].FileSystemRights -ne [System.Security.AccessControl.FileSystemRights]::FullControl) -Message 'execution A receives the exact non-FullControl scratch-workspace rights mask'
+    Assert-WorkspaceTest -Condition ($executionRuleB.Count -eq 1 -and $executionRuleB[0].FileSystemRights -eq $minimalWorkspaceRights -and $executionRuleB[0].FileSystemRights -ne [System.Security.AccessControl.FileSystemRights]::FullControl) -Message 'execution B receives the exact non-FullControl scratch-workspace rights mask'
     Assert-WorkspaceTest -Condition (([System.IO.Directory]::GetAccessControl($txA.WorkspacePath, $sections)).AreAccessRulesProtected) -Message 'execution workspace disables inherited ACEs'
     [System.IO.File]::WriteAllText((Join-Path $txA.WorkspacePath 'a.txt'), 'A', [System.Text.Encoding]::ASCII)
     [System.IO.File]::WriteAllText((Join-Path $txB.WorkspacePath 'b.txt'), 'B', [System.Text.Encoding]::ASCII)

@@ -83,11 +83,32 @@ function Set-SharnouDirectorySddl {
     [System.IO.Directory]::SetAccessControl($Path, $security)
 }
 
+function Get-SharnouExecutionWorkspaceRights {
+    # Scratch-tree rights only: list/read, create/write, delete individual
+    # objects, read security metadata, and synchronize. Deliberately excludes
+    # FILE_EXECUTE, DELETE_CHILD, WRITE_DAC and WRITE_OWNER.
+    return [System.Security.AccessControl.FileSystemRights]0x0013019F
+}
+
 function Set-SharnouProtectedDirectoryAcl {
     param(
         [Parameter(Mandatory = $true)][string]$Path,
-        [Parameter(Mandatory = $true)][string[]]$AllowedSids
+        [string[]]$AllowedSids = @(),
+        [hashtable]$AllowedSidRights = $null
     )
+
+    $rightsBySid = @{}
+    if ($null -ne $AllowedSidRights) {
+        foreach ($sidText in $AllowedSidRights.Keys) {
+            $rightsBySid[[string]$sidText] = [System.Security.AccessControl.FileSystemRights]$AllowedSidRights[$sidText]
+        }
+    }
+    else {
+        foreach ($sidText in @($AllowedSids | Select-Object -Unique)) {
+            $rightsBySid[[string]$sidText] = [System.Security.AccessControl.FileSystemRights]::FullControl
+        }
+    }
+    if ($rightsBySid.Count -lt 1) { throw 'A protected directory ACL requires at least one explicit SID.' }
 
     $security = [System.IO.Directory]::GetAccessControl($Path, [System.Security.AccessControl.AccessControlSections]::Access)
     # Preserve owner/group exactly; only replace the DACL. Protecting the DACL
@@ -99,11 +120,11 @@ function Set-SharnouProtectedDirectoryAcl {
     }
 
     $inheritance = [System.Security.AccessControl.InheritanceFlags]::ContainerInherit -bor [System.Security.AccessControl.InheritanceFlags]::ObjectInherit
-    foreach ($sidText in @($AllowedSids | Select-Object -Unique)) {
-        $sid = New-Object System.Security.Principal.SecurityIdentifier($sidText)
+    foreach ($sidText in @($rightsBySid.Keys | Sort-Object)) {
+        $sid = New-Object System.Security.Principal.SecurityIdentifier([string]$sidText)
         $rule = New-Object System.Security.AccessControl.FileSystemAccessRule(
             $sid,
-            [System.Security.AccessControl.FileSystemRights]::FullControl,
+            [System.Security.AccessControl.FileSystemRights]$rightsBySid[$sidText],
             $inheritance,
             [System.Security.AccessControl.PropagationFlags]::None,
             [System.Security.AccessControl.AccessControlType]::Allow
@@ -112,22 +133,35 @@ function Set-SharnouProtectedDirectoryAcl {
     }
 
     [System.IO.Directory]::SetAccessControl($Path, $security)
-    Assert-SharnouProtectedDirectoryAcl -Path $Path -AllowedSids $AllowedSids
+    Assert-SharnouProtectedDirectoryAcl -Path $Path -AllowedSidRights $rightsBySid
 }
 
 function Assert-SharnouProtectedDirectoryAcl {
     param(
         [Parameter(Mandatory = $true)][string]$Path,
-        [Parameter(Mandatory = $true)][string[]]$AllowedSids
+        [string[]]$AllowedSids = @(),
+        [hashtable]$AllowedSidRights = $null
     )
+
+    $expectedRights = @{}
+    if ($null -ne $AllowedSidRights) {
+        foreach ($sidText in $AllowedSidRights.Keys) {
+            $expectedRights[[string]$sidText] = [System.Security.AccessControl.FileSystemRights]$AllowedSidRights[$sidText]
+        }
+    }
+    else {
+        foreach ($sidText in @($AllowedSids | Select-Object -Unique)) {
+            $expectedRights[[string]$sidText] = [System.Security.AccessControl.FileSystemRights]::FullControl
+        }
+    }
+    if ($expectedRights.Count -lt 1) { throw 'A protected directory ACL assertion requires an explicit SID policy.' }
 
     $security = [System.IO.Directory]::GetAccessControl($Path, $script:SharnouSecuritySections)
     if (-not $security.AreAccessRulesProtected) { throw "DACL inheritance is not protected: $Path" }
 
     $rules = $security.GetAccessRules($true, $true, [System.Security.Principal.SecurityIdentifier])
-    $expected = @($AllowedSids | Select-Object -Unique | Sort-Object)
-    if ($rules.Count -ne $expected.Count) {
-        throw "Unexpected ACE count for protected directory '$Path': expected=$($expected.Count) actual=$($rules.Count)"
+    if ($rules.Count -ne $expectedRights.Count) {
+        throw "Unexpected ACE count for protected directory '$Path': expected=$($expectedRights.Count) actual=$($rules.Count)"
     }
 
     $actual = New-Object 'System.Collections.Generic.List[string]'
@@ -138,8 +172,9 @@ function Assert-SharnouProtectedDirectoryAcl {
         if ($rule.AccessControlType -ne [System.Security.AccessControl.AccessControlType]::Allow) {
             throw "Unexpected deny ACE on protected directory: $Path"
         }
-        if ($rule.FileSystemRights -ne [System.Security.AccessControl.FileSystemRights]::FullControl) {
-            throw "Unexpected rights on protected directory for SID $sid"
+        if (-not $expectedRights.ContainsKey($sid)) { throw "Unexpected principal in protected directory DACL: $sid" }
+        if ($rule.FileSystemRights -ne $expectedRights[$sid]) {
+            throw "Unexpected rights for SID $sid on protected directory '$Path': expected=$($expectedRights[$sid]) actual=$($rule.FileSystemRights)"
         }
         $expectedInheritance = [System.Security.AccessControl.InheritanceFlags]::ContainerInherit -bor [System.Security.AccessControl.InheritanceFlags]::ObjectInherit
         if ($rule.InheritanceFlags -ne $expectedInheritance -or $rule.PropagationFlags -ne [System.Security.AccessControl.PropagationFlags]::None) {
@@ -148,7 +183,8 @@ function Assert-SharnouProtectedDirectoryAcl {
     }
 
     $actualSorted = @($actual.ToArray() | Sort-Object)
-    if (($actualSorted -join '|') -cne ($expected -join '|')) {
+    $expectedSorted = @($expectedRights.Keys | Sort-Object)
+    if (($actualSorted -join '|') -cne ($expectedSorted -join '|')) {
         throw "Protected directory DACL identities do not match the allowlist: $Path"
     }
 }
@@ -463,8 +499,12 @@ function New-SharnouExecutionWorkspace {
         Write-SharnouWorkspaceJournal -Path $journalPath -Record $record
         Invoke-SharnouWorkspaceTestPause -Enabled ([bool]$EnableTestHooks) -PauseAfterPhase $PauseAfterPhase -Phase 'AfterAclPending' -MarkerPath $MarkerPath
 
-        $allowed = @($roots.SupervisorSid, $execution.Value, $script:SharnouSystemSid)
-        Set-SharnouProtectedDirectoryAcl -Path $workspacePath -AllowedSids $allowed
+        $allowedRights = @{
+            $roots.SupervisorSid = [System.Security.AccessControl.FileSystemRights]::FullControl
+            $script:SharnouSystemSid = [System.Security.AccessControl.FileSystemRights]::FullControl
+            $execution.Value = Get-SharnouExecutionWorkspaceRights
+        }
+        Set-SharnouProtectedDirectoryAcl -Path $workspacePath -AllowedSidRights $allowedRights
         Invoke-SharnouWorkspaceTestPause -Enabled ([bool]$EnableTestHooks) -PauseAfterPhase $PauseAfterPhase -Phase 'AfterAclApplied' -MarkerPath $MarkerPath
 
         $record.state = 'ACTIVE'

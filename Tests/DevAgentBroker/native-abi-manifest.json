@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "status": "PHASE_2B_2_RUNTIME_INTEROP_PROBE_AND_TEST_ONLY_APPCONTAINER_FIXTURE",
+  "status": "PHASE_2B_3_APPCONTAINER_WORKSPACE_ACL_BINDING_AND_CRASH_ROLLBACK",
   "target": {
     "architecture": "x86-64",
     "pointerSize": 8,
@@ -11,7 +11,7 @@
     "level": "Windows SDK header declaration and field-order verification plus deterministic x64 layout computation",
     "notProven": "No native sizeof/offsetof execution, no native compiler invocation, no generated PE, no process creation, and no sandbox proof.",
     "note": "SDK field order and the arithmetic x64 ABI model are statically cross-checked. This is not an executed compiler sizeof/offsetof probe, and must not be used alone to ship native structure offsets.",
-    "next": "Phase 2B.2 validation executes the .NET Framework unmanaged interop marshaler on 64-bit Windows and performs real USERENV/KERNEL32/ADVAPI32 calls. Runtime Marshal.SizeOf/OffsetOf is an independent CLR native-marshalling measurement, not a C/C++ compiler sizeof/offsetof build. The test-only child is a fixed absolute System32 whoami.exe process created suspended, inspected before resume, and terminated without any user entry-point execution. No compiler PE import table or production emitter is modified."
+    "next": "Phase 2B.3 uses the OS-created package SID in the existing crash-safe workspace transaction, applies a non-FullControl scratch ACL, and uses the real suspended AppContainer child token for impersonated filesystem access checks. The test proves effective access only for its fixture paths; production broker/job integration remains a separate gate."
   },
   "currentImportTable": {
     "descriptorBase": "0xA00",
@@ -1045,6 +1045,58 @@
       ],
       "header": "um/handleapi.h",
       "setLastError": true
+    },
+    {
+      "name": "DuplicateTokenEx",
+      "dll": "ADVAPI32.dll",
+      "returnType": "BOOL",
+      "parameters": [
+        "HANDLE",
+        "DWORD",
+        "LPSECURITY_ATTRIBUTES",
+        "DWORD",
+        "DWORD",
+        "PHANDLE"
+      ],
+      "header": "um/securitybaseapi.h",
+      "setLastError": true
+    },
+    {
+      "name": "SetThreadToken",
+      "dll": "ADVAPI32.dll",
+      "returnType": "BOOL",
+      "parameters": [
+        "PHANDLE",
+        "HANDLE"
+      ],
+      "header": "um/processthreadsapi.h",
+      "setLastError": true
+    },
+    {
+      "name": "RevertToSelf",
+      "dll": "ADVAPI32.dll",
+      "returnType": "BOOL",
+      "parameters": [
+        "VOID"
+      ],
+      "header": "um/securitybaseapi.h",
+      "setLastError": true
+    },
+    {
+      "name": "CreateFileW",
+      "dll": "KERNEL32.dll",
+      "returnType": "HANDLE",
+      "parameters": [
+        "LPCWSTR",
+        "DWORD",
+        "DWORD",
+        "LPSECURITY_ATTRIBUTES",
+        "DWORD",
+        "DWORD",
+        "HANDLE"
+      ],
+      "header": "um/fileapi.h",
+      "setLastError": true
     }
   ],
   "testFixture": {
@@ -1069,5 +1121,14 @@
     "profileCollisionHresult": "0x800700B7",
     "evidenceLimit": "Runtime proof of Windows API interop, real profile SID, actual child token, zero capabilities, low integrity, and suspended termination. Does not modify compiler-generated PE imports, invoke the Sharnou native emitter, or establish production broker readiness.",
     "evidence": "The fixture makes no command-line, executable path, environment, or tool choice user/model configurable. It has no ResumeThread import or call. The only child image is %SystemRoot%\\System32\\whoami.exe, started CREATE_SUSPENDED and terminated before its primary thread runs."
-  }
+  },
+  "testFixturePolicy": [
+    "The test-only AppContainer fixture must use the genuine PSID returned by CreateAppContainerProfile; a SID-shaped caller string is never accepted as evidence.",
+    "The per-execution DACL grants the broker supervisor and SYSTEM FullControl, and the AppContainer package SID only the exact scratch mask 0x0013019F.",
+    "The scratch mask deliberately excludes FILE_EXECUTE, DELETE_CHILD, WRITE_DAC and WRITE_OWNER; DACL inheritance is protected and every ACE is explicitly checked.",
+    "Before restoring or deleting a workspace, the corresponding child process must be terminated and waited; this fixture does so before crash-recovery replay.",
+    "The journal root, shared workspace parent, another execution workspace, compiler-source sentinel and broker-image sentinel must deny the AppContainer token.",
+    "The journal retains the original owner/group/DACL SDDL before restrictive DACL mutation. Recovery must restore and verify that exact SDDL before removing the workspace.",
+    "This test fixture does not integrate the production native process emitter or Job Object; process-tree termination coordination remains a production integration requirement."
+  ]
 }
