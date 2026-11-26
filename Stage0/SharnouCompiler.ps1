@@ -1992,14 +1992,23 @@ function Emit-DevRunTool {
     Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
     Emit-JumpConditional -ConditionCode 0x84 -Label $captureLoop
 
-    # Reject addition wrap and any byte count above the exact 1 MiB output ceiling before ReadFile.
+    # Read only the remaining capacity. If outputCount is already 1 MiB and
+    # another byte is available, the following read attempt takes the overflow path.
     Emit-LoadEaxFrame -SlotPosition $outputCountSlot
-    Emit-Bytes -Bytes ([byte[]]@(0x03, 0x85))
-    Emit-I32 -Value (Get-FrameDisp -SlotPosition $availableSlot)
-    Emit-JumpConditional -ConditionCode 0x82 -Label $outputOverflow
     Emit-Bytes -Bytes ([byte[]]@(0x3D))
     Emit-I32 -Value 0x100000
-    Emit-JumpConditional -ConditionCode 0x87 -Label $outputOverflow
+    Emit-JumpConditional -ConditionCode 0x83 -Label $outputOverflow # count >= cap and available > 0
+    $mainCapReadReady = New-UniqueLabel -Prefix 'dev_output_main_cap_read_ready'
+    Emit-Bytes -Bytes ([byte[]]@(0xB9))
+    Emit-I32 -Value 0x100000 # ECX = hard cap
+    Emit-Bytes -Bytes ([byte[]]@(0x2B, 0x8D))
+    Emit-I32 -Value (Get-FrameDisp -SlotPosition $outputCountSlot) # ECX -= captured bytes
+    Emit-LoadEaxFrame -SlotPosition $availableSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x3B, 0xC1)) # compare available bytes to remaining capacity
+    Emit-JumpConditional -ConditionCode 0x86 -Label $mainCapReadReady # available <= remaining
+    Emit-Bytes -Bytes ([byte[]]@(0x89, 0xC8)) # EAX = ECX (read only remaining capacity)
+    Emit-StoreEaxFrame -SlotPosition $availableSlot
+    Mark-CodeLabel -Label $mainCapReadReady
 
     Emit-LoadRcxFrame -SlotPosition $pipeReadSlot
     Emit-LoadRaxFrame -SlotPosition $outputBufferSlot
@@ -2064,13 +2073,22 @@ function Emit-DevRunTool {
     Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
     Emit-JumpConditional -ConditionCode 0x84 -Label $captureDone
 
+    # Final drain uses the same exact-cap rule after the Job Object is empty.
     Emit-LoadEaxFrame -SlotPosition $outputCountSlot
-    Emit-Bytes -Bytes ([byte[]]@(0x03, 0x85))
-    Emit-I32 -Value (Get-FrameDisp -SlotPosition $availableSlot)
-    Emit-JumpConditional -ConditionCode 0x82 -Label $outputOverflow
     Emit-Bytes -Bytes ([byte[]]@(0x3D))
     Emit-I32 -Value 0x100000
-    Emit-JumpConditional -ConditionCode 0x87 -Label $outputOverflow
+    Emit-JumpConditional -ConditionCode 0x83 -Label $outputOverflow
+    $finalCapReadReady = New-UniqueLabel -Prefix 'dev_output_final_cap_read_ready'
+    Emit-Bytes -Bytes ([byte[]]@(0xB9))
+    Emit-I32 -Value 0x100000 # ECX = hard cap
+    Emit-Bytes -Bytes ([byte[]]@(0x2B, 0x8D))
+    Emit-I32 -Value (Get-FrameDisp -SlotPosition $outputCountSlot) # ECX -= captured bytes
+    Emit-LoadEaxFrame -SlotPosition $availableSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x3B, 0xC1))
+    Emit-JumpConditional -ConditionCode 0x86 -Label $finalCapReadReady
+    Emit-Bytes -Bytes ([byte[]]@(0x89, 0xC8))
+    Emit-StoreEaxFrame -SlotPosition $availableSlot
+    Mark-CodeLabel -Label $finalCapReadReady
 
     Emit-LoadRcxFrame -SlotPosition $pipeReadSlot
     Emit-LoadRaxFrame -SlotPosition $outputBufferSlot
