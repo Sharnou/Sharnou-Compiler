@@ -11,7 +11,7 @@ $fixturePath = Join-Path $PSScriptRoot 'RuntimeABI\RuntimeABICalls.sharnou'
 $buildRoot = Join-Path $repoRoot 'Build\RuntimeABI'
 $outputPath = Join-Path $buildRoot 'RuntimeABICalls.exe'
 $nl = [string][char]10
-$expected = @('204', '120', '54321', '654321', '10', '1', '0', '32', '65', '1', '16', '102', '1', '1', '1') -join $nl
+$expected = @('204', '120', '1496', '816', '54321', '654321', '10', '1', '0', '32', '65', '1', '16', '102', '1', '1', '1') -join $nl
 
 function Test-ByteSequence {
     param([byte[]] $Haystack, [byte[]] $Needle)
@@ -51,8 +51,26 @@ try {
     if (-not [string]::Equals($actual, $expected, [StringComparison]::Ordinal)) {
         throw "Runtime ABI output mismatch. Expected=[$expected] Actual=[$actual]."
     }
-    Write-Host 'PASS: runtime argument-value checks for 4, 5, 6 and 8 integer arguments' -ForegroundColor Green
-    Write-Host 'PASS: nested higher-arity Sharnou function call and argument ordering' -ForegroundColor Green
+    Write-Host 'PASS: runtime argument-value checks for 4, 5, 6, 8 and 16 integer arguments' -ForegroundColor Green
+    Write-Host 'PASS: nested higher-arity Sharnou function call and argument ordering, including all 12 stack-passed arguments' -ForegroundColor Green
+
+    $tooManyCases = @(
+        [pscustomobject]@{ Name = '17 function parameters'; Source = 'fn reject17(a,b,c,d,e,f,g,h,i,j,k,l,m,n,o,p,q) { return a; }`n' },
+        [pscustomobject]@{ Name = '17 call arguments'; Source = 'fn accept16(a,b,c,d,e,f,g,h,i,j,k,l,m,n,o,p) { return a; }`nprint(accept16(1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17));`n' }
+    )
+    foreach ($case in $tooManyCases) {
+        $sourcePath = Join-Path $buildRoot ('Reject-' + ($case.Name -replace '[^A-Za-z0-9]+', '') + '.sharnou')
+        $rejectedOutputPath = [IO.Path]::ChangeExtension($sourcePath, '.exe')
+        [IO.File]::WriteAllText($sourcePath, $case.Source.Replace('`n', [string][char]10), [Text.Encoding]::ASCII)
+        Remove-Item -LiteralPath $rejectedOutputPath -Force -ErrorAction SilentlyContinue
+        $rejected = $false
+        try { & $compilerPath -Source $sourcePath -Output $rejectedOutputPath }
+        catch { $rejected = $true }
+        if (-not $rejected -or (Test-Path -LiteralPath $rejectedOutputPath -PathType Leaf)) {
+            throw "ABI limit did not fail closed for $($case.Name)."
+        }
+    }
+    Write-Host 'PASS: 17 function parameters and 17 call arguments are rejected before PE output' -ForegroundColor Green
     Write-Host 'PASS: runtime sentinels preserved RBX, RBP, RSI, RDI, R12, R13, R14 and R15' -ForegroundColor Green
     Write-Host 'PASS: live RSP alignment checked before, during and after a generated function call' -ForegroundColor Green
     Write-Host 'PASS: RSI/RDI-using string and memory intrinsics preserve their runtime results' -ForegroundColor Green
@@ -79,6 +97,10 @@ try {
 
     $checks = @(
         [pscustomobject]@{ Name = '64-byte aligned outgoing frame for 8-argument call'; Bytes = [byte[]]@(0x48, 0x81, 0xEC, 0x40, 0x00, 0x00, 0x00) },
+        [pscustomobject]@{ Name = '128-byte outgoing frame for 16-argument function call'; Bytes = [byte[]]@(0x48, 0x81, 0xEC, 0x80, 0x00, 0x00, 0x00) },
+        [pscustomobject]@{ Name = '128-byte outgoing frame restoration'; Bytes = [byte[]]@(0x48, 0x81, 0xC4, 0x80, 0x00, 0x00, 0x00) },
+        [pscustomobject]@{ Name = '12th incoming stack argument at RBP+0x88'; Bytes = [byte[]]@(0x8B, 0x85, 0x88, 0x00, 0x00, 0x00) },
+        [pscustomobject]@{ Name = '12th outgoing stack argument at RSP+0x78'; Bytes = [byte[]]@(0x48, 0x89, 0x44, 0x24, 0x78) },
         [pscustomobject]@{ Name = '96-byte outgoing frame for 12-argument Windows API'; Bytes = [byte[]]@(0x48, 0x81, 0xEC, 0x60, 0x00, 0x00, 0x00) },
         [pscustomobject]@{ Name = '96-byte Windows API call-frame restoration'; Bytes = [byte[]]@(0x48, 0x81, 0xC4, 0x60, 0x00, 0x00, 0x00) },
         [pscustomobject]@{ Name = '64-byte outgoing frame restoration'; Bytes = [byte[]]@(0x48, 0x81, 0xC4, 0x40, 0x00, 0x00, 0x00) },
