@@ -1738,36 +1738,38 @@ function Emit-DevBrokerRecoverAclJournal {
     Emit-Win64CallIat -TargetRva ([UInt32]0x30B8) -StackArguments @()
     Emit-StoreZero64Frame -SlotPosition $JournalHandleSlot
     Mark-CodeLabel -Label $skipClose
+    foreach ($slot in @($RootDescriptorSlot, $BuildDescriptorSlot, $BrokerDescriptorSlot)) {
+        Emit-StoreZero64Frame -SlotPosition $slot
+    }
     Emit-LoadRcxFrame -SlotPosition $JournalBufferSlot
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x85, 0xC9))
     $skipFree = New-UniqueLabel -Prefix 'dev_acl_recovery_skip_free'
     Emit-JumpConditional -ConditionCode 0x84 -Label $skipFree
     Emit-Bytes -Bytes ([byte[]]@(0x33, 0xD2, 0x41, 0xB8, 0x00, 0x80, 0x00, 0x00))
     Emit-Win64CallIat -TargetRva ([UInt32]0x31D8) -StackArguments @()
+    Emit-StoreZero64Frame -SlotPosition $JournalBufferSlot
     Mark-CodeLabel -Label $skipFree
     Emit-Jump -Label $FailureLabel
 
     Mark-CodeLabel -Label $done
-    # No active journal: discard only an uncommitted temporary record.
-    $journalFound = New-UniqueLabel -Prefix 'dev_acl_recovery_journal_found'
+    # Pointers into the VirtualAlloc buffer must be cleared before it is freed;
+    # common cleanup must never mistake these interior pointers for LocalAlloc blocks.
+    $noBuffer = New-UniqueLabel -Prefix 'dev_acl_recovery_no_buffer'
     Emit-LoadRaxFrame -SlotPosition $JournalBufferSlot
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x85, 0xC0))
-    Emit-JumpConditional -ConditionCode 0x85 -Label $journalFound
-    Emit-LeaRaxFrame -SlotPosition $TempPathSlot
-    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1))
-    Emit-Win64CallIat -TargetRva ([UInt32]0x3310) -StackArguments @() # safe: no ACL writes precede journal rename
-    Emit-Jump -Label $done
-    Mark-CodeLabel -Label $journalFound
+    Emit-JumpConditional -ConditionCode 0x84 -Label $noBuffer
+    foreach ($slot in @($RootDescriptorSlot, $BuildDescriptorSlot, $BrokerDescriptorSlot)) {
+        Emit-StoreZero64Frame -SlotPosition $slot
+    }
     Emit-LoadRcxFrame -SlotPosition $JournalBufferSlot
-    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x85, 0xC9))
-    $skipFreeSuccess = New-UniqueLabel -Prefix 'dev_acl_recovery_success_skip_free'
-    Emit-JumpConditional -ConditionCode 0x84 -Label $skipFreeSuccess
     Emit-Bytes -Bytes ([byte[]]@(0x33, 0xD2, 0x41, 0xB8, 0x00, 0x80, 0x00, 0x00))
     Emit-Win64CallIat -TargetRva ([UInt32]0x31D8) -StackArguments @()
-    Mark-CodeLabel -Label $skipFreeSuccess
+    Emit-StoreZero64Frame -SlotPosition $JournalBufferSlot
+    Mark-CodeLabel -Label $noBuffer
+    # No active journal means no ACL mutation is pending; remove an abandoned pre-commit temp.
     Emit-LeaRaxFrame -SlotPosition $TempPathSlot
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1))
-    Emit-Win64CallIat -TargetRva ([UInt32]0x3310) -StackArguments @() # discard stale uncommitted temporary journal
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3310) -StackArguments @() # DeleteFileA
 }
 
 function Emit-DevBrokerBuildWorkspacePath {
@@ -1928,6 +1930,20 @@ function Emit-DevRunTool {
     $modulePathLengthSlot = $scratch + 0xB80
     $pathScratchSlot = $scratch + 0xC00
     $outputFileInfoSlot = $scratch + 0xDA8
+    $journalHeaderSlot = $scratch + 0xE10
+    $journalHandleSlot = $scratch + 0xE30
+    $journalWrittenSlot = $scratch + 0xE38
+    $rootDescriptorSlot = $scratch + 0xE40
+    $buildDescriptorSlot = $scratch + 0xE48
+    $brokerDescriptorSlot = $scratch + 0xE50
+    $rootDescriptorLengthSlot = $scratch + 0xE58
+    $buildDescriptorLengthSlot = $scratch + 0xE5C
+    $brokerDescriptorLengthSlot = $scratch + 0xE60
+    $journalBufferSlot = $scratch + 0xE68
+    $journalReadCountSlot = $scratch + 0xE70
+    $transactionActiveSlot = $scratch + 0xE78
+    $journalPathSlot = $pathScratchSlot
+    $journalTempPathSlot = $outputPathSlot
 
     $jobHandleSlot = Get-TempSlotPosition -Depth ($BaseDepth + 2)
     $saveRdiSlot = Get-TempSlotPosition -Depth ($BaseDepth + 3)
@@ -1941,8 +1957,15 @@ function Emit-DevRunTool {
         $jobHandleSlot, $hashFileHandleSlot, $attributeListSlot, $pipeReadSlot,
         $pipeWriteSlot, $nulHandleSlot, $outputBufferSlot, $outputFileHandleSlot,
         $appContainerSidSlot, $mutexHandleSlot, $sourceTokenSlot,
-        $restrictedTokenSlot, $childTokenSlot
+        $restrictedTokenSlot, $childTokenSlot, $journalHandleSlot,
+        $rootDescriptorSlot, $buildDescriptorSlot, $brokerDescriptorSlot,
+        $journalBufferSlot
     )) { Emit-StoreZero64Frame -SlotPosition $slot }
+    foreach ($slot in @($journalWrittenSlot, $rootDescriptorLengthSlot, $buildDescriptorLengthSlot,
+        $brokerDescriptorLengthSlot, $journalReadCountSlot, $transactionActiveSlot)) {
+        Emit-StoreBits32Frame -SlotPosition $slot -Value 0
+    }
+    Emit-StoreZero64Frame -SlotPosition $journalHeaderSlot
     for ($i = 0; $i -lt 3; $i++) { Emit-StoreZero64Frame -SlotPosition ($processSlot + ($i * 8)) }
     foreach ($slot in @(
         $mutexAcquiredSlot, $attributeListReadySlot, $childActiveSlot,
@@ -1982,6 +2005,9 @@ function Emit-DevRunTool {
     $mutexFail = New-UniqueLabel -Prefix 'dev_tool_mutex_fail'
     $appContainerFail = New-UniqueLabel -Prefix 'dev_tool_appcontainer_fail'
     $aclFail = New-UniqueLabel -Prefix 'dev_tool_acl_fail'
+    $aclRecoveryFail = New-UniqueLabel -Prefix 'dev_tool_acl_recovery_fail'
+    $journalFail = New-UniqueLabel -Prefix 'dev_tool_acl_journal_fail'
+    $aclRollbackFail = New-UniqueLabel -Prefix 'dev_tool_acl_rollback_fail'
     $tokenFail = New-UniqueLabel -Prefix 'dev_tool_token_fail'
     $pipeFail = New-UniqueLabel -Prefix 'dev_tool_pipe_fail'
     $attributeFail = New-UniqueLabel -Prefix 'dev_tool_attribute_fail'
@@ -2019,6 +2045,12 @@ function Emit-DevRunTool {
     $captureSuffix = '\Build\DevAgentBroker\captured-output.bin'
     $captureSuffixItem = Register-DataConstant -Value $captureSuffix
     $captureSuffixLength = [System.Text.Encoding]::ASCII.GetByteCount($captureSuffix)
+    $journalSuffix = '\.sharnou-devagent-acl.journal'
+    $journalSuffixItem = Register-DataConstant -Value $journalSuffix
+    $journalSuffixLength = [System.Text.Encoding]::ASCII.GetByteCount($journalSuffix)
+    $journalTempSuffix = '\.sharnou-devagent-acl.journal.tmp'
+    $journalTempSuffixItem = Register-DataConstant -Value $journalTempSuffix
+    $journalTempSuffixLength = [System.Text.Encoding]::ASCII.GetByteCount($journalTempSuffix)
 
     $manifestPath = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\Tests\DevAgentBroker\tool-manifest.json'))
     $expectedManifestSha256 = '6E2C69A4D506B36125B77D563CF955580688C65A0634CEA44AF064F8D31EEBD7'
@@ -2233,7 +2265,12 @@ function Emit-DevRunTool {
     Emit-I32 -Value $commandSuffixLength
     Emit-Bytes -Bytes ([byte[]]@(0xFC, 0xF3, 0xA4, 0xC6, 0x07, 0x00)) # copy suffix + NUL
 
-    # Serialize AppContainer ACL updates and output-file creation across broker instances.
+    # Journal files live in the checked workspace root. The temporary file is
+    # atomically renamed only after all three original descriptors are flushed.
+    Emit-DevBrokerBuildWorkspacePath -RootSlot $workspaceRootSlot -RootLengthSlot $rootLengthSlot -SuffixItem $journalSuffixItem -SuffixLength $journalSuffixLength -DestinationSlot $journalPathSlot
+    Emit-DevBrokerBuildWorkspacePath -RootSlot $workspaceRootSlot -RootLengthSlot $rootLengthSlot -SuffixItem $journalTempSuffixItem -SuffixLength $journalTempSuffixLength -DestinationSlot $journalTempPathSlot
+
+    # Serialize each ACL transaction across broker instances and recover abandoned work first.
     $mutexNameItem = Register-DataConstant -Value 'Local\SharnouDevAgentBroker.Sandbox.v3'
     Emit-Bytes -Bytes ([byte[]]@(0x33, 0xC9, 0x33, 0xD2))
     Emit-DataAddress -DataItem $mutexNameItem
@@ -2262,24 +2299,33 @@ function Emit-DevRunTool {
     # or launch another child until a durable ACL recovery transaction exists.
     Mark-CodeLabel -Label $mutexAbandoned
     Emit-StoreBits32Frame -SlotPosition $mutexAcquiredSlot -Value 1
-    Emit-Bytes -Bytes ([byte[]]@(0xB8, 0x8A, 0xFF, 0xFF, 0xFF)) # -118: ACL recovery required
-    Emit-StoreEaxFrame -SlotPosition $resultSlot
-    Emit-Jump -Label $cleanup # common cleanup releases the mutex; no SID/ACL/child work
+    Emit-Jump -Label $mutexReady # WAIT_ABANDONED grants ownership; recover before any new child
 
     Mark-CodeLabel -Label $mutexReady
+    Emit-DevBrokerRecoverAclJournal -JournalPathSlot $journalPathSlot -TempPathSlot $journalTempPathSlot -WorkspaceRootSlot $workspaceRootSlot -BuildPathSlot $buildPathSlot -BrokerDirectorySlot $brokerDirectorySlot -JournalHandleSlot $journalHandleSlot -JournalReadCountSlot $journalReadCountSlot -HeaderSlot $journalHeaderSlot -JournalBufferSlot $journalBufferSlot -RootLengthSlot $rootDescriptorLengthSlot -BuildLengthSlot $buildDescriptorLengthSlot -BrokerLengthSlot $brokerDescriptorLengthSlot -RootDescriptorSlot $rootDescriptorSlot -BuildDescriptorSlot $buildDescriptorSlot -BrokerDescriptorSlot $brokerDescriptorSlot -FailureLabel $aclRecoveryFail
 
-    # A stable no-capability AppContainer SID receives persistent, idempotent ACLs:
-    # workspace root = read/execute; Build and its broker subdirectory = read/write/execute.
+    # Retire grants written by the pre-journal broker. REVOKE_ACCESS only narrows
+    # access; no permission expansion is allowed until a durable snapshot commits.
     Emit-DevBrokerEnsureAppContainerSid -SidSlot $appContainerSidSlot -FailureLabel $appContainerFail
+    Emit-DevBrokerUpdateAcl -PathSlot $workspaceRootSlot -SidSlot $appContainerSidSlot -AccessMask ([UInt32]0) -AccessMode 4 -FailureLabel $aclFail
+    Emit-DevBrokerUpdateAcl -PathSlot $buildPathSlot -SidSlot $appContainerSidSlot -AccessMask ([UInt32]0) -AccessMode 4 -SetLowIntegrityLabel $false -FailureLabel $aclFail
+    Emit-DevBrokerUpdateAcl -PathSlot $brokerDirectorySlot -SidSlot $appContainerSidSlot -AccessMask ([UInt32]0) -AccessMode 4 -SetLowIntegrityLabel $false -FailureLabel $aclFail
+
+    Emit-DevBrokerWriteAclJournal -JournalPathSlot $journalPathSlot -TempPathSlot $journalTempPathSlot -WorkspaceRootSlot $workspaceRootSlot -BuildPathSlot $buildPathSlot -BrokerDirectorySlot $brokerDirectorySlot -JournalHandleSlot $journalHandleSlot -JournalWrittenSlot $journalWrittenSlot -HeaderSlot $journalHeaderSlot -RootDescriptorSlot $rootDescriptorSlot -BuildDescriptorSlot $buildDescriptorSlot -BrokerDescriptorSlot $brokerDescriptorSlot -RootLengthSlot $rootDescriptorLengthSlot -BuildLengthSlot $buildDescriptorLengthSlot -BrokerLengthSlot $brokerDescriptorLengthSlot -TransactionActiveSlot $transactionActiveSlot -FailureLabel $journalFail
+
+    # Only now may the execution SID gain read access to source and write access to staging.
     Emit-DevBrokerUpdateAcl -PathSlot $workspaceRootSlot -SidSlot $appContainerSidSlot -AccessMask ([UInt32]0x001200A9) -AccessMode 2 -FailureLabel $aclFail
     Emit-DevBrokerUpdateAcl -PathSlot $buildPathSlot -SidSlot $appContainerSidSlot -AccessMask ([UInt32]0x001201FF) -AccessMode 2 -SetLowIntegrityLabel $true -FailureLabel $aclFail
     Emit-DevBrokerUpdateAcl -PathSlot $brokerDirectorySlot -SidSlot $appContainerSidSlot -AccessMask ([UInt32]0x001201FF) -AccessMode 2 -SetLowIntegrityLabel $true -FailureLabel $aclFail
+
+    # Rebuild this path because outputPathSlot held the temporary ACL journal name.
+    Emit-DevBrokerBuildWorkspacePath -RootSlot $workspaceRootSlot -RootLengthSlot $rootLengthSlot -SuffixItem $captureSuffixItem -SuffixLength $captureSuffixLength -DestinationSlot $outputPathSlot
 
     # Create a new exclusive capture file before launch. CREATE_NEW cannot reopen an old
     # reparse point or hard link; the held non-inheritable handle is reused for persistence.
     Emit-LeaRaxFrame -SlotPosition $outputPathSlot
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1))
-    Emit-Win64CallIat -TargetRva ([UInt32]0x32F0) -StackArguments @() # DeleteFileA; stale files are removed only before CREATE_NEW
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3310) -StackArguments @() # DeleteFileA; stale files are removed only before CREATE_NEW
     Emit-LeaRaxFrame -SlotPosition $outputPathSlot
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1, 0xBA, 0x80, 0x00, 0x00, 0x40, 0x45, 0x33, 0xC0, 0x45, 0x33, 0xC9))
     Emit-Win64CallIat -TargetRva ([UInt32]0x30A0) -StackArguments @(
@@ -2810,6 +2856,16 @@ function Emit-DevRunTool {
     Emit-StoreEaxFrame -SlotPosition $resultSlot
     Emit-Jump -Label $cleanup
 
+    Mark-CodeLabel -Label $aclRecoveryFail
+    Emit-Bytes -Bytes ([byte[]]@(0xB8, 0x89, 0xFF, 0xFF, 0xFF)) # -119: journal invalid or ACL recovery incomplete
+    Emit-StoreEaxFrame -SlotPosition $resultSlot
+    Emit-Jump -Label $cleanup
+
+    Mark-CodeLabel -Label $journalFail
+    Emit-Bytes -Bytes ([byte[]]@(0xB8, 0x88, 0xFF, 0xFF, 0xFF)) # -120: durable ACL journal could not be committed
+    Emit-StoreEaxFrame -SlotPosition $resultSlot
+    Emit-Jump -Label $cleanup
+
     Mark-CodeLabel -Label $appContainerFail
     Emit-Bytes -Bytes ([byte[]]@(0xB8, 0x90, 0xFF, 0xFF, 0xFF)) # -112: AppContainer profile/SID setup failed
     Emit-StoreEaxFrame -SlotPosition $resultSlot
@@ -2950,6 +3006,46 @@ function Emit-DevRunTool {
         Emit-Bytes -Bytes ([byte[]]@(0x33, 0xD2, 0x41, 0xB8, 0x00, 0x80, 0x00, 0x00))
         Emit-Win64CallIat -TargetRva ([UInt32]0x31D8) -StackArguments @() # VirtualFree(MEM_RELEASE)
         Mark-CodeLabel -Label $skipFreeMemory
+    }
+
+    # Roll back only after the Job Object is known empty. If the wait failed,
+    # retain the committed journal; closing the job handle requests kill-on-close,
+    # and the next invocation performs authoritative recovery before any child launch.
+    $skipAclRollback = New-UniqueLabel -Prefix 'dev_tool_skip_acl_rollback'
+    Emit-LoadEaxFrame -SlotPosition $childActiveSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
+    Emit-JumpConditional -ConditionCode 0x85 -Label $skipAclRollback
+    Emit-LoadEaxFrame -SlotPosition $transactionActiveSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
+    Emit-JumpConditional -ConditionCode 0x84 -Label $skipAclRollback
+
+    Emit-DevBrokerRestoreSecurityDescriptor -PathSlot $workspaceRootSlot -DescriptorSlot $rootDescriptorSlot -FailureLabel $aclRollbackFail
+    Emit-DevBrokerRestoreSecurityDescriptor -PathSlot $buildPathSlot -DescriptorSlot $buildDescriptorSlot -FailureLabel $aclRollbackFail
+    Emit-DevBrokerRestoreSecurityDescriptor -PathSlot $brokerDirectorySlot -DescriptorSlot $brokerDescriptorSlot -FailureLabel $aclRollbackFail
+
+    Emit-LeaRaxFrame -SlotPosition $journalPathSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1))
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3310) -StackArguments @() # delete active journal only after all three descriptors are restored
+    Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
+    Emit-JumpConditional -ConditionCode 0x84 -Label $aclRollbackFail
+    Emit-StoreBits32Frame -SlotPosition $transactionActiveSlot -Value 0
+    Emit-Jump -Label $skipAclRollback
+
+    Mark-CodeLabel -Label $aclRollbackFail
+    Emit-Bytes -Bytes ([byte[]]@(0xB8, 0x80, 0xFF, 0xFF, 0xFF)) # -128: ACL rollback failed; durable journal retained
+    Emit-StoreEaxFrame -SlotPosition $resultSlot
+    Mark-CodeLabel -Label $skipAclRollback
+
+    # GetSecurityInfo descriptors are LocalFree allocations; recovery-buffer
+    # interior pointers were cleared by RecoverAclJournal and must not be freed here.
+    foreach ($slot in @($rootDescriptorSlot, $buildDescriptorSlot, $brokerDescriptorSlot)) {
+        $skipFreeDescriptor = New-UniqueLabel -Prefix 'dev_tool_skip_free_acl_descriptor'
+        Emit-LoadRcxFrame -SlotPosition $slot
+        Emit-Bytes -Bytes ([byte[]]@(0x48, 0x85, 0xC9))
+        Emit-JumpConditional -ConditionCode 0x84 -Label $skipFreeDescriptor
+        Emit-Win64CallIat -TargetRva ([UInt32]0x3260) -StackArguments @() # LocalFree
+        Emit-StoreZero64Frame -SlotPosition $slot
+        Mark-CodeLabel -Label $skipFreeDescriptor
     }
 
     Emit-LoadRcxFrame -SlotPosition $appContainerSidSlot
