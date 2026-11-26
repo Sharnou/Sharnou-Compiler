@@ -228,6 +228,27 @@ try {
     }
     Write-Host 'PASS: Low IL is applied only to writable Build staging; the source workspace keeps its existing integrity label' -ForegroundColor Green
     Write-Host 'PASS: capture reads the remaining 1 MiB capacity before classifying subsequent bytes as overflow' -ForegroundColor Green
+    # An abandoned ACL-serialization mutex means the previous broker may have
+    # died with package-SID grants still present. Require fail-closed return before
+    # AppContainer SID creation or any ACL update.
+    $mutexBlockStart = $brokerEmitterSource.IndexOf('# Serialize AppContainer ACL updates')
+    $mutexBlockEnd = $brokerEmitterSource.IndexOf('# A stable no-capability AppContainer SID', $mutexBlockStart)
+    if ($mutexBlockStart -lt 0 -or $mutexBlockEnd -le $mutexBlockStart) {
+        throw 'Broker mutex acquisition block could not be isolated.'
+    }
+    $mutexBlock = $brokerEmitterSource.Substring($mutexBlockStart, $mutexBlockEnd - $mutexBlockStart)
+    $abandonedBranch = $mutexBlock.IndexOf("New-UniqueLabel -Prefix 'dev_tool_mutex_abandoned'", [StringComparison]::Ordinal)
+    $abandonedReturn = $mutexBlock.IndexOf('0x8A, 0xFF, 0xFF, 0xFF', [StringComparison]::Ordinal)
+    $abandonedCleanup = $mutexBlock.IndexOf('Emit-Jump -Label $cleanup', $abandonedReturn)
+    # SID creation is intentionally after the mutex-block end marker: the marker
+    # precedes the normal-acquisition path. Search the full emitter from that point.
+    $sidCreation = $brokerEmitterSource.IndexOf('Emit-DevBrokerEnsureAppContainerSid', $mutexBlockEnd, [StringComparison]::Ordinal)
+    if ($abandonedBranch -lt 0 -or $abandonedReturn -le $abandonedBranch -or
+        $abandonedCleanup -le $abandonedReturn -or $sidCreation -le $mutexBlockEnd -or
+        -not $mutexBlock.Substring($abandonedReturn, $abandonedCleanup - $abandonedReturn).Contains('Emit-StoreEaxFrame -SlotPosition $resultSlot')) {
+        throw 'WAIT_ABANDONED must return -118 and branch to cleanup before AppContainer SID/ACL work.'
+    }
+    Write-Host 'PASS: abandoned ACL mutex fails closed with -118 before any new sandbox child or ACL grant' -ForegroundColor Green
     Write-Host 'PASS: broker source declares restricted-token, AppContainer, handle-based ACL and bounded-output runtime gates' -ForegroundColor Green
 
     New-Item -ItemType Directory -Path $buildRoot -Force | Out-Null
