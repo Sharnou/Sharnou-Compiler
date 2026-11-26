@@ -1051,7 +1051,7 @@ function Emit-DevBrokerEnsureAppContainerSid {
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC2)) # RDX = display name
     Emit-DataAddress -DataItem $descriptionItem
     Emit-Bytes -Bytes ([byte[]]@(0x49, 0x89, 0xC0, 0x45, 0x33, 0xC9)) # R8 = description; R9 = no capabilities
-    Emit-Win64CallIat -TargetRva ([UInt32]0x3258) -StackArguments @(
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3260) -StackArguments @(
         @{ Kind = 'Immediate'; Value = 0 }, # zero capabilities
         @{ Kind = 'FrameAddress'; SlotPosition = $SidSlot }
     ) # CreateAppContainerProfile
@@ -1066,7 +1066,7 @@ function Emit-DevBrokerEnsureAppContainerSid {
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1))
     Emit-LeaRaxFrame -SlotPosition $SidSlot
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC2))
-    Emit-Win64CallIat -TargetRva ([UInt32]0x3260) -StackArguments @() # DeriveAppContainerSidFromAppContainerName
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3268) -StackArguments @() # DeriveAppContainerSidFromAppContainerName
     Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
     Emit-JumpConditional -ConditionCode 0x85 -Label $FailureLabel
     Mark-CodeLabel -Label $done
@@ -1096,7 +1096,7 @@ function Emit-DevBrokerUpdateAcl {
     # Read the current DACL; preserve unrelated owner/group/ACE entries.
     Emit-LeaRaxFrame -SlotPosition $PathSlot
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1, 0xBA, 0x01, 0x00, 0x00, 0x00, 0x41, 0xB8, 0x04, 0x00, 0x00, 0x00, 0x45, 0x33, 0xC9))
-    Emit-Win64CallIat -TargetRva ([UInt32]0x3270) -StackArguments @(
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3278) -StackArguments @(
         @{ Kind = 'Immediate'; Value = 0 }, # ppsidGroup
         @{ Kind = 'FrameAddress'; SlotPosition = $oldAclSlot },
         @{ Kind = 'Immediate'; Value = 0 }, # ppSacl
@@ -1123,14 +1123,14 @@ function Emit-DevBrokerUpdateAcl {
     Emit-LoadRaxFrame -SlotPosition $oldAclSlot
     Emit-Bytes -Bytes ([byte[]]@(0x49, 0x89, 0xC0))
     Emit-LeaR9Frame -SlotPosition $newAclSlot
-    Emit-Win64CallIat -TargetRva ([UInt32]0x3278) -StackArguments @() # SetEntriesInAclA
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3280) -StackArguments @() # SetEntriesInAclA
     Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
     Emit-JumpConditional -ConditionCode 0x85 -Label $failed
 
     # Replace only the DACL. A NULL DACL is never supplied.
     Emit-LeaRaxFrame -SlotPosition $PathSlot
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1, 0xBA, 0x01, 0x00, 0x00, 0x00, 0x41, 0xB8, 0x04, 0x00, 0x00, 0x00, 0x45, 0x33, 0xC9))
-    Emit-Win64CallIat -TargetRva ([UInt32]0x3280) -StackArguments @(
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3288) -StackArguments @(
         @{ Kind = 'Immediate'; Value = 0 }, # pSidGroup
         @{ Kind = 'FrameQword'; SlotPosition = $newAclSlot },
         @{ Kind = 'Immediate'; Value = 0 }  # pSacl

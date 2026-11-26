@@ -93,6 +93,39 @@ try {
         throw 'The bounded native script-hash input buffer is missing.'
     }
 
+    # Security primitives are staged as native compiler emitters, but this test
+    # does not treat their presence as runtime acceptance. Verify their IATs map
+    # to the actual import table offsets before the next integration phase.
+    foreach ($required in @(
+        'function Emit-DevBrokerEnsureAppContainerSid',
+        'function Emit-DevBrokerUpdateAcl',
+        'CreateAppContainerProfile',
+        'DeriveAppContainerSidFromAppContainerName',
+        'GetNamedSecurityInfoA',
+        'SetEntriesInAclA',
+        'SetNamedSecurityInfoA',
+        'TRUSTEE_IS_SID',
+        'CreateRestrictedToken',
+        'PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES'
+    )) {
+        if (-not $compilerSource.Contains($required)) {
+            throw "Native sandbox security primitive is missing: $required"
+        }
+    }
+    $expectedIatCalls = @(
+        'TargetRva ([UInt32]0x3260)', # CreateAppContainerProfile: USERENV IAT 0x260
+        'TargetRva ([UInt32]0x3268)', # DeriveAppContainerSidFromAppContainerName: USERENV IAT 0x268
+        'TargetRva ([UInt32]0x3278)', # GetNamedSecurityInfoA: ADVAPI32 IAT 0x278
+        'TargetRva ([UInt32]0x3280)', # SetEntriesInAclA: ADVAPI32 IAT 0x280
+        'TargetRva ([UInt32]0x3288)'  # SetNamedSecurityInfoA: ADVAPI32 IAT 0x288
+    )
+    foreach ($expectedCall in $expectedIatCalls) {
+        if (-not $compilerSource.Contains($expectedCall)) {
+            throw "Sandbox API call does not target its declared IAT slot: $expectedCall"
+        }
+    }
+    Write-Host 'PASS: AppContainer/ACL emitter primitives and import-table target mapping are present (static assertion only)' -ForegroundColor Green
+
     New-Item -ItemType Directory -Path $buildRoot -Force | Out-Null
     Remove-Item -LiteralPath $childPidPath -Force -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $outputPath -Force -ErrorAction SilentlyContinue
