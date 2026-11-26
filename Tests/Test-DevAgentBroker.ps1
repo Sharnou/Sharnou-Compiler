@@ -271,6 +271,17 @@ try {
     foreach ($requiredJournalApi in @('MoveFileExA', 'FlushFileBuffers', 'Emit-DevBrokerRestoreSecurityDescriptor', 'IsValidSecurityDescriptor', '0x80200002')) {
         if (-not $compilerSource.Contains($requiredJournalApi)) { throw "Crash-safe ACL journal component missing: $requiredJournalApi" }
     }
+    $restoreHelperStart = $compilerSource.IndexOf('function Emit-DevBrokerRestoreSecurityDescriptor', [StringComparison]::Ordinal)
+    $restoreHelperEnd = $compilerSource.IndexOf('function Emit-DevBrokerWriteAclJournal', $restoreHelperStart, [StringComparison]::Ordinal)
+    if ($restoreHelperStart -lt 0 -or $restoreHelperEnd -le $restoreHelperStart) {
+        throw 'Security descriptor restore helper could not be isolated.'
+    }
+    $restoreHelper = $compilerSource.Substring($restoreHelperStart, $restoreHelperEnd - $restoreHelperStart)
+    $restoreSuccessCheck = $restoreHelper.IndexOf('Emit-StoreBits32Frame -SlotPosition $daclPresentSlot -Value 1', [StringComparison]::Ordinal)
+    $restoreFailureCheck = $restoreHelper.IndexOf('Emit-StoreBits32Frame -SlotPosition $daclPresentSlot -Value 0', $restoreSuccessCheck, [StringComparison]::Ordinal)
+    if ($restoreSuccessCheck -lt 0 -or $restoreFailureCheck -le $restoreSuccessCheck) {
+        throw 'ACL restore helper must distinguish successful SetSecurityInfo from its fail-closed path.'
+    }
     Write-Host 'PASS: WAIT_ABANDONED acquires the mutex and recovers the durable ACL journal before any new child' -ForegroundColor Green
     Write-Host 'PASS: all ACL expansions occur after a flushed, write-through journal commit' -ForegroundColor Green
     Write-Host 'PASS: broker source declares restricted-token, AppContainer, handle-based ACL and bounded-output runtime gates' -ForegroundColor Green
