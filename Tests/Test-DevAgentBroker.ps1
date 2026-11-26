@@ -74,8 +74,8 @@ try {
     if (-not $compilerSource.Contains('KILL_ON_JOB_CLOSE') -or -not $compilerSource.Contains('ACTIVE_PROCESS') -or -not $compilerSource.Contains('0x2308')) {
         throw 'Job Object kill-on-close, active-process and memory-limit flags are missing.'
     }
-    if (-not $compilerSource.Contains('GetFileAttributesA') -or -not $compilerSource.Contains('0x400')) {
-        throw 'Broker workspace path and reparse-point checks are missing.'
+    if (-not $compilerSource.Contains('GetFileAttributesA') -or -not $compilerSource.Contains('GetFileInformationByHandle') -or -not $compilerSource.Contains('0x400') -or -not $compilerSource.Contains('0x00200080')) {
+        throw 'Broker path and opened-handle reparse-point checks are missing.'
     }
     if (-not $compilerSource.Contains('BCryptOpenAlgorithmProvider') -or -not $compilerSource.Contains('BCryptHash') -or -not $compilerSource.Contains('BCryptCloseAlgorithmProvider')) {
         throw 'Native Windows CNG SHA-256 verification is missing.'
@@ -209,7 +209,7 @@ try {
     Write-Host 'PASS: native Windows CNG SHA-256 verifies every selected tool before CreateProcess' -ForegroundColor Green
     Write-Host 'PASS: native script hash mismatch rejected before child creation' -ForegroundColor Green
     Write-Host 'PASS: compiler pins manifest SHA-256 and all six tool-script hashes' -ForegroundColor Green
-    Write-Host 'PASS: workspace directories and fixed tool paths reject missing/reparse-point entries' -ForegroundColor Green
+    Write-Host 'PASS: workspace paths and opened script handles reject reparse points' -ForegroundColor Green
     Write-Host 'PASS: runtime CNG SHA-256 mismatch rejected before modified tool execution' -ForegroundColor Green
     Write-Host 'PASS: unknown tool IDs rejected before process creation' -ForegroundColor Green
     Write-Host 'PASS: timeout values below policy minimum rejected' -ForegroundColor Green
