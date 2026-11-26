@@ -15,10 +15,14 @@ function Get-BrokerNumericLines {
     return $numeric.ToArray()
 }
 
-function Get-BrokerDaclSddl {
+function Get-BrokerSecuritySddl {
     param([Parameter(Mandatory = $true)][string] $Path)
     $security = Get-Acl -LiteralPath $Path
-    return $security.GetSecurityDescriptorSddlForm([Security.AccessControl.AccessControlSections]::Access)
+    # Include both the DACL and SACL so mandatory integrity labels are compared,
+    # not merely the discretionary access entries.
+    $sections = [Security.AccessControl.AccessControlSections]::Access -bor
+        [Security.AccessControl.AccessControlSections]::Audit
+    return $security.GetSecurityDescriptorSddlForm($sections)
 }
 
 $repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
@@ -311,8 +315,8 @@ try {
     Write-Host 'PASS: broker source declares restricted-token, AppContainer, handle-based ACL and bounded-output runtime gates' -ForegroundColor Green
 
     New-Item -ItemType Directory -Path $buildRoot -Force | Out-Null
-    Remove-Item -LiteralPath $journalPath -Force -ErrorAction SilentlyContinue
-    Remove-Item -LiteralPath $journalTempPath -Force -ErrorAction SilentlyContinue
+    # Never delete a possibly committed recovery journal in test setup. The
+    # broker must recover it under the serialization mutex before any new run.
     Remove-Item -LiteralPath $crashChildPidPath -Force -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $crashReadyPath -Force -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $childPidPath -Force -ErrorAction SilentlyContinue
@@ -450,14 +454,15 @@ try {
         Remove-Item -LiteralPath $foreignWorkingDirectory -Recurse -Force -ErrorAction SilentlyContinue
     }
 
-    # Establish the clean post-invocation DACL baseline before inducing a real
-    # parent-process crash while an AppContainer child is running.
+    # Establish the clean post-invocation security-descriptor baseline before
+    # inducing a real parent-process crash while an AppContainer child is running.
     if ((Test-Path -LiteralPath $journalPath) -or (Test-Path -LiteralPath $journalTempPath)) {
         throw 'A successful broker invocation left an ACL journal or temporary file behind.'
     }
     $aclPaths = @($repoRoot, (Join-Path $repoRoot 'Build'), $buildRoot)
     $aclBaseline = @{}
-    foreach ($aclPath in $aclPaths) { $aclBaseline[$aclPath] = Get-BrokerDaclSddl -Path $aclPath }
+    foreach ($aclPath in $aclPaths) { $aclBaseline[$aclPath] = Get-BrokerSecuritySddl -Path $aclPath }
+    $aclDuringCrash = @{}
 
     $originalBrokerImage = [IO.File]::ReadAllBytes($outputPath)
     $crashStdoutPath = Join-Path $buildRoot 'acl-crash-parent.stdout'
@@ -484,10 +489,11 @@ try {
         }
         $crashChildPid = [int](Get-Content -LiteralPath $crashChildPidPath -Raw)
         foreach ($aclPath in $aclPaths) {
-            $duringCrashSddl = Get-BrokerDaclSddl -Path $aclPath
+            $duringCrashSddl = Get-BrokerSecuritySddl -Path $aclPath
             if ([string]::Equals($duringCrashSddl, $aclBaseline[$aclPath], [StringComparison]::Ordinal)) {
-                throw "Expected transient execution ACE was not present on $aclPath during the child run."
+                throw "Expected transient execution DACL/mandatory-label change was not present on $aclPath during the child run."
             }
+            $aclDuringCrash[$aclPath] = $duringCrashSddl
         }
 
         # Abruptly kill the native broker parent. Closing its Job Object handle
@@ -519,6 +525,64 @@ try {
         [IO.File]::WriteAllBytes($outputPath, $originalBrokerImage)
     }
 
+    # Corrupt recovery records must be rejected before any ACL is changed or
+    # any child process is started. Restore the original committed journal bytes
+    # after each probe so the final replay can prove successful recovery.
+    $journalOriginalBytes = [IO.File]::ReadAllBytes($journalPath)
+    $invalidJournalExpected = @('-100', '-101', '-119', '-119', '-119', '-119') -join $nl
+    foreach ($journalFault in @('bad-signature', 'truncated', 'trailing-data')) {
+        $faultBytes = $null
+        switch ($journalFault) {
+            'bad-signature' {
+                $faultBytes = [byte[]]::new($journalOriginalBytes.Length)
+                [Array]::Copy($journalOriginalBytes, $faultBytes, $journalOriginalBytes.Length)
+                $faultBytes[0] = [byte]0
+            }
+            'truncated' {
+                if ($journalOriginalBytes.Length -lt 2) { throw 'Committed ACL journal is unexpectedly short.' }
+                $faultBytes = [byte[]]::new($journalOriginalBytes.Length - 1)
+                [Array]::Copy($journalOriginalBytes, $faultBytes, $faultBytes.Length)
+            }
+            'trailing-data' {
+                $faultBytes = [byte[]]::new($journalOriginalBytes.Length + 1)
+                [Array]::Copy($journalOriginalBytes, $faultBytes, $journalOriginalBytes.Length)
+                $faultBytes[$faultBytes.Length - 1] = [byte]0xA5
+            }
+            default { throw "Unknown journal adversarial case: $journalFault" }
+        }
+
+        try {
+            [IO.File]::WriteAllBytes($journalPath, $faultBytes)
+            Remove-Item -LiteralPath $childPidPath -Force -ErrorAction SilentlyContinue
+            Remove-Item -LiteralPath $crashChildPidPath -Force -ErrorAction SilentlyContinue
+            $invalidJournalLines = @(& $outputPath 2>&1)
+            $invalidJournalExitCode = $LASTEXITCODE
+            $invalidJournalNumeric = @(Get-BrokerNumericLines -Lines $invalidJournalLines)
+            $invalidJournalActual = ($invalidJournalNumeric -join $nl).TrimEnd([char[]]@([char]13, [char]10))
+            if ($invalidJournalExitCode -ne 0 -or
+                -not [string]::Equals($invalidJournalActual, $invalidJournalExpected, [StringComparison]::Ordinal)) {
+                throw "Malformed ACL journal '$journalFault' was not rejected fail-closed. Expected=[$invalidJournalExpected] Actual=[$invalidJournalActual] ExitCode=$invalidJournalExitCode."
+            }
+            if (-not (Test-Path -LiteralPath $journalPath -PathType Leaf)) {
+                throw "Malformed ACL journal '$journalFault' was deleted instead of retained for operator recovery."
+            }
+            if ((Test-Path -LiteralPath $childPidPath -PathType Leaf) -or
+                (Test-Path -LiteralPath $crashChildPidPath -PathType Leaf)) {
+                throw "Malformed ACL journal '$journalFault' permitted a child process to start."
+            }
+            foreach ($aclPath in $aclPaths) {
+                $stillQuarantinedSddl = Get-BrokerSecuritySddl -Path $aclPath
+                if (-not [string]::Equals($stillQuarantinedSddl, $aclDuringCrash[$aclPath], [StringComparison]::Ordinal)) {
+                    throw "Malformed ACL journal '$journalFault' caused a partial ACL rollback on $aclPath."
+                }
+            }
+            Write-Host ("PASS: malformed ACL journal rejected without child launch or partial rollback ({0})" -f $journalFault) -ForegroundColor Green
+        }
+        finally {
+            [IO.File]::WriteAllBytes($journalPath, $journalOriginalBytes)
+        }
+    }
+
     $recoveryLines = @(& $outputPath 2>&1)
     $recoveryExitCode = $LASTEXITCODE
     $recoveryNumericLines = @(Get-BrokerNumericLines -Lines $recoveryLines)
@@ -527,16 +591,17 @@ try {
         throw "Post-crash ACL recovery replay failed. Expected=[$expected] Actual=[$recoveryActual] ExitCode=$recoveryExitCode."
     }
     foreach ($aclPath in $aclPaths) {
-        $restoredSddl = Get-BrokerDaclSddl -Path $aclPath
+        $restoredSddl = Get-BrokerSecuritySddl -Path $aclPath
         if (-not [string]::Equals($restoredSddl, $aclBaseline[$aclPath], [StringComparison]::Ordinal)) {
-            throw "ACL DACL rollback/recovery did not reproduce its exact pre-run descriptor on $aclPath."
+            throw "ACL rollback/recovery did not reproduce the exact pre-run DACL and mandatory-label descriptor on $aclPath."
         }
     }
     if ((Test-Path -LiteralPath $journalPath) -or (Test-Path -LiteralPath $journalTempPath)) {
         throw 'Successful crash recovery left a committed or temporary ACL journal behind.'
     }
-    Write-Host 'PASS: normal execution restored exact DACL SDDL on workspace root, Build and broker directories' -ForegroundColor Green
+    Write-Host 'PASS: normal execution restored exact DACL and mandatory-label SDDL on workspace root, Build and broker directories' -ForegroundColor Green
     Write-Host 'PASS: forced parent termination preserved its journal and Job Object killed the AppContainer child' -ForegroundColor Green
+    Write-Host 'PASS: malformed journal signatures, truncation and trailing bytes failed closed without partial rollback' -ForegroundColor Green
     Write-Host 'PASS: next invocation recovered the abandoned ACL transaction and removed the journal' -ForegroundColor Green
 
     $brokerDirectory = Join-Path $repoRoot 'Tests\DevAgentBroker'
