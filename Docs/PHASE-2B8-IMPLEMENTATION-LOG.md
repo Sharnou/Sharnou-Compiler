@@ -208,3 +208,34 @@ Current completed test increments:
 - Existing production broker sandbox DPAPI characterization was changed to use PowerShell's built-in ConvertFrom-SecureString because Add-Type is not available in the restricted child command surface. The parent uses ConvertTo-SecureString to verify whether the child-minted CurrentUser DPAPI envelope is decryptable. Exact combined Stage 7A run 46025926233 was in progress at the last check; do not claim that probe's result until its log is reviewed.
 
 Model-facing/autonomous execution remains disabled. The emitted broker still uses a stable shared AppContainer profile, v1 ACL journal, inherited environment and merged stdout/stderr. The latest tests do not change these production boundaries.
+
+
+## 2026-11-27 exact-head Windows combined qualification - commit 9191a2929f4e56dd086ff3da0b0566c0feeb497e
+
+All three required Windows workflows have now completed successfully on the same exact branch head. This closes the requested exact-head test-inspection step; it does not constitute Phase 2B.8 security acceptance.
+
+- Dedicated Phase 2B.8 primitive workflow [46030220104](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/46030220104): SUCCESS. All six steps passed: ASCII/source-encoding gate; eight unique CNG/AppContainer identities with matching suspended child-token SIDs, Low IL RID 0x1000 and zero capabilities; normal delete/recreate/delete proof; strict synthetic v2 schema negatives; DPAPI envelope tamper checks and cross-process same-user re-protection proof; explicit Unicode environment primitive; restricted-token AppContainer CreateProcessAsUserW launch primitive; separate bounded stdout/stderr primitive.
+- Frozen Milestone 6 workflow [46030220042](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/46030220042): SUCCESS, **83/83** on the same commit.
+- Stage 7A/combined workflow [46030220210](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/46030220210): SUCCESS. The combined root Test.ps1 execution ended with `Combined result: PASS` on the same commit, including the Stage 7A native compiler tests, broker tests, identity/journal/environment/AppContainer-launch/output-stream fixtures and M1-M6 baseline.
+
+### What this exact-head evidence does and does not prove
+
+The tests qualify isolated Windows primitives and the existing regression candidate. They do not show that those primitives are wired into the emitted production broker. The current `Stage0/SharnouCompiler.ps1` broker emitter still uses the fixed shared profile `Sharnou.DevAgent.ProcessBroker.v1`, the v1 ACL journal, `CreateProcessAsUserA`, inherited environment (`lpEnvironment=NULL`) and a merged stdout/stderr pipe. The production emitter still has no `DeleteAppContainerProfile` call, per-execution profile state, or child DLL-search policy. The Stage0 source change in this PR is currently limited to pinning the updated test-tool manifest hash.
+
+The AppContainer launch fixture proves that an independently constructed restricted-token launch can use a non-NULL explicit Unicode environment, three exact inherited handles, separate output pipes and a kill-on-close Job Object. It does not change the production emitter. The environment and output fixtures also retain their stated primitive-only boundaries.
+
+### Writer-authority gate remains open
+
+The v2 schema and DPAPI fixture are not an authenticated production journal. The cross-process test proves that another process under the same user can mint a valid CurrentUser DPAPI envelope with the same public optional entropy. Do not consume such metadata as authority to restore ACLs or delete a profile.
+
+The recommended separate-principal Windows authority service and its non-exportable CNG key are specified in `Docs/PHASE-2B8-WRITER-AUTHORITY-SERVICE-DESIGN.md`. That service, key provisioning, typed IPC and installation/upgrade/recovery model are not implemented and require explicit owner acceptance. Until that trust anchor exists and is independently verified, crash-time profile deletion must remain blocked; a same-user DPAPI record or workspace key file is not an acceptable substitute.
+
+### Next implementation gates
+
+1. On an isolated follow-on, add per-execution CNG identity/profile creation to the emitted broker, verify the actual child package SID, and add the new APIs to the generated PE import table and independent verifier.
+2. Integrate normal profile deletion only after the Job Object is empty and exact ACL restoration has been read back and verified. A failed deletion must retain failure state and must not be represented as success.
+3. Complete and test the service-owned canonical signed journal, key identity/ACL, transaction state machine and typed IPC. Do not migrate the v1 recovery path or authorize crash-time profile deletion until the service trust boundary is accepted.
+4. Then implement restart recovery/profile retirement, production explicit Unicode environment, independent bounded stdout/stderr capture and child DLL loader policy.
+5. Add crash cuts and multi-process/concurrent-workspace tests at each durable transition; repeat all gates on one immutable Windows-tested commit and independently inspect the emitted PE import table.
+
+**Disposition:** Phase 2B.8 remains IMPLEMENTATION / NOT SECURITY ACCEPTED. PR #28 remains draft and unmerged; PR #24 remains unchanged. Model-facing and autonomous process execution remain DISABLED.
