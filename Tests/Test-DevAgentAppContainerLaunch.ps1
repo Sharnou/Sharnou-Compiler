@@ -714,10 +714,43 @@ namespace Sharnou
 
                 uint flags = ExtendedStartupInfoPresent | CreateSuspended |
                     CreateUnicodeEnvironment | CreateNoWindow;
-                Check(CreateProcessAsUserW(restrictedToken, powershell, commandLine,
+                string immutableCommandLine = commandLine.ToString();
+                if (!CreateProcessAsUserW(restrictedToken, powershell, commandLine,
                     IntPtr.Zero, IntPtr.Zero, true, flags, environmentBuffer,
-                    systemDirectory, ref startup, out process),
-                    "CreateProcessAsUserW(AppContainer + explicit Unicode environment)");
+                    systemDirectory, ref startup, out process))
+                {
+                    int explicitEnvironmentError = Marshal.GetLastWin32Error();
+
+                    // Diagnostic-only negative control: same token, AppContainer
+                    // attributes, STARTUPINFOEX handle list, image and current
+                    // directory, but lpEnvironment=NULL. This process is created
+                    // suspended and terminated immediately, never resumed. It is
+                    // not a permitted execution fallback and cannot satisfy this test.
+                    PROCESS_INFORMATION nullEnvironmentControl = new PROCESS_INFORMATION();
+                    bool nullEnvironmentControlCreated = CreateProcessAsUserW(
+                        restrictedToken, powershell, new StringBuilder(immutableCommandLine),
+                        IntPtr.Zero, IntPtr.Zero, true, flags, IntPtr.Zero,
+                        systemDirectory, ref startup, out nullEnvironmentControl);
+                    int nullEnvironmentControlError = nullEnvironmentControlCreated
+                        ? 0 : Marshal.GetLastWin32Error();
+
+                    if (nullEnvironmentControlCreated)
+                    {
+                        TerminateProcess(nullEnvironmentControl.hProcess, 0x2BAD);
+                        uint controlWait = WaitForSingleObject(nullEnvironmentControl.hProcess, 10000);
+                        if (nullEnvironmentControl.hThread != IntPtr.Zero) CloseHandle(nullEnvironmentControl.hThread);
+                        if (nullEnvironmentControl.hProcess != IntPtr.Zero) CloseHandle(nullEnvironmentControl.hProcess);
+                        if (controlWait != 0)
+                            throw new InvalidOperationException(
+                                "NULL-environment diagnostic child was created but could not be proven terminated.");
+                    }
+
+                    throw new Win32Exception(explicitEnvironmentError,
+                        "CreateProcessAsUserW with explicit Unicode environment failed (Win32=" +
+                        explicitEnvironmentError + "; NULL-environment suspended control=" +
+                        (nullEnvironmentControlCreated ? "CREATED_AND_TERMINATED" : ("FAILED_WIN32_" + nullEnvironmentControlError)) +
+                        "). The NULL-environment control was diagnostic only and was never resumed.");
+                }
 
                 processCreated = true;
                 Check(AssignProcessToJobObject(job, process.hProcess), "AssignProcessToJobObject");
