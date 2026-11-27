@@ -577,3 +577,10 @@ Acceptance requires: repair and adversarially validate journal recovery; unique 
 - The v2 test schema uses 64-bit volume serial + full 128-bit FILE_ID_128. A separate same-user PowerShell child minted a different valid DPAPI envelope with public entropy; the parent unprotected it. DPAPI CurrentUser is therefore definitively not per-process writer authentication.
 - M1-M6 83/83 passed on latest head `cb0551dd1d272deb3c12aab9b5131cc3fb6ed2fb`, run [46024435843](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/46024435843).
 - Full Stage 7A combined test run [46024435792](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/46024435792) remained in progress at last inspection, including a new actual AppContainer child DPAPI characterization probe.
+
+
+### Explicit Unicode environment primitive - 2026-11-27
+
+- Run [46025925905](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/46025925905) passed the new bounded environment builder fixture: 9 entries / 354 UTF-16 code units; CreateProcessW accepted explicit Unicode block; Windows core variables correct; hidden drive entries validated/preserved; parent secret absent.
+- Frozen M1-M6 run [46025925771](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/46025925771) passed 83/83 on exact head `6277f28123b28b56e2710f50d7197239fd034529`.
+- This does not yet qualify the actual AppContainer/restricted-token `CreateProcessAsUserW` path or modify compiler-emitted broker; do not claim Win32 203 closed for production.
