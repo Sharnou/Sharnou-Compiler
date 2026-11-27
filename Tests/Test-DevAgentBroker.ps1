@@ -15,21 +15,6 @@ function Get-BrokerNumericLines {
     return $numeric.ToArray()
 }
 
-function Get-BrokerUInt32 {
-    param(
-        [Parameter(Mandatory = $true)][byte[]] $Bytes,
-        [Parameter(Mandatory = $true)][int] $Offset
-    )
-    if ($Offset -lt 0 -or ($Offset + 4) -gt $Bytes.Length) {
-        throw "Journal DWORD read is outside the byte buffer: offset=$Offset length=$($Bytes.Length)."
-    }
-    $value = [uint32]$Bytes[$Offset]
-    $value = $value -bor ([uint32]$Bytes[$Offset + 1] -shl 8)
-    $value = $value -bor ([uint32]$Bytes[$Offset + 2] -shl 16)
-    $value = $value -bor ([uint32]$Bytes[$Offset + 3] -shl 24)
-    return [uint32]$value
-}
-
 function Get-BrokerSecuritySddl {
     param([Parameter(Mandatory = $true)][string] $Path)
     $security = Get-Acl -LiteralPath $Path
@@ -638,46 +623,9 @@ try {
         # inspect the committed journal's wire format and report exactly which
         # descriptors remain at their transient or baseline SDDL.
         try {
-            [byte[]]$journalBytes = [IO.File]::ReadAllBytes($journalPath)
-            if ($journalBytes.Length -ge 32) {
-                $journalMagic = [Text.Encoding]::ASCII.GetString([byte[]]$journalBytes, 0, 8)
-                $journalVersion = Get-BrokerUInt32 -Bytes $journalBytes -Offset 8
-                $journalRootLength = Get-BrokerUInt32 -Bytes $journalBytes -Offset 16
-                $journalBuildLength = Get-BrokerUInt32 -Bytes $journalBytes -Offset 20
-                $journalBrokerLength = Get-BrokerUInt32 -Bytes $journalBytes -Offset 24
-                $journalExpectedLength = [long]32 + $journalRootLength + $journalBuildLength + $journalBrokerLength
-                $journalHeaderHex = [BitConverter]::ToString($journalBytes, 0, 32)
-                Write-Host ("ACL_RECOVERY_JOURNAL|bytes={0}|magic={1}|version={2}|root={3}|build={4}|broker={5}|expectedBytes={6}|header={7}" -f
-                    $journalBytes.Length, $journalMagic, $journalVersion, $journalRootLength, $journalBuildLength, $journalBrokerLength, $journalExpectedLength, $journalHeaderHex)
-                foreach ($record in @(
-                    [pscustomobject]@{ Name = 'root'; Offset = 32; Length = $journalRootLength },
-                    [pscustomobject]@{ Name = 'build'; Offset = (32 + $journalRootLength); Length = $journalBuildLength },
-                    [pscustomobject]@{ Name = 'broker'; Offset = (32 + $journalRootLength + $journalBuildLength); Length = $journalBrokerLength }
-                )) {
-                    try {
-                        if ($record.Length -lt 20 -or $record.Offset -lt 32 -or
-                            ([long]$record.Offset + [long]$record.Length) -gt $journalBytes.Length) {
-                            throw "Descriptor range is invalid: offset=$($record.Offset) length=$($record.Length) journalBytes=$($journalBytes.Length)."
-                        }
-                        $descriptorBytes = [byte[]]::new([int]$record.Length)
-                        [Buffer]::BlockCopy($journalBytes, [int]$record.Offset, $descriptorBytes, 0, [int]$record.Length)
-                        $rawDescriptor = [Security.AccessControl.RawSecurityDescriptor]::new($descriptorBytes, 0)
-                        Write-Host ("ACL_RECOVERY_DESCRIPTOR|{0}|valid=true|dacl={1}|sacl={2}|length={3}|control={4}" -f
-                            $record.Name, ($null -ne $rawDescriptor.DiscretionaryAcl), ($null -ne $rawDescriptor.SystemAcl), $record.Length, $rawDescriptor.ControlFlags)
-                    }
-                    catch {
-                        Write-Host ("ACL_RECOVERY_DESCRIPTOR|{0}|valid=false|error={1}|stack={2}" -f
-                            $record.Name, $_.Exception.Message, $_.ScriptStackTrace)
-                    }
-                }
-            }
-            else {
-                Write-Host ("ACL_RECOVERY_JOURNAL|bytes={0}|too-short=true" -f $journalBytes.Length)
-            }
-        }
-        catch {
-            Write-Host ("ACL_RECOVERY_JOURNAL_READ_FAIL|{0}" -f $_.Exception.Message)
-        }
+            $journalInfo = Get-Item -LiteralPath $journalPath
+            $journalHash = (Get-FileHash -LiteralPath $journalPath -Algorithm SHA256).Hash
+            Write-Host ("ACL_RECOVERY_JOURNAL|bytes={0}|sha256={1}" -f $journalInfo.Length, $journalHash)
         foreach ($aclPath in $aclPaths) {
             try {
                 $currentSddl = Get-BrokerSecuritySddl -Path $aclPath

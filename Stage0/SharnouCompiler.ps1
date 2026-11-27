@@ -1593,6 +1593,7 @@ function Emit-DevBrokerRecoverAclJournal {
     $scratch = [int]$script:ActiveContext.ScratchPosition
     $fileInfoSlot = $scratch + 0xD18
     $expectedSizeSlot = $scratch + 0xD50
+    $recoveryStageSlot = $scratch + 0xD90
     $failed = New-UniqueLabel -Prefix 'dev_acl_recovery_failed'
     $notFound = New-UniqueLabel -Prefix 'dev_acl_recovery_not_found'
     $restoreReady = New-UniqueLabel -Prefix 'dev_acl_recovery_restore_ready'
@@ -1600,6 +1601,7 @@ function Emit-DevBrokerRecoverAclJournal {
     Emit-StoreZero64Frame -SlotPosition $JournalHandleSlot
     Emit-StoreZero64Frame -SlotPosition $JournalBufferSlot
     Emit-StoreBits32Frame -SlotPosition $JournalReadCountSlot -Value 0
+    Emit-StoreBits32Frame -SlotPosition $recoveryStageSlot -Value 0
     for ($i = 0; $i -lt 7; $i++) { Emit-StoreZero64Frame -SlotPosition ($fileInfoSlot + ($i * 8)) }
 
     Emit-LeaRaxFrame -SlotPosition $JournalPathSlot
@@ -1690,6 +1692,7 @@ function Emit-DevBrokerRecoverAclJournal {
     Emit-I32 -Value (Get-FrameDisp -SlotPosition $expectedSizeSlot)
     Emit-JumpConditional -ConditionCode 0x85 -Label $failed
 
+    Emit-StoreBits32Frame -SlotPosition $recoveryStageSlot -Value 1 # allocate bounded descriptor buffer
     Emit-Bytes -Bytes ([byte[]]@(0x33, 0xC9, 0xBA, 0x00, 0xC0, 0x00, 0x00, 0x41, 0xB8, 0x00, 0x30, 0x00, 0x00, 0x41, 0xB9, 0x04, 0x00, 0x00, 0x00))
     Emit-Win64CallIat -TargetRva ([UInt32]0x31D0) -StackArguments @() # VirtualAlloc(48 KiB)
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x85, 0xC0))
@@ -1701,7 +1704,9 @@ function Emit-DevBrokerRecoverAclJournal {
         @{ Length = $BuildLengthSlot; Offset = 0x4000; Descriptor = $BuildDescriptorSlot },
         @{ Length = $BrokerLengthSlot; Offset = 0x8000; Descriptor = $BrokerDescriptorSlot }
     )
+    $recordStage = 2
     foreach ($record in $records) {
+        Emit-StoreBits32Frame -SlotPosition $recoveryStageSlot -Value $recordStage # read exact descriptor bytes
         Emit-LoadRcxFrame -SlotPosition $JournalHandleSlot
         Emit-LoadRaxFrame -SlotPosition $JournalBufferSlot
         if ($record.Offset -ne 0) {
@@ -1721,6 +1726,7 @@ function Emit-DevBrokerRecoverAclJournal {
         Emit-I32 -Value (Get-FrameDisp -SlotPosition $record.Length)
         Emit-JumpConditional -ConditionCode 0x85 -Label $failed
 
+        Emit-StoreBits32Frame -SlotPosition $recoveryStageSlot -Value ($recordStage + 1) # validate self-relative descriptor and exact length
         Emit-LoadRaxFrame -SlotPosition $JournalBufferSlot
         if ($record.Offset -ne 0) {
             Emit-Bytes -Bytes ([byte[]]@(0x48, 0x05))
@@ -1736,18 +1742,24 @@ function Emit-DevBrokerRecoverAclJournal {
         Emit-Bytes -Bytes ([byte[]]@(0x3B, 0x85))
         Emit-I32 -Value (Get-FrameDisp -SlotPosition $record.Length)
         Emit-JumpConditional -ConditionCode 0x85 -Label $failed
+        $recordStage += 2
     }
 
     # Restore parents before descendants so each child snapshot wins after inheritance propagation.
+    Emit-StoreBits32Frame -SlotPosition $recoveryStageSlot -Value 8 # restore workspace root
     Emit-DevBrokerRestoreSecurityDescriptor -PathSlot $WorkspaceRootSlot -DescriptorSlot $RootDescriptorSlot -FailureLabel $failed
+    Emit-StoreBits32Frame -SlotPosition $recoveryStageSlot -Value 9 # restore Build
     Emit-DevBrokerRestoreSecurityDescriptor -PathSlot $BuildPathSlot -DescriptorSlot $BuildDescriptorSlot -RestoreLabel $true -FailureLabel $failed
+    Emit-StoreBits32Frame -SlotPosition $recoveryStageSlot -Value 10 # restore broker directory
     Emit-DevBrokerRestoreSecurityDescriptor -PathSlot $BrokerDirectorySlot -DescriptorSlot $BrokerDescriptorSlot -RestoreLabel $true -FailureLabel $failed
 
+    Emit-StoreBits32Frame -SlotPosition $recoveryStageSlot -Value 11 # close journal handle
     Emit-LoadRcxFrame -SlotPosition $JournalHandleSlot
     Emit-Win64CallIat -TargetRva ([UInt32]0x30B8) -StackArguments @()
     Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
     Emit-JumpConditional -ConditionCode 0x84 -Label $failed
     Emit-StoreZero64Frame -SlotPosition $JournalHandleSlot
+    Emit-StoreBits32Frame -SlotPosition $recoveryStageSlot -Value 12 # retire committed journal
     Emit-LeaRaxFrame -SlotPosition $JournalPathSlot
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1))
     Emit-Win64CallIat -TargetRva ([UInt32]0x3310) -StackArguments @() # DeleteFileA after complete restore
@@ -2911,7 +2923,15 @@ function Emit-DevRunTool {
     Emit-Jump -Label $cleanup
 
     Mark-CodeLabel -Label $aclRecoveryFail
-    Emit-Bytes -Bytes ([byte[]]@(0xB8, 0x89, 0xFF, 0xFF, 0xFF)) # -119: journal invalid or ACL recovery incomplete
+    Emit-LoadEaxFrame -SlotPosition ($scratch + 0xD90)
+    Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
+    $genericRecoveryFailure = New-UniqueLabel -Prefix 'dev_tool_acl_recovery_generic_failure'
+    Emit-JumpConditional -ConditionCode 0x84 -Label $genericRecoveryFailure
+    Emit-Bytes -Bytes ([byte[]]@(0x89, 0xC2, 0xB8, 0x70, 0xFE, 0xFF, 0xFF, 0x29, 0xD0)) # -400 - stage; diagnostic-only recovery failure
+    Emit-StoreEaxFrame -SlotPosition $resultSlot
+    Emit-Jump -Label $cleanup
+    Mark-CodeLabel -Label $genericRecoveryFailure
+    Emit-Bytes -Bytes ([byte[]]@(0xB8, 0x89, 0xFF, 0xFF, 0xFF)) # -119: journal validation failure before descriptor restore
     Emit-StoreEaxFrame -SlotPosition $resultSlot
     Emit-Jump -Label $cleanup
 
