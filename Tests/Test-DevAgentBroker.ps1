@@ -641,6 +641,34 @@ try {
     $recoveryExitCode = $LASTEXITCODE
     $recoveryNumericLines = @(Get-BrokerNumericLines -Lines $recoveryLines)
     $recoveryActual = ($recoveryNumericLines -join $nl).TrimEnd([char[]]@([char]13, [char]10))
+
+    # Preserve native diagnostics returned by the broker. The native recovery
+    # emitter writes the exact journal path after a failed CreateFileA attempt;
+    # previously this output was captured by PowerShell but hidden from Actions.
+    foreach ($recoveryDiagnostic in $recoveryLines) {
+        $diagnosticText = [string]$recoveryDiagnostic
+        if ($diagnosticText.StartsWith('ACL_RECOVERY_NATIVE_PATH|', [StringComparison]::Ordinal)) {
+            Write-Host ('DEVAGENT_RECOVERY_DIAGNOSTIC|' + $diagnosticText)
+        }
+    }
+
+    # Decode the current fail-closed status encoding:
+    # result = -400 - (1000 + readWin32 * 256 + metadataWin32).
+    # This is diagnostic only; it never changes the broker's decision.
+    if ($recoveryNumericLines.Count -ge 3) {
+        $recoveryStatus = 0
+        if ([int]::TryParse([string]$recoveryNumericLines[2], [ref]$recoveryStatus) -and $recoveryStatus -le -1400) {
+            $encodedStage = (-$recoveryStatus) - 400
+            $encodedErrors = $encodedStage - 1000
+            if ($encodedErrors -ge 0) {
+                $readWin32 = [int][Math]::Floor($encodedErrors / 256)
+                $metadataWin32 = $encodedErrors % 256
+                Write-Host ('ACL_RECOVERY_OPEN_DIAGNOSTIC|status={0}|readWin32={1}|metadataWin32={2}' -f
+                    $recoveryStatus, $readWin32, $metadataWin32)
+            }
+        }
+    }
+
     if ($recoveryExitCode -ne 0 -or -not [string]::Equals($recoveryActual, $expected, [StringComparison]::Ordinal)) {
         # Preserve actionable evidence on a recovery regression before failing:
         # inspect the committed journal's wire format and report exactly which

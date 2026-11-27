@@ -275,3 +275,14 @@ The native DevAgent test-tool process broker phase 1 is now implemented and vali
 Evidence: combined run [45772104864](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45772104864), frozen baseline run [45772104661](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45772104661). PR #18 remains draft/unmerged.
 
 Remaining work before any model-controlled execution: complete executable/workspace canonicalization and ADS/UNC/device rejection; restricted token/AppContainer and workspace-only ACLs; clean environment and DLL-search policy; bounded stdout/stderr capture with STARTUPINFOEX handle isolation; cancellation; durable tool evidence and restart recovery. Until those gates pass, the broker remains disabled for model-generated plans.
+
+
+## 2026-11-27 - DevAgent Phase 2B.6 production broker integration
+
+Phase 2B.6 is the production-integration and recovery-qualification tranche. The active parent candidate is PR #24, branch devagent-acl-transaction-recovery-20261126, starting head bd411c2fc777006f9b1160ab8d3d5992c2a15afa. Its M6 historical baseline passed 83/83 (run 45964360562), but Stage 7A failed (run 45964360481) during native post-crash ACL recovery. The phase is therefore IN PROGRESS / BLOCKED, not accepted.
+
+The failing run returned -2685 for each broker invocation after WAIT_ABANDONED. The emitter's status encoding decodes this to readWin32=5 and metadataWin32=5 (ERROR_ACCESS_DENIED). An independent PowerShell CreateFileA probe using the same access/share/disposition/flags returned success. This is a native-path/call-context discrepancy, not proof that the workspace DACL should be broadened. A diagnostic patch now forwards the native recovery path to the Actions log and decodes the two Win32 values. Fix the exact discrepancy before making any ACL-policy change.
+
+The milestone also requires a unique AppContainer identity per execution, a versioned recovery journal that can retire a crashed profile after ACL restoration, a deterministic explicit Unicode environment (never lpEnvironment=NULL), production integration of the Phase 2B.5 two-stream handle allowlist, child loader/DLL-search hardening, and same-head crash/adversarial Windows acceptance. New native APIs must be represented in the generated PE import table and checked by the PE verifier; the final executable import table, not a planned manifest, is authoritative.
+
+Model-facing process execution and autonomous execution remain DISABLED.

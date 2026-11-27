@@ -524,3 +524,14 @@ Status: **IMPLEMENTATION CANDIDATE / NOT SECURITY-ACCEPTED / NOT MODEL-ENABLED**
 The native broker no longer treats `WAIT_ABANDONED` as an ordinary lock acquisition. It returns `-118`, releases the mutex, and skips AppContainer SID creation, ACL mutation, and child process creation. A static regression assertion checks this branch ordering. This prevents another model tool from running on potentially inconsistent ACL state after a crashed broker.
 
 This is only fail-closed detection. It does not restore ACLs or remove stale package-SID ACEs. Durable ACL transaction journaling and startup recovery remain a security gate. No model-facing execution is enabled.
+
+
+## 2026-11-27 - Phase 2B.6 production broker integration gate
+
+Phase 2B.6 is IN PROGRESS / BLOCKED on PR #24 branch devagent-acl-transaction-recovery-20261126. The M6 baseline passed 83/83 (45964360562); Stage 7A failed (45964360481) in native post-crash ACL journal recovery.
+
+The failure result -2685 decodes from the emitter's status formula to ERROR_ACCESS_DENIED (5) for both the GENERIC_READ journal open and metadata-only fallback. A separate PowerShell CreateFileA control can open the journal. The exact native path is being added to the CI diagnostic output; no DACL broadening, journal deletion, caller-token fallback, or other security weakening is permitted as a workaround.
+
+Acceptance requires: repair and adversarially validate journal recovery; unique per-execution AppContainer SID/profile with crash cleanup; an explicit bounded allowlisted Unicode environment (lpEnvironment must not be NULL); production integration of the Phase 2B.5 handle allowlist and independent bounded stdout/stderr capture; child DLL-search hardening; final-object/path verification; actual PE import-table validation; and same-head Windows regressions including M6 83/83 and Stage 7A.
+
+**Model-facing and autonomous process execution remain DISABLED.**

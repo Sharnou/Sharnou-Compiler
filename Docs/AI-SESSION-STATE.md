@@ -2163,3 +2163,27 @@ Follow-on branch `devagent-abandoned-mutex-failclosed-20261126` changes the nati
 Reason: the prior code treated `WAIT_ABANDONED` as normal ownership. Windows documents that an abandoned mutex indicates the previous owning thread terminated without releasing it; persistent state protected by the mutex must be checked before reuse. The broker's package-SID ACL state is persistent, so continuing without a recovery journal is unsafe.
 
 This is a **fail-closed blocker**, not recovery. Persistent AppContainer ACEs may still remain after a crash. A protected write-ahead security-descriptor journal, startup recovery, and an adversarial abandoned-mutex test remain required. Model-facing process execution remains DISABLED.
+
+
+## DevAgent Phase 2B.6 - production broker integration - 2026-11-27
+
+Status: IN PROGRESS / BLOCKED / NOT SECURITY-ACCEPTED.
+Parent candidate: PR #24, branch devagent-acl-transaction-recovery-20261126, start head bd411c2fc777006f9b1160ab8d3d5992c2a15afa.
+
+Evidence:
+- M6 baseline run 45964360562: PASS, 83/83.
+- Stage 7A run 45964360481: FAIL in post-crash ACL journal replay.
+- Actual broker result after the parent-crash test: -2685. The native emitter encodes this as -400 - (1000 + readWin32*256 + metadataWin32), which decodes to ERROR_ACCESS_DENIED (5) for both the GENERIC_READ journal open and metadata-only fallback.
+- The independent PowerShell CreateFileA control successfully opened the same journal. Therefore do not broaden the DACL or discard the journal; the native path/call-context discrepancy must be isolated first.
+- The original test harness captured ACL_RECOVERY_NATIVE_PATH from the broker but did not forward it into GitHub Actions logs. A new diagnostic patch forwards that line and emits the decoded Win32 codes. This is diagnostic instrumentation only; it changes no ACL or execution policy.
+
+Phase 2B.6 acceptance work:
+1. Fix native journal recovery and run a crash-at-each-transaction-boundary matrix.
+2. Replace the stable AppContainer profile identity with a unique per-execution profile/SID and journal the profile name for crash cleanup.
+3. Replace CreateProcessAsUserA lpEnvironment=NULL with an explicit bounded allowlisted Unicode environment and CREATE_UNICODE_ENVIRONMENT; test inherited-secret absence and preserve Win32 203 as a regression gate.
+4. Integrate the Phase 2B.5 explicit handle allowlist into the actual native emitter with separate stdout/stderr pipes, bounded concurrent drain, and whole-job termination.
+5. Harden the child loader policy; a parent-only SetDefaultDllDirectories call is not accepted as child hardening.
+6. Preserve exact opened-object/final-path checks and validate the actual generated PE import table for every native import addition.
+7. Pass same-head native ABI, M6 baseline, Stage 7A, AppContainer, ACL crash/recovery, environment, output, loader and cleanup tests.
+
+The existing PR #24 candidate contains real native AppContainer/ACL/job/pipe/journal emitter code but is not production-accepted while crash recovery fails. No model-facing or autonomous execution permission is enabled.
