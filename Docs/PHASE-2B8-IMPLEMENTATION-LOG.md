@@ -304,3 +304,5 @@ Updated all three required Windows workflows on the R4 branch:
 - Keep the three workflows independent so the same commit must pass all three, with evidence separately retrievable.
 
 This is evidence-pipeline hardening, not test completion. R4 remains unqualified until the three final-head artifacts are downloaded and inspected, the signed-journal fixture passes on Windows, Stage 7A ends in `Combined result: PASS`, and M1-M6 reports 83/83 on the identical commit SHA.
+
+The Stage 7A and M1-M6 workflows initialize their evidence directory and source-hash manifest once, before source-encoding validation, then capture the complete suite transcript in the test step. This avoids duplicate manifest generation while retaining an artifact on early gate failure.
