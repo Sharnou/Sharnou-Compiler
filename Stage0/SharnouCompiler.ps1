@@ -3016,7 +3016,6 @@ function Emit-DevRunTool {
         @{ Kind = 'Immediate'; Value = 0x00200080 }, # OPEN_REPARSE_POINT | FILE_ATTRIBUTE_NORMAL
         @{ Kind = 'Immediate'; Value = 0 }
     ) # CreateFileA(captured-output.bin), share mode = 0
-    Emit-DevBrokerDebugMarker -Marker 'MAIN:capture-created' -HandleSlot ($scratch + 0xFB0) -WrittenSlot ($scratch + 0xFB8)
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x83, 0xF8, 0xFF))
     Emit-JumpConditional -ConditionCode 0x84 -Label $outputFail
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x85, 0xC0))
