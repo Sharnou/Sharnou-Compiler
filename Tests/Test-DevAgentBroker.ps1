@@ -290,7 +290,7 @@ try {
         $journalPathRebuild -le $scriptHashVerification) {
         throw 'Recovery must precede descendant checks and tool hashing; rebuild the journal destination after path/hash code borrows the shared scratch buffer.'
     }
-    foreach ($requiredJournalApi in @('MoveFileExA', 'FlushFileBuffers', 'Emit-DevBrokerRestoreSecurityDescriptor', 'IsValidSecurityDescriptor', '0x80200002')) {
+    foreach ($requiredJournalApi in @('MoveFileExA', 'FlushFileBuffers', 'Emit-DevBrokerRestoreSecurityDescriptor', 'IsValidSecurityDescriptor', '0x80200002', 'FILE_SHARE_READ')) {
         if (-not $compilerSource.Contains($requiredJournalApi)) { throw "Crash-safe ACL journal component missing: $requiredJournalApi" }
     }
     $restoreHelperStart = $compilerSource.IndexOf('function Emit-DevBrokerRestoreSecurityDescriptor', [StringComparison]::Ordinal)
