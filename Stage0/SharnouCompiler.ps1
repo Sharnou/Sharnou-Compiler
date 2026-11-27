@@ -1616,8 +1616,10 @@ function Emit-DevBrokerWriteRecoveryAttributeDiagnostic {
     $scratch = [int]$script:ActiveContext.ScratchPosition
     $attributeSlot = $scratch + 0xD70
     $errorSlot = $scratch + 0xD74
-    $textBufferSlot = $scratch + 0xD78
-    $textLengthSlot = $scratch + 0xD80
+    # Keep the formatted diagnostic buffer disjoint from the DWORD length slot
+    # and from the live recovery-stage value at D90.
+    $textBufferSlot = $scratch + 0xDA8
+    $textLengthSlot = $scratch + 0xDE8
     $stdoutHandleSlot = $scratch + 0xD60
     $bytesWrittenSlot = $scratch + 0xD68
     $attributeFailed = New-UniqueLabel -Prefix 'dev_acl_recovery_getattr_failed'
