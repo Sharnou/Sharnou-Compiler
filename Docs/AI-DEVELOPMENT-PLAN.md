@@ -332,3 +332,14 @@ R5.1 must implement a real Windows SCM host using the Sharnou native code-genera
 - Current draft PR #32 contains the service lifecycle specification and compiler preflight only. Do not call it a service implementation or mark it passed.
 - R5.2 service identity/key, R5.3 pipe transport, R5.4 signed journal, R5.5 transaction ownership, R5.6 recovery, R5.7 independent review follow only after R5.1.
 - Model-facing and autonomous execution remain disabled until full Phase 2B.8 acceptance and separate policy authorization milestones.
+
+
+## R5.1.a and R5.1.b - current implementation candidates
+
+R5.1.a implements a bounded DIR64 relocation builder/parser shared by compiler and verifier. Its acceptance includes legacy image compatibility, multi-target same-page and multi-page entries, strict ABS padding, malformed directory rejection, and complete combined Windows regression.
+
+R5.1.b adds the exact Win64 callback signatures `SERVICE_MAIN_FUNCTIONW(DWORD, LPWSTR*)` and `HANDLER_FUNCTION_EX(DWORD, DWORD, LPVOID, LPVOID)`, aligned .rdata pointer slots, label-to-VA fixups, indirect callback invocation, relocations for pointer storage and runtime ABI tests. The only exposed test intrinsic is gated by `-EnableWin64CallbackTests`.
+
+Draft PRs: #33 (R5.1.a) and #34 (R5.1.b, stacked). R5.1.a aggregate Windows run 46064648534 is still running after its focused relocation tests passed. R5.1.b run 46065163499 is queued. Do not mark either increment accepted without exact-head Windows evidence and artifact inspection.
+
+R5.1.c remains the first actual SCM service-host image. No service installation or authority operations exist yet. Model-facing/autonomous execution remain disabled.
