@@ -1077,23 +1077,6 @@ function Emit-DevBrokerRevokeLegacyAppContainerSid {
     Emit-JumpConditional -ConditionCode 0x84 -Label $FailureLabel
 }
 
-function Emit-DevBrokerDebugMarker {
-    param([string] $Marker, [int] $HandleSlot, [int] $WrittenSlot)
-    $item = Register-DataConstant -Value ($Marker + "`r`n")
-    $length = [System.Text.Encoding]::ASCII.GetByteCount($Marker + "`r`n")
-    Emit-Bytes -Bytes ([byte[]]@(0x48, 0xC7, 0xC1, 0xF5, 0xFF, 0xFF, 0xFF)) # STD_OUTPUT_HANDLE = -11
-    Emit-Win64CallIat -TargetRva ([UInt32]0x3070) -StackArguments @() # GetStdHandle
-    Emit-StoreRaxFrame -SlotPosition $HandleSlot
-    Emit-LoadRcxFrame -SlotPosition $HandleSlot
-    Emit-DataAddress -DataItem $item
-    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC2, 0x41, 0xB8))
-    Emit-I32 -Value $length
-    Emit-LeaRaxFrame -SlotPosition $WrittenSlot
-    Emit-Bytes -Bytes ([byte[]]@(0x49, 0x89, 0xC1))
-    Emit-Win64CallIat -TargetRva ([UInt32]0x3078) -StackArguments @(
-        @{ Kind = 'Immediate'; Value = 0 }
-    ) # WriteFile(stdout, marker)
-}
 function Emit-DevBrokerEnsureAppContainerSid {
     param(
         [int] $SidSlot,
@@ -1116,8 +1099,6 @@ function Emit-DevBrokerEnsureAppContainerSid {
     $helperDone = New-UniqueLabel -Prefix 'dev_appcontainer_helper_done'
     $savedRdiSlot = $RandomSlot + 0x20
     $savedRsiSlot = $RandomSlot + 0x28
-    $debugHandleSlot = $RandomSlot + 0x30
-    $debugWrittenSlot = $RandomSlot + 0x38
 
     # This helper uses RSI/RDI for string construction; preserve the caller's
     # nonvolatile registers before any generated code or nested Win32 calls.
@@ -1127,7 +1108,6 @@ function Emit-DevBrokerEnsureAppContainerSid {
     Emit-StoreZero64Frame -SlotPosition $DerivedSidSlot
     Emit-StoreBits32Frame -SlotPosition $ProfileCreatedSlot -Value 0
 
-    Emit-DevBrokerDebugMarker -Marker 'ID0:enter' -HandleSlot $debugHandleSlot -WrittenSlot $debugWrittenSlot
     # A fresh 128-bit execution identifier comes from the system-preferred CNG RNG.
     # It is never derived from a process ID, timestamp, workspace path or user input.
     Emit-Bytes -Bytes ([byte[]]@(0x33, 0xC9)) # hAlgorithm = NULL
@@ -1136,7 +1116,6 @@ function Emit-DevBrokerEnsureAppContainerSid {
     Emit-Win64CallIat -TargetRva ([UInt32]0x3330) -StackArguments @() # BCryptGenRandom(BCRYPT_USE_SYSTEM_PREFERRED_RNG)
     Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
     Emit-JumpConditional -ConditionCode 0x85 -Label $FailureLabel
-    Emit-DevBrokerDebugMarker -Marker 'ID1:rng-ok' -HandleSlot $debugHandleSlot -WrittenSlot $debugWrittenSlot
 
     # Reject the all-zero output even though it is cryptographically negligible.
     Emit-LeaRaxFrame -SlotPosition $RandomSlot
@@ -1179,7 +1158,6 @@ function Emit-DevBrokerEnsureAppContainerSid {
     ))
     Emit-JumpConditional -ConditionCode 0x85 -Label $hexLoop
     Emit-Bytes -Bytes ([byte[]]@(0x66, 0xC7, 0x07, 0x00, 0x00)) # UTF-16 NUL
-    Emit-DevBrokerDebugMarker -Marker 'ID2:name-built' -HandleSlot $debugHandleSlot -WrittenSlot $debugWrittenSlot
 
     # CreateAppContainerProfile must create a new identity. There is deliberately
     # no ERROR_ALREADY_EXISTS adoption/derive fallback: collisions fail closed.
@@ -1195,7 +1173,6 @@ function Emit-DevBrokerEnsureAppContainerSid {
     ) # CreateAppContainerProfile, zero capabilities
     Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
     Emit-JumpConditional -ConditionCode 0x85 -Label $FailureLabel
-    Emit-DevBrokerDebugMarker -Marker 'ID3:create-ok' -HandleSlot $debugHandleSlot -WrittenSlot $debugWrittenSlot
     Emit-StoreBits32Frame -SlotPosition $ProfileCreatedSlot -Value 1
     Emit-LoadRaxFrame -SlotPosition $SidSlot
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x85, 0xC0))
@@ -1209,7 +1186,6 @@ function Emit-DevBrokerEnsureAppContainerSid {
     Emit-Win64CallIat -TargetRva ([UInt32]0x3280) -StackArguments @() # DeriveAppContainerSidFromAppContainerName
     Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
     Emit-JumpConditional -ConditionCode 0x85 -Label $derivedSidFailure
-    Emit-DevBrokerDebugMarker -Marker 'ID4:derive-ok' -HandleSlot $debugHandleSlot -WrittenSlot $debugWrittenSlot
     Emit-LoadRaxFrame -SlotPosition $DerivedSidSlot
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x85, 0xC0))
     Emit-JumpConditional -ConditionCode 0x84 -Label $derivedSidFailure
@@ -1220,7 +1196,6 @@ function Emit-DevBrokerEnsureAppContainerSid {
     Emit-Win64CallIat -TargetRva ([UInt32]0x3350) -StackArguments @() # EqualSid
     Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
     Emit-JumpConditional -ConditionCode 0x84 -Label $derivedSidFailure
-    Emit-DevBrokerDebugMarker -Marker 'ID5:equal-ok' -HandleSlot $debugHandleSlot -WrittenSlot $debugWrittenSlot
     Emit-Jump -Label $sidReady
 
     Mark-CodeLabel -Label $derivedSidFailure
@@ -1246,7 +1221,6 @@ function Emit-DevBrokerEnsureAppContainerSid {
     Emit-LoadRsiFrame -SlotPosition $savedRsiSlot
     Emit-Jump -Label $FailureLabel
     Mark-CodeLabel -Label $helperDone
-    Emit-DevBrokerDebugMarker -Marker 'ID6:helper-done' -HandleSlot $debugHandleSlot -WrittenSlot $debugWrittenSlot
 }
 function Emit-DevBrokerDeleteOwnedAppContainerProfile {
     param(
@@ -2987,28 +2961,22 @@ function Emit-DevRunTool {
     # A separate fresh identity is created for the actual child; the stable legacy
     # SID is never placed in SECURITY_CAPABILITIES or used for a process token.
     Emit-DevBrokerEnsureAppContainerSid -SidSlot $appContainerSidSlot -ProfileNameSlot $profileNameSlot -RandomSlot $profileRandomSlot -DerivedSidSlot $derivedProfileSidSlot -ProfileCreatedSlot $profileCreatedSlot -FailureLabel $appContainerFail
-    Emit-DevBrokerDebugMarker -Marker 'MAIN:identity-created' -HandleSlot ($scratch + 0xFB0) -WrittenSlot ($scratch + 0xFB8)
 
     Emit-DevBrokerWriteAclJournal -JournalPathSlot $journalPathSlot -TempPathSlot $journalTempPathSlot -WorkspaceRootSlot $workspaceRootSlot -BuildPathSlot $buildPathSlot -BrokerDirectorySlot $brokerDirectorySlot -JournalHandleSlot $journalHandleSlot -JournalWrittenSlot $journalWrittenSlot -HeaderSlot $journalHeaderSlot -RootDescriptorSlot $rootDescriptorSlot -BuildDescriptorSlot $buildDescriptorSlot -BrokerDescriptorSlot $brokerDescriptorSlot -RootLengthSlot $rootDescriptorLengthSlot -BuildLengthSlot $buildDescriptorLengthSlot -BrokerLengthSlot $brokerDescriptorLengthSlot -TransactionActiveSlot $transactionActiveSlot -FailureLabel $journalFail
 
     # Only now may the execution SID gain read access to source and write access to staging.
     Emit-DevBrokerUpdateAcl -PathSlot $workspaceRootSlot -SidSlot $appContainerSidSlot -AccessMask ([UInt32]0x001200A9) -AccessMode 2 -FailureLabel $aclFail
-    Emit-DevBrokerDebugMarker -Marker 'MAIN:root-acl-added' -HandleSlot ($scratch + 0xFB0) -WrittenSlot ($scratch + 0xFB8)
     Emit-DevBrokerUpdateAcl -PathSlot $buildPathSlot -SidSlot $appContainerSidSlot -AccessMask ([UInt32]0x001201FF) -AccessMode 2 -SetLowIntegrityLabel $true -FailureLabel $aclFail
-    Emit-DevBrokerDebugMarker -Marker 'MAIN:build-acl-added' -HandleSlot ($scratch + 0xFB0) -WrittenSlot ($scratch + 0xFB8)
     Emit-DevBrokerUpdateAcl -PathSlot $brokerDirectorySlot -SidSlot $appContainerSidSlot -AccessMask ([UInt32]0x001201FF) -AccessMode 2 -SetLowIntegrityLabel $true -FailureLabel $aclFail
-    Emit-DevBrokerDebugMarker -Marker 'MAIN:broker-acl-added' -HandleSlot ($scratch + 0xFB0) -WrittenSlot ($scratch + 0xFB8)
 
     # Rebuild this path because outputPathSlot held the temporary ACL journal name.
     Emit-DevBrokerBuildWorkspacePath -RootSlot $workspaceRootSlot -RootLengthSlot $rootLengthSlot -SuffixItem $captureSuffixItem -SuffixLength $captureSuffixLength -DestinationSlot $outputPathSlot
-    Emit-DevBrokerDebugMarker -Marker 'MAIN:capture-path-built' -HandleSlot ($scratch + 0xFB0) -WrittenSlot ($scratch + 0xFB8)
 
     # Create a new exclusive capture file before launch. CREATE_NEW cannot reopen an old
     # reparse point or hard link; the held non-inheritable handle is reused for persistence.
     Emit-LeaRaxFrame -SlotPosition $outputPathSlot
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1))
     Emit-Win64CallIat -TargetRva ([UInt32]0x3310) -StackArguments @() # DeleteFileA; stale files are removed only before CREATE_NEW
-    Emit-DevBrokerDebugMarker -Marker 'MAIN:stale-capture-deleted' -HandleSlot ($scratch + 0xFB0) -WrittenSlot ($scratch + 0xFB8)
     Emit-LeaRaxFrame -SlotPosition $outputPathSlot
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1, 0xBA, 0x80, 0x00, 0x00, 0x40, 0x45, 0x33, 0xC0, 0x45, 0x33, 0xC9))
     Emit-Win64CallIat -TargetRva ([UInt32]0x30A0) -StackArguments @(
@@ -3021,29 +2989,19 @@ function Emit-DevRunTool {
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x85, 0xC0))
     Emit-JumpConditional -ConditionCode 0x84 -Label $outputFail
     Emit-StoreRaxFrame -SlotPosition $outputFileHandleSlot
-    Emit-DevBrokerDebugMarker -Marker 'CAPTURE:handle-created' -HandleSlot ($scratch + 0xFB0) -WrittenSlot ($scratch + 0xFB8)
     for ($i = 0; $i -lt 7; $i++) { Emit-StoreZero64Frame -SlotPosition ($outputFileInfoSlot + ($i * 8)) }
     Emit-LoadRcxFrame -SlotPosition $outputFileHandleSlot
     Emit-LeaRaxFrame -SlotPosition $outputFileInfoSlot
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC2))
     Emit-Win64CallIat -TargetRva ([UInt32]0x3208) -StackArguments @() # GetFileInformationByHandle
-    $captureFileInfoSucceeded = New-UniqueLabel -Prefix 'dev_capture_file_info_succeeded'
     Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
-    Emit-JumpConditional -ConditionCode 0x85 -Label $captureFileInfoSucceeded
-    # Preserve the exact Win32 failure during qualification; this replaces generic -115 only
-    # in the diagnostic branch and is removed after the failing API is corrected.
-    Emit-Win64CallIat -TargetRva ([UInt32]0x3268) -StackArguments @() # GetLastError
-    Emit-StoreEaxFrame -SlotPosition $resultSlot
-    Emit-Jump -Label $cleanup
-    Mark-CodeLabel -Label $captureFileInfoSucceeded
-    Emit-DevBrokerDebugMarker -Marker 'CAPTURE:file-info-ok' -HandleSlot ($scratch + 0xFB0) -WrittenSlot ($scratch + 0xFB8)
+    Emit-JumpConditional -ConditionCode 0x84 -Label $outputFail
     Emit-LoadEaxFrame -SlotPosition $outputFileInfoSlot
     Emit-Bytes -Bytes ([byte[]]@(0xA9, 0x10, 0x04, 0x00, 0x00))
     Emit-JumpConditional -ConditionCode 0x85 -Label $outputFail # reject directory and reparse-point attributes
     Emit-LoadEaxFrame -SlotPosition ($outputFileInfoSlot + 40)
     Emit-Bytes -Bytes ([byte[]]@(0x3D, 0x01, 0x00, 0x00, 0x00))
     Emit-JumpConditional -ConditionCode 0x85 -Label $outputFail # a fresh capture file must have exactly one link
-    Emit-DevBrokerDebugMarker -Marker 'CAPTURE:metadata-ok' -HandleSlot ($scratch + 0xFB0) -WrittenSlot ($scratch + 0xFB8)
 
     # Build a restricted primary token and a no-capability AppContainer SECURITY_CAPABILITIES.
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0xC7, 0xC1, 0xFF, 0xFF, 0xFF, 0xFF)) # GetCurrentProcess()
@@ -3073,7 +3031,6 @@ function Emit-DevRunTool {
     Emit-StoreZero64Frame -SlotPosition ($securityCapabilitiesSlot + 8) # Capability SID_AND_ATTRIBUTES pointer = NULL
     Emit-StoreBits32Frame -SlotPosition ($securityCapabilitiesSlot + 16) -Value 0 # CapabilityCount
     Emit-StoreBits32Frame -SlotPosition ($securityCapabilitiesSlot + 20) -Value 0 # Reserved
-    Emit-DevBrokerDebugMarker -Marker 'CAPTURE:security-capabilities-ready' -HandleSlot ($scratch + 0xFB0) -WrittenSlot ($scratch + 0xFB8)
 
     # Create inherited anonymous-pipe endpoints and a NUL standard-input handle.
     Emit-StoreBits32Frame -SlotPosition $pipeSecuritySlot -Value 24 # sizeof(SECURITY_ATTRIBUTES)
@@ -3115,7 +3072,6 @@ function Emit-DevRunTool {
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x85, 0xC0))
     Emit-JumpConditional -ConditionCode 0x84 -Label $outputFail
     Emit-StoreRaxFrame -SlotPosition $outputBufferSlot
-    Emit-DevBrokerDebugMarker -Marker 'CAPTURE:buffer-allocated' -HandleSlot ($scratch + 0xFB0) -WrittenSlot ($scratch + 0xFB8)
 
     # Query the exact size required for two process attributes. The documented
     # first call uses a NULL list and must fail with ERROR_INSUFFICIENT_BUFFER (122).
@@ -3148,7 +3104,6 @@ function Emit-DevRunTool {
     Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
     Emit-JumpConditional -ConditionCode 0x84 -Label $attributeFail
     Emit-StoreBits32Frame -SlotPosition $attributeListReadySlot -Value 1
-    Emit-DevBrokerDebugMarker -Marker 'CAPTURE:attribute-list-ok' -HandleSlot ($scratch + 0xFB0) -WrittenSlot ($scratch + 0xFB8)
 
     # PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES: AppContainer SID and zero capabilities.
     Emit-LoadRaxFrame -SlotPosition $appContainerSidSlot
@@ -3163,7 +3118,6 @@ function Emit-DevRunTool {
     ) # UpdateProcThreadAttribute(SECURITY_CAPABILITIES)
     Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
     Emit-JumpConditional -ConditionCode 0x84 -Label $attributeFail
-    Emit-DevBrokerDebugMarker -Marker 'CAPTURE:security-capabilities-added' -HandleSlot ($scratch + 0xFB0) -WrittenSlot ($scratch + 0xFB8)
 
     # The inherited-handle allowlist contains exactly NUL stdin and the pipe writer.
     Emit-LoadRaxFrame -SlotPosition $nulHandleSlot
@@ -3180,7 +3134,6 @@ function Emit-DevRunTool {
     ) # UpdateProcThreadAttribute(HANDLE_LIST)
     Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
     Emit-JumpConditional -ConditionCode 0x84 -Label $attributeFail
-    Emit-DevBrokerDebugMarker -Marker 'CAPTURE:handle-list-added' -HandleSlot ($scratch + 0xFB0) -WrittenSlot ($scratch + 0xFB8)
 
     # STARTUPINFOEXA: stdin=NUL, stdout=stderr=one pipe writer, exact attribute list.
     for ($i = 0; $i -lt 14; $i++) { Emit-StoreZero64Frame -SlotPosition ($startupSlot + ($i * 8)) }
@@ -3214,7 +3167,6 @@ function Emit-DevRunTool {
     Emit-Win64CallIat -TargetRva ([UInt32]0x3198) -StackArguments @() # SetInformationJobObject
     Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
     Emit-JumpConditional -ConditionCode 0x84 -Label $jobConfigFail
-    Emit-DevBrokerDebugMarker -Marker 'CAPTURE:job-configured' -HandleSlot ($scratch + 0xFB0) -WrittenSlot ($scratch + 0xFB8)
 
     # Create the restricted-token/AppContainer child suspended; only the explicit handle list is inherited.
     Emit-LoadRaxFrame -SlotPosition $restrictedTokenSlot
@@ -3234,7 +3186,6 @@ function Emit-DevRunTool {
     ) # CreateProcessAsUserA
     Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
     Emit-JumpConditional -ConditionCode 0x84 -Label $createFail
-    Emit-DevBrokerDebugMarker -Marker 'CAPTURE:create-process-ok' -HandleSlot ($scratch + 0xFB0) -WrittenSlot ($scratch + 0xFB8)
 
     # Parent closes its inheritable copies immediately; only the child owns the pipe writer after this point.
     foreach ($slot in @($pipeWriteSlot, $nulHandleSlot)) {
@@ -3251,7 +3202,6 @@ function Emit-DevRunTool {
     Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
     Emit-JumpConditional -ConditionCode 0x84 -Label $assignFail
     Emit-StoreBits32Frame -SlotPosition $childActiveSlot -Value 1
-    Emit-DevBrokerDebugMarker -Marker 'CAPTURE:job-assigned' -HandleSlot ($scratch + 0xFB0) -WrittenSlot ($scratch + 0xFB8)
 
     # Verify the actual primary token before the first instruction can execute.
     Emit-LoadRaxFrame -SlotPosition $processSlot
@@ -3310,7 +3260,6 @@ function Emit-DevRunTool {
     ) # GetTokenInformation(TOKEN_APPCONTAINER_INFORMATION)
     Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
     Emit-JumpConditional -ConditionCode 0x84 -Label $tokenFail
-    Emit-DevBrokerDebugMarker -Marker 'CAPTURE:token-sid-query-ok' -HandleSlot ($scratch + 0xFB0) -WrittenSlot ($scratch + 0xFB8)
     Emit-LoadRaxFrame -SlotPosition $tokenInformationSlot
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1)) # RCX = PSID pointer stored in TOKEN_APPCONTAINER_INFORMATION
     Emit-LoadRaxFrame -SlotPosition $appContainerSidSlot
@@ -3318,7 +3267,6 @@ function Emit-DevRunTool {
     Emit-Win64CallIat -TargetRva ([UInt32]0x3350) -StackArguments @() # EqualSid
     Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
     Emit-JumpConditional -ConditionCode 0x84 -Label $tokenFail
-    Emit-DevBrokerDebugMarker -Marker 'CAPTURE:token-sid-equal' -HandleSlot ($scratch + 0xFB0) -WrittenSlot ($scratch + 0xFB8)
 
     # TokenHasRestrictions must be TRUE (the parent token's maximum privileges were disabled).
     for ($i = 0; $i -lt 8; $i++) { Emit-StoreZero64Frame -SlotPosition ($tokenInformationSlot + ($i * 8)) }
