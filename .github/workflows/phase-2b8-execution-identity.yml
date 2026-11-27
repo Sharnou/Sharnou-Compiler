@@ -50,6 +50,10 @@ jobs:
         shell: powershell
         run: .\Tests\Test-DevAgentEnvironmentBlock.ps1
 
+      - name: Run restricted-token AppContainer CreateProcessAsUserW launch qualification
+        shell: powershell
+        run: .\Tests\Test-DevAgentAppContainerLaunch.ps1
+
       - name: Run separate bounded stdout and stderr qualification
         shell: powershell
         run: .\Tests\Test-DevAgentOutputStreams.ps1
