@@ -1606,7 +1606,8 @@ function Emit-DevBrokerRecoverAclJournal {
 
     Emit-StoreBits32Frame -SlotPosition $recoveryStageSlot -Value 1 # open committed journal
     Emit-LeaRaxFrame -SlotPosition $JournalPathSlot
-    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1, 0xBA, 0x00, 0x00, 0x00, 0x80, 0x45, 0x33, 0xC0, 0x45, 0x33, 0xC9))
+    # FILE_SHARE_READ permits independent readers while denying concurrent writes/deletes.
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1, 0xBA, 0x00, 0x00, 0x00, 0x80, 0x41, 0xB8, 0x01, 0x00, 0x00, 0x00, 0x45, 0x33, 0xC9))
     Emit-Win64CallIat -TargetRva ([UInt32]0x30A0) -StackArguments @(
         @{ Kind = 'Immediate'; Value = 3 },
         @{ Kind = 'Immediate'; Value = 0x00200080 },
@@ -1626,6 +1627,11 @@ function Emit-DevBrokerRecoverAclJournal {
     Emit-JumpConditional -ConditionCode 0x84 -Label $done
     Emit-Bytes -Bytes ([byte[]]@(0x3D, 0x03, 0x00, 0x00, 0x00))
     Emit-JumpConditional -ConditionCode 0x84 -Label $done
+    # Preserve unexpected CreateFileA Win32 error in the diagnostic result:
+    # returned status is -1400 minus GetLastError().
+    Emit-Bytes -Bytes ([byte[]]@(0x05))
+    Emit-I32 -Value 1000
+    Emit-StoreEaxFrame -SlotPosition $recoveryStageSlot
     Emit-Jump -Label $FailureLabel
 
     Mark-CodeLabel -Label $restoreReady
