@@ -3028,8 +3028,15 @@ function Emit-DevRunTool {
     Emit-LeaRaxFrame -SlotPosition $outputFileInfoSlot
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC2))
     Emit-Win64CallIat -TargetRva ([UInt32]0x3208) -StackArguments @() # GetFileInformationByHandle
+    $captureFileInfoSucceeded = New-UniqueLabel -Prefix 'dev_capture_file_info_succeeded'
     Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
-    Emit-JumpConditional -ConditionCode 0x84 -Label $outputFail
+    Emit-JumpConditional -ConditionCode 0x85 -Label $captureFileInfoSucceeded
+    # Preserve the exact Win32 failure during qualification; this replaces generic -115 only
+    # in the diagnostic branch and is removed after the failing API is corrected.
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3268) -StackArguments @() # GetLastError
+    Emit-StoreEaxFrame -SlotPosition $resultSlot
+    Emit-Jump -Label $cleanup
+    Mark-CodeLabel -Label $captureFileInfoSucceeded
     Emit-DevBrokerDebugMarker -Marker 'CAPTURE:file-info-ok' -HandleSlot ($scratch + 0xFB0) -WrittenSlot ($scratch + 0xFB8)
     Emit-LoadEaxFrame -SlotPosition $outputFileInfoSlot
     Emit-Bytes -Bytes ([byte[]]@(0xA9, 0x10, 0x04, 0x00, 0x00))
