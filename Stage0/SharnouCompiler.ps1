@@ -1797,7 +1797,7 @@ function Emit-DevBrokerWriteProcessTokenDiagnostic {
 
     Emit-StoreZero64Frame -SlotPosition $tokenHandleSlot
     foreach ($slot in @($appContainerSlot, $restrictedSlot, $elevatedSlot)) {
-        Emit-StoreBits32Frame -SlotPosition $slot -Value 0xFFFFFFFF
+        Emit-StoreBits32Frame -SlotPosition $slot -Value ([UInt32]::MaxValue)
     }
     Emit-StoreBits32Frame -SlotPosition $tokenLengthSlot -Value 0
 
@@ -1833,7 +1833,7 @@ function Emit-DevBrokerWriteProcessTokenDiagnostic {
         Emit-StoreEaxFrame -SlotPosition $query.Slot
         Emit-Jump -Label $queryDone
         Mark-CodeLabel -Label $queryFailed
-        Emit-StoreBits32Frame -SlotPosition $query.Slot -Value 0xFFFFFFFF
+        Emit-StoreBits32Frame -SlotPosition $query.Slot -Value ([UInt32]::MaxValue)
         Mark-CodeLabel -Label $queryDone
     }
     Mark-CodeLabel -Label $tokenOpenFailed
