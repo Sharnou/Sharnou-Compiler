@@ -176,3 +176,21 @@ The latest identity/journal primitive code commit is `fc479378a818bc759f298361c6
 The frozen M1-M6 baseline passed 83/83 on the latest workflow head `cb0551dd1d272deb3c12aab9b5131cc3fb6ed2fb` in run [46024435843](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/46024435843).
 
 The full Stage 7A combined workflow [46024435792](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/46024435792) had passed checkout and source-encoding and remained in its native combined test step at the last status check. It includes the new AppContainer-originated DPAPI characterization in `SandboxProbe.ps1`; the parent harness attempts to decrypt any sandbox-created envelope using the broker's CurrentUser context. This run's final result is required before classifying that adversarial boundary.
+
+
+## 2026-11-27 bounded explicit environment primitive qualification
+
+Added `Tests/Test-DevAgentEnvironmentBlock.ps1` and wired it into both root `Test.ps1` and the dedicated Phase 2B.8 Windows workflow.
+
+Exact candidate: `6277f28123b28b56e2710f50d7197239fd034529`.
+
+Dedicated Windows Server 2025 run [46025925905](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/46025925905) completed **SUCCESS**, including:
+- Explicit Unicode environment builder produced a bounded 9-entry / 354 UTF-16-code-unit environment.
+- Child process launched through `CreateProcessW` with `CREATE_UNICODE_ENVIRONMENT` and a non-NULL caller-constructed environment block.
+- Required `SystemRoot`, `windir`, `SystemDrive` and `PATH` values were present.
+- Validated hidden per-drive current-directory entries were preserved while ordinary inherited variables were discarded.
+- A unique parent secret variable was absent from the child.
+
+Frozen M1-M6 baseline run [46025925771](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/46025925771) passed **83/83** on the same candidate.
+
+This qualifies the explicit environment construction and ordinary Windows `CreateProcessW` path on the Windows runner. It does **not** yet verify the same environment with `CreateProcessAsUserW` + `SECURITY_CAPABILITIES` for the AppContainer child, and it does not change the compiler-emitted broker. The production emitter still passes `lpEnvironment=NULL`; Win32 error 203 remains unclosed for the production API path until the exact AppContainer/restricted-token process creation path is tested and integrated.
