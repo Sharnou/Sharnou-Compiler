@@ -146,7 +146,7 @@ Phase 2B.8 is accepted only when all gates pass on the same exact Windows-tested
 9. **G8 - Independent evidence:** evidence verifier passes; raw logs and artifact hashes are available; no missing assertions or unaccounted crash points.
 10. **G9 - Security review:** explicit human review signs off the threat model, residual risks and exact commit. This does not itself authorize model-facing execution.
 
-Any skipped test, unsupported Windows environment, missing artifact, unknown assertion, partial rollback, leaked profile, surviving process, altered ACL, inherited secret, or unverifiable journal is a BLOCKED result—not a warning.
+Any skipped test, unsupported Windows environment, missing artifact, unknown assertion, partial rollback, leaked profile, surviving process, altered ACL, inherited secret, or unverifiable journal is a BLOCKED result - not a warning.
 
 ## 8. Exit criteria and next milestone boundary
 
