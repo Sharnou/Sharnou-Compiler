@@ -2282,3 +2282,14 @@ The journal-v2 test schema was corrected to use Windows `FILE_ID_INFO`: 64-bit v
 ### Security status
 
 Architecture selection for the dedicated writer-authority service is owner-approved for implementation planning, not production rollout. Model-facing execution and autonomous execution remain DISABLED. Phase 2B.8 remains NOT SECURITY ACCEPTED. No merge, release, executable publication, or external toolchain is authorized.
+
+
+## 2026-11-27 - R5.1 native SCM service-host preflight
+
+- Draft PR #32: https://github.com/Sharnou/Sharnou-Compiler/pull/32; branch `phase-2b8-r5-1-native-scm-host-20261127`; base is the R5.0 exact-head candidate branch.
+- Added `Docs/PHASE-2B8-R5-1-NATIVE-SCM-HOST.md` with SCM lifecycle, callback ABI, relocation requirements, allowed import ceiling, native build contract, and Windows acceptance matrix.
+- Inspected the PE emitter: it currently creates one DIR64 relocation for the entry-point anchor; service-table callback pointers need additional relocations and code-label/data-pointer fixups. The emitter's builtin call path is statically named IAT calls and does not yet provide a qualified callback-pointer path.
+- Reverted the speculative incomplete R5.1 service import/builtin scaffold in commit `23a01bd5425bc183aeb5496827e015e75beeac42`. This restores the normal compiler baseline and avoids undefined builtins/imports. No SCM service executable is produced.
+- PR #32 current head `5f6e5bdd1d3362a5b0a77458df956d6acbf41980`; no exact-head workflow run is currently exposed. Do not claim R5.1 CI pass.
+- Next code-bearing task is R5.1.a: implement bounded multi-target DIR64 relocation generation and parser/runtime tests, preserving no-extra-relocation output compatibility. Then code-label/data-pointer fixups, callback ABI probes, and only then SCM host generation.
+- Model-facing and autonomous execution remain DISABLED. Phase 2B.8 remains NOT SECURITY ACCEPTED.
