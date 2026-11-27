@@ -115,7 +115,7 @@ Journal primitive:
 - DPAPI current-user envelope protected/unprotected the canonical version-2 test record and rejected three modified envelope locations.
 - Strict v2 parser accepted the canonical record and rejected an unsupported version, truncation, trailing bytes, profile-name length overflow and missing workspace volume identity.
 - The envelope did not contain the journal magic, profile name or package SID in cleartext.
-- The current record schema fixture is 267 bytes before DPAPI protection.
+- The current record schema fixture is 279 bytes before DPAPI protection, including a 64-bit volume serial and full 128-bit `FILE_ID_128` value.
 - This is still a primitive and schema fixture, not native broker integration.
 
 ### Security design decision added
@@ -142,7 +142,7 @@ Latest fixture code commit: `a64b81def96b22315b8ab8034bb60c4af1870e32`.
 
 Windows Server 2025 dedicated run [46022134602](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/46022134602) completed **SUCCESS**. In addition to prior profile-token and strict schema checks, the journal fixture now:
 - rejects empty execution GUID, malformed AppContainer package SID, descriptor-count mismatch, too-short descriptor, unsupported policy version, unsupported journal version, truncation, trailing data, invalid profile-name length and missing workspace volume identity;
-- demonstrates the key threat-model limitation by creating a different structurally valid v2 record in the same user context, protecting it with the same public optional entropy using DPAPI, and successfully unprotecting it again.
+- demonstrates the key threat-model limitation by creating a different structurally valid v2 record in a separate PowerShell process running as the same user, protecting it with the same public optional entropy using DPAPI, and successfully unprotecting it again.
 
 This is an expected PASS and a security warning: the same-user principal can mint a different valid DPAPI envelope. Therefore this DPAPI mechanism alone cannot authenticate which broker process wrote the journal. The trust-boundary document prohibits production use as writer authentication until a distinct writer trust anchor is chosen.
 
@@ -153,3 +153,10 @@ At this run:
 - DPAPI tamper, wrong entropy, cleartext absence, same-user re-protection and strict v2 schema tests passed.
 
 The fixture remains non-production: no compiler-emitted broker integration, no crash-profile cleanup and no complete journal recovery path has been changed.
+
+
+## 2026-11-27 schema and separate-process writer proof hardening
+
+The test-only v2 schema now models Windows `FILE_ID_INFO` correctly: an unsigned 64-bit volume serial plus the full 16-byte `FILE_ID_128`, rather than a legacy 64-bit file index. Parser tests reject a zero volume serial and an all-zero 128-bit file identifier. The current test fixture has increased by 12 bytes accordingly.
+
+The DPAPI writer-boundary proof now launches a separate Windows PowerShell process under the same user, asks it to protect a different canonical journal payload with the public optional entropy, and verifies that the parent process can unprotect the resulting envelope. This is a real cross-process demonstration; it is not a same-process simulation. It remains a test of the user-scope DPAPI property, not production journal integration.
