@@ -535,3 +535,14 @@ The failure result -2685 decodes from the emitter's status formula to ERROR_ACCE
 Acceptance requires: repair and adversarially validate journal recovery; unique per-execution AppContainer SID/profile with crash cleanup; an explicit bounded allowlisted Unicode environment (lpEnvironment must not be NULL); production integration of the Phase 2B.5 handle allowlist and independent bounded stdout/stderr capture; child DLL-search hardening; final-object/path verification; actual PE import-table validation; and same-head Windows regressions including M6 83/83 and Stage 7A.
 
 **Model-facing and autonomous process execution remain DISABLED.**
+
+
+## Phase 2B.8 implementation start - 2026-11-27
+
+- Implementation tracker: issue [#25](https://github.com/Sharnou/Sharnou-Compiler/issues/25); specification PR [#26](https://github.com/Sharnou/Sharnou-Compiler/pull/26).
+- Reconciled parent candidate: PR #24 at exact head `6344632746cd0666025a0beb0d31f4752d6480f6`. Windows run [46003358917](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/46003358917) passes targeted recovery on that head; companion [46003358930](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/46003358930) passes M1-M6 83/83. These results do not qualify the full lifecycle.
+- PR #24 is the Phase 2B.6 integration parent. No separately recorded complete Phase 2B.7 lifecycle implementation/acceptance was found in the current candidate documentation. Do not assume Phase 2B.7 complete.
+- New stacked implementation PR [#28](https://github.com/Sharnou/Sharnou-Compiler/pull/28) adds a Windows-only identity primitive fixture using CNG random IDs, CreateAppContainerProfile with zero capabilities, SID derivation, strict no-adoption of existing profiles, and deletion/recreation proof. It is based on the exact PR #24 head and does not modify PR #24.
+- **Fixture status: NOT YET WINDOWS-CI-VERIFIED.** No compiler-emitted broker source or import table was changed in this increment. Stable production AppContainer identity remains a blocker.
+- Follow-up blockers: authenticated journal before persisting profile metadata for privileged recovery; production unique identity and profile cleanup; clean Unicode environment; distinct bounded stdout/stderr; child DLL-search policy; exhaustive crash-cut and concurrency tests; independent evidence verifier.
+- Keep model-facing process execution DISABLED and all related PRs draft/unmerged.
