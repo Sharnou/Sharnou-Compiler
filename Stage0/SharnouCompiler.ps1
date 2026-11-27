@@ -1664,13 +1664,16 @@ function Emit-DevBrokerRecoverAclJournal {
     Emit-LoadEaxFrame -SlotPosition $JournalReadCountSlot
     Emit-Bytes -Bytes ([byte[]]@(0x83, 0xF8, 0x20))
     Emit-JumpConditional -ConditionCode 0x85 -Label $failed
-    Emit-StoreBits32Frame -SlotPosition $recoveryStageSlot -Value 5 # validate journal signature and version
+    # Distinguish the three header checks in the negative diagnostic status.
+    Emit-StoreBits32Frame -SlotPosition $recoveryStageSlot -Value 50 # first signature DWORD
     Emit-LoadEaxFrame -SlotPosition $HeaderSlot
     Emit-Bytes -Bytes ([byte[]]@(0x3D, 0x53, 0x48, 0x41, 0x52))
     Emit-JumpConditional -ConditionCode 0x85 -Label $failed
+    Emit-StoreBits32Frame -SlotPosition $recoveryStageSlot -Value 51 # second signature DWORD
     Emit-LoadEaxFrame -SlotPosition ($HeaderSlot + 4)
     Emit-Bytes -Bytes ([byte[]]@(0x3D, 0x41, 0x43, 0x4C, 0x31))
     Emit-JumpConditional -ConditionCode 0x85 -Label $failed
+    Emit-StoreBits32Frame -SlotPosition $recoveryStageSlot -Value 52 # version
     Emit-LoadEaxFrame -SlotPosition ($HeaderSlot + 8)
     Emit-Bytes -Bytes ([byte[]]@(0x83, 0xF8, 0x01))
     Emit-JumpConditional -ConditionCode 0x85 -Label $failed
