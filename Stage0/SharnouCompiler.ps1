@@ -9,6 +9,11 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+$relocationModulePath = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\Tools\SharnouPERelocations.ps1'))
+if (-not (Test-Path -LiteralPath $relocationModulePath -PathType Leaf)) {
+    throw "Sharnou PE relocation module is missing: $relocationModulePath"
+}
+. $relocationModulePath
 
 function Set-Bytes {
     param([byte[]] $Buffer, [int] $Offset, [byte[]] $Bytes)
@@ -2670,7 +2675,7 @@ function Emit-DevRunTool {
     $journalTempSuffixLength = [System.Text.Encoding]::ASCII.GetByteCount($journalTempSuffix)
 
     $manifestPath = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\Tests\DevAgentBroker\tool-manifest.json'))
-    $expectedManifestSha256 = '0BC2E3FD4D20DAFA860745AB1CF41F74E54FD8800EF9DAFA4EA4896093B7FFBE'
+    $expectedManifestSha256 = 'C74D82D29C73034A63E6A34113CFD9ED243BB4356D8B1318BEE7100E0E09AAFE'
     if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) { throw 'Pinned DevAgent tool manifest is missing.' }
     $actualManifestSha256 = (Get-FileHash -LiteralPath $manifestPath -Algorithm SHA256).Hash
     if ($actualManifestSha256 -cne $expectedManifestSha256) {
@@ -4566,16 +4571,42 @@ function Test-ImageBasic {
     $optional = $pe + 24
     $optionalSize = [BitConverter]::ToUInt16($Image, $pe + 20)
     $sectionTable = $optional + $optionalSize
-    $relocSectionRva = [UInt32]0
+    $rdataSection = $null
+    $relocSection = $null
     for ($sectionIndex = 0; $sectionIndex -lt $count; $sectionIndex++) {
         $header = $sectionTable + ($sectionIndex * 40)
         $sectionName = [System.Text.Encoding]::ASCII.GetString($Image, $header, 8).Trim([char[]]@(0))
-        if ($sectionName -eq '.reloc') { $relocSectionRva = [BitConverter]::ToUInt32($Image, $header + 12); break }
+        $section = [pscustomobject]@{
+            Name = $sectionName
+            VirtualSize = [UInt32][BitConverter]::ToUInt32($Image, $header + 8)
+            Rva = [UInt32][BitConverter]::ToUInt32($Image, $header + 12)
+            RawSize = [UInt32][BitConverter]::ToUInt32($Image, $header + 16)
+            RawPointer = [UInt32][BitConverter]::ToUInt32($Image, $header + 20)
+        }
+        if ($sectionName -eq '.rdata') { $rdataSection = $section }
+        if ($sectionName -eq '.reloc') { $relocSection = $section }
     }
-    $relocRva = [BitConverter]::ToUInt32($Image, $optional + 152); $relocSize = [BitConverter]::ToUInt32($Image, $optional + 156)
-    if ($relocSectionRva -eq 0 -or $relocRva -ne $relocSectionRva -or $relocSize -ne 12) { throw 'Internal linker validation: base relocation directory is missing or malformed.' }
-    $exceptionRva = [BitConverter]::ToUInt32($Image, $optional + 136); $exceptionSize = [BitConverter]::ToUInt32($Image, $optional + 140)
-    if ($exceptionRva -eq 0 -or $exceptionSize -lt 12 -or ($exceptionSize % 12) -ne 0) { throw 'Internal linker validation: x64 exception/unwind directory is missing or malformed.' }
+    $relocRva = [UInt32][BitConverter]::ToUInt32($Image, $optional + 152)
+    $relocSize = [UInt32][BitConverter]::ToUInt32($Image, $optional + 156)
+    if ($null -eq $rdataSection -or $null -eq $relocSection -or $relocRva -ne $relocSection.Rva -or $relocSize -lt 12 -or $relocSize -gt $relocSection.VirtualSize) {
+        throw 'Internal linker validation: base relocation directory or containing section is missing/malformed.'
+    }
+    $relocFileOffset = [UInt64]$relocSection.RawPointer
+    if (($relocFileOffset + $relocSize) -gt [UInt64]$Image.Length -or $relocSize -gt $relocSection.RawSize) {
+        throw 'Internal linker validation: base relocation directory is not backed by file data.'
+    }
+    $relocBytes = [byte[]]::new([int]$relocSize)
+    [System.Buffer]::BlockCopy($Image, [int]$relocFileOffset, $relocBytes, 0, [int]$relocSize)
+    $allowedRanges = @([pscustomobject]@{ StartRva = $rdataSection.Rva; Size = $rdataSection.VirtualSize })
+    $relocationResult = Test-SharnouBaseRelocationDirectory -Bytes $relocBytes -ImageSize ([UInt32][BitConverter]::ToUInt32($Image, $optional + 56)) -AllowedRanges $allowedRanges -ExpectedTargetRvas $script:ExpectedRelocationTargetRvas
+    if (-not ($relocationResult.TargetRvas -contains [UInt32]$rdataSection.Rva)) {
+        throw 'Internal linker validation: .rdata absolute entry-point anchor has no DIR64 relocation.'
+    }
+    $exceptionRva = [BitConverter]::ToUInt32($Image, $optional + 136)
+    $exceptionSize = [BitConverter]::ToUInt32($Image, $optional + 140)
+    if ($exceptionRva -eq 0 -or $exceptionSize -lt 12 -or ($exceptionSize % 12) -ne 0) {
+        throw 'Internal linker validation: x64 exception/unwind directory is missing or malformed.'
+    }
 }
 
 if (-not [Environment]::Is64BitOperatingSystem) { throw 'The Sharnou compiler emits x64 PE32+ executables and requires 64-bit Windows.' }
@@ -4717,10 +4748,15 @@ $textVirtualSpan = Align-Up -Value $codeBytes.Length -Alignment 0x1000
 if ($script:DataLength -gt 0x1000) { throw "Generated .rdata section is too large: $($script:DataLength) bytes; maximum is 4096." }
 $dataVirtualSpan = Align-Up -Value ([Math]::Max(8, $script:DataLength)) -Alignment 0x1000
 $idataVirtualSpan = Align-Up -Value 0x1000 -Alignment 0x1000
-$relocVirtualSpan = Align-Up -Value 12 -Alignment 0x1000
+$dataRva = [UInt32]([long]$textRva + [long]$textVirtualSpan)
+$relocationImageBoundary = [UInt32]([long]$dataRva + [long]$dataVirtualSpan)
+$relocationTargets = [System.Collections.Generic.List[UInt32]]::new()
+$relocationTargets.Add($dataRva) # Existing .rdata absolute entry-point anchor.
+$script:ExpectedRelocationTargetRvas = [UInt32[]]@($relocationTargets)
+$relocationDirectory = New-SharnouBaseRelocationDirectory -TargetRvas $script:ExpectedRelocationTargetRvas -ImageSize $relocationImageBoundary -AllowedRanges @([pscustomobject]@{ StartRva = $dataRva; Size = [Math]::Max(8, $script:DataLength) })
+$relocVirtualSpan = Align-Up -Value $relocationDirectory.DirectorySize -Alignment 0x1000
 $pdataVirtualSpan = Align-Up -Value $pdataLength -Alignment 0x1000
 $xdataVirtualSpan = Align-Up -Value $xdataLength -Alignment 0x1000
-$dataRva = [UInt32]([long]$textRva + [long]$textVirtualSpan)
 $idataRva = [UInt32]([long]$dataRva + [long]$dataVirtualSpan)
 $relocRva = [UInt32]([long]$idataRva + [long]$idataVirtualSpan)
 $pdataRva = [UInt32]([long]$relocRva + [long]$relocVirtualSpan)
@@ -4863,9 +4899,10 @@ $script:StdLibIatOffsets = @{
     'BCryptGenRandom' = [UInt32]0x330; 'DeleteAppContainerProfile' = [UInt32]0x340; 'EqualSid' = [UInt32]0x350
 }
 
-# One DIR64 relocation patches the absolute image-base + entry-point pointer at the dynamic .rdata RVA.
-$reloc = [byte[]]::new(0x200)
-Set-U32 -Buffer $reloc -Offset 0 -Value $dataRva; Set-U32 -Buffer $reloc -Offset 4 -Value 12; Set-U16 -Buffer $reloc -Offset 8 -Value 0xA000; Set-U16 -Buffer $reloc -Offset 10 -Value 0
+# Emit a PE base-relocation directory whose size follows the actual DIR64 target set.
+$relocRawSize = Align-Up -Value $relocationDirectory.DirectorySize -Alignment 0x200
+$reloc = [byte[]]::new($relocRawSize)
+Set-Bytes -Buffer $reloc -Offset 0 -Bytes $relocationDirectory.Bytes
 if ($idata.Length -gt $idataVirtualSpan) { throw 'Generated .idata section exceeds its reserved virtual span.' }
 $headersSize = 0x400
 $pdataRawSize = Align-Up -Value $pdataBytes.Length -Alignment 0x200
@@ -4900,7 +4937,7 @@ Set-U64 -Buffer $image -Offset ($opt + 72) -Value ([UInt64]0x100000); Set-U64 -B
 Set-U32 -Buffer $image -Offset ($opt + 104) -Value 0; Set-U32 -Buffer $image -Offset ($opt + 108) -Value 16
 Set-U32 -Buffer $image -Offset ($opt + 120) -Value ([UInt32]([long]$idataRva + [long]$descriptorBase)); Set-U32 -Buffer $image -Offset ($opt + 124) -Value $importDirectorySize
 Set-U32 -Buffer $image -Offset ($opt + 136) -Value $pdataRva; Set-U32 -Buffer $image -Offset ($opt + 140) -Value $pdataBytes.Length
-Set-U32 -Buffer $image -Offset ($opt + 152) -Value $relocRva; Set-U32 -Buffer $image -Offset ($opt + 156) -Value 12
+Set-U32 -Buffer $image -Offset ($opt + 152) -Value $relocRva; Set-U32 -Buffer $image -Offset ($opt + 156) -Value $relocationDirectory.DirectorySize
 Set-U32 -Buffer $image -Offset ($opt + 208) -Value ([UInt32]([long]$idataRva + 0x70)); Set-U32 -Buffer $image -Offset ($opt + 212) -Value 0x2F0
 $sectionText = 0x188
 Set-Ascii -Buffer $image -Offset $sectionText -Value '.text'; Set-U32 -Buffer $image -Offset ($sectionText + 8) -Value $codeBytes.Length; Set-U32 -Buffer $image -Offset ($sectionText + 12) -Value $textRva; Set-U32 -Buffer $image -Offset ($sectionText + 16) -Value $textRawSize; Set-U32 -Buffer $image -Offset ($sectionText + 20) -Value $textRawPointer; Set-U32 -Buffer $image -Offset ($sectionText + 36) -Value 0x60000020
@@ -4909,7 +4946,7 @@ Set-Ascii -Buffer $image -Offset $sectionData -Value '.rdata'; Set-U32 -Buffer $
 $sectionImport = 0x1D8
 Set-Ascii -Buffer $image -Offset $sectionImport -Value '.idata'; Set-U32 -Buffer $image -Offset ($sectionImport + 8) -Value $idata.Length; Set-U32 -Buffer $image -Offset ($sectionImport + 12) -Value $idataRva; Set-U32 -Buffer $image -Offset ($sectionImport + 16) -Value $idata.Length; Set-U32 -Buffer $image -Offset ($sectionImport + 20) -Value $idataRawPointer; Set-U32 -Buffer $image -Offset ($sectionImport + 36) -Value ([UInt32]([Int64]3221225536))
 $sectionReloc = 0x200
-Set-Ascii -Buffer $image -Offset $sectionReloc -Value '.reloc'; Set-U32 -Buffer $image -Offset ($sectionReloc + 8) -Value 12; Set-U32 -Buffer $image -Offset ($sectionReloc + 12) -Value $relocRva; Set-U32 -Buffer $image -Offset ($sectionReloc + 16) -Value $reloc.Length; Set-U32 -Buffer $image -Offset ($sectionReloc + 20) -Value $relocRawPointer; Set-U32 -Buffer $image -Offset ($sectionReloc + 36) -Value 0x42000040
+Set-Ascii -Buffer $image -Offset $sectionReloc -Value '.reloc'; Set-U32 -Buffer $image -Offset ($sectionReloc + 8) -Value $relocationDirectory.DirectorySize; Set-U32 -Buffer $image -Offset ($sectionReloc + 12) -Value $relocRva; Set-U32 -Buffer $image -Offset ($sectionReloc + 16) -Value $reloc.Length; Set-U32 -Buffer $image -Offset ($sectionReloc + 20) -Value $relocRawPointer; Set-U32 -Buffer $image -Offset ($sectionReloc + 36) -Value 0x42000040
 $sectionPdata = 0x228
 Set-Ascii -Buffer $image -Offset $sectionPdata -Value '.pdata'; Set-U32 -Buffer $image -Offset ($sectionPdata + 8) -Value $pdataBytes.Length; Set-U32 -Buffer $image -Offset ($sectionPdata + 12) -Value $pdataRva; Set-U32 -Buffer $image -Offset ($sectionPdata + 16) -Value $pdataRawSize; Set-U32 -Buffer $image -Offset ($sectionPdata + 20) -Value $pdataRawPointer; Set-U32 -Buffer $image -Offset ($sectionPdata + 36) -Value 0x40000040
 $sectionXdata = 0x250
