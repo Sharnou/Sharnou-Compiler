@@ -462,7 +462,7 @@ try {
     # The host folder must not inherit the Low-IL label used by child-writable Build staging.
     # Keep its DACL rooted in the workspace; the AppContainer receives only the root's read grant.
     $hostDirectorySddl = Get-BrokerSecuritySddl -Path $brokerHostRoot
-    if ($hostDirectorySddl -match '\\(ML;[^)]*;;;LW\\)') {
+    if ($hostDirectorySddl.Contains(';;;LW')) {
         throw 'Trusted broker host directory is Low IL; refusing to compile or launch from it.'
     }
     # Never delete a possibly committed recovery journal in test setup. The
@@ -512,7 +512,7 @@ try {
     & $compilerPath -Source $fixturePath -Output $outputPath -EnableDevAgentTools
     if (-not (Test-Path -LiteralPath $outputPath -PathType Leaf)) { throw 'Compiler did not produce the DevAgent broker fixture.' }
     $hostImageSddl = Get-BrokerSecuritySddl -Path $outputPath
-    if ($hostImageSddl -match '\\(ML;[^)]*;;;LW\\)') {
+    if ($hostImageSddl.Contains(';;;LW')) {
         throw 'Trusted broker image inherited Low IL from writable staging; refusing to launch it.'
     }
     & $verifierPath -Path $outputPath
@@ -700,7 +700,7 @@ try {
         Remove-Item -LiteralPath $crashReadyPath -Force -ErrorAction SilentlyContinue
         & $compilerPath -Source $crashHarnessPath -Output $outputPath -EnableDevAgentTools
         $crashImageSddl = Get-BrokerSecuritySddl -Path $outputPath
-        if ($crashImageSddl -match '\\(ML;[^)]*;;;LW\\)') {
+        if ($crashImageSddl.Contains(';;;LW')) {
             throw 'Crash-recovery broker image is Low IL; the host image must remain outside writable staging.'
         }
         & $verifierPath -Path $outputPath
