@@ -267,13 +267,55 @@ function Invoke-Phase2B4Trial {
             throw 'The fixed System32 directory is not on a canonical local drive.'
         }
         if ([string]::IsNullOrWhiteSpace($env:SystemRoot)) { throw 'SystemRoot is missing from the supervisor environment.' }
-        # The fixed whoami.exe probe needs only SystemRoot; keeping this explicit
-        # allowlist intentionally excludes runner credentials, TEMP/TMP and PATH.
-        $environmentEntries = @(
-            ('=' + $driveRoot.Substring(0,2) + '=' + $script:SystemDirectory),
-            ('SystemRoot=' + $env:SystemRoot)
-        )
-        $environment = New-SharnouTrackedEnvironmentBlock -Entries $environmentEntries -Allocations $allocations
+        # Snapshot the native parent environment so the special =C: / =D: entries
+        # are copied exactly, then filter it to a small explicit allowlist.
+        $sourceEnvironment = [IntPtr](Invoke-Phase2B4Api 'GetEnvironmentStringsW' @())
+        if ($sourceEnvironment -eq [IntPtr]::Zero) { throw 'GetEnvironmentStringsW returned NULL.' }
+        $environmentEntries = New-Object 'System.Collections.Generic.List[string]'
+        $wantedDriveNames = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
+        $wantedDriveNames.Add(('=' + $driveRoot.Substring(0,2))) | Out-Null
+        $parentDirectory = [Environment]::CurrentDirectory
+        $parentDrive = [System.IO.Path]::GetPathRoot($parentDirectory)
+        if ($parentDrive.Length -eq 3 -and $parentDrive[1] -eq ':' -and [char]$parentDrive[2] -eq [char]92) {
+            $wantedDriveNames.Add(('=' + $parentDrive.Substring(0,2))) | Out-Null
+        }
+        try {
+            $cursor = $sourceEnvironment
+            $totalChars = 0
+            while ($true) {
+                $entry = [Runtime.InteropServices.Marshal]::PtrToStringUni($cursor)
+                if ($null -eq $entry -or $entry.Length -eq 0) { break }
+                $totalChars += ($entry.Length + 1)
+                if ($totalChars -gt 32768) { throw 'Parent environment block exceeds the 32768-character fixture bound.' }
+                if ($entry.StartsWith('=')) {
+                    if ($entry.Length -ge 5 -and $entry[2] -eq ':' -and $entry[3] -eq '=' -and $wantedDriveNames.Contains($entry.Substring(0,3))) {
+                        $environmentEntries.Add($entry)
+                    }
+                }
+                else {
+                    $separator = $entry.IndexOf('=')
+                    if ($separator -gt 0) {
+                        $name = $entry.Substring(0,$separator)
+                        if ($name -ieq 'SystemRoot' -or $name -ieq 'WINDIR') {
+                            $environmentEntries.Add($entry)
+                        }
+                    }
+                }
+                $cursor = [IntPtr]::Add($cursor,(($entry.Length + 1) * 2))
+            }
+        }
+        finally {
+            if (-not [bool](Invoke-Phase2B4Api 'FreeEnvironmentStringsW' @($sourceEnvironment))) {
+                throw ('FreeEnvironmentStringsW failed: Win32={0}.' -f [Runtime.InteropServices.Marshal]::GetLastWin32Error())
+            }
+        }
+        $environmentEntries.Add(('PATH=' + $script:SystemDirectory))
+        $environmentEntries.Add(('TEMP=' + $script:TempDirectory))
+        $environmentEntries.Add(('TMP=' + $script:TempDirectory))
+        if (@($environmentEntries | Where-Object { $_ -match '^SystemRoot=' }).Count -ne 1) {
+            throw 'The filtered environment must contain exactly one SystemRoot entry.'
+        }
+        $environment = New-SharnouTrackedEnvironmentBlock -Entries $environmentEntries.ToArray() -Allocations $allocations
 
         Assert-SharnouNoReparseAncestors -Path $script:ChildImage
         if (-not (Test-Path -LiteralPath $script:ChildImage -PathType Leaf)) { throw 'Fixed System32 whoami.exe is missing.' }

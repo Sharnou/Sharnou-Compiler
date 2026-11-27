@@ -1199,6 +1199,26 @@
       ],
       "header": "um/jobapi2.h",
       "setLastError": true
+    },
+    {
+      "name": "GetEnvironmentStringsW",
+      "dll": "KERNEL32.dll",
+      "returnType": "PVOID",
+      "parameters": [
+        "VOID"
+      ],
+      "header": "um/processenv.h",
+      "setLastError": false
+    },
+    {
+      "name": "FreeEnvironmentStringsW",
+      "dll": "KERNEL32.dll",
+      "returnType": "BOOL",
+      "parameters": [
+        "LPVOID"
+      ],
+      "header": "um/processenv.h",
+      "setLastError": true
     }
   ],
   "phase2B4Contract": {
@@ -1248,6 +1268,20 @@
       "No arbitrary command, executable, path, arguments, or model-generated input.",
       "No stdout/stderr capture or handle-list inheritance; those remain Phase 2B.5.",
       "Runtime evidence applies to Windows Server 2025 x64 only."
-    ]
+    ],
+    "environment": {
+      "source": "GetEnvironmentStringsW snapshot of parent process, filtered to an explicit allowlist and serialized as a sorted UTF-16 block",
+      "allowlist": [
+        "SystemRoot",
+        "WINDIR",
+        "=C:",
+        "=D:",
+        "PATH",
+        "TEMP",
+        "TMP"
+      ],
+      "filtering": "Only SystemRoot/WINDIR and drive-current-directory entries for drives used by the fixed child SystemDirectory and supervisor working directory are copied. PATH is reset to System32; TEMP/TMP are set to the runner temp directory.",
+      "bounds": "Maximum 32768 UTF-16 code units; terminate on double NUL; always release source block with FreeEnvironmentStringsW."
+    }
   }
 }
