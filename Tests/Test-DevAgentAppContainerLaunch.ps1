@@ -621,7 +621,7 @@ namespace Sharnou
                     "[Console]::Error.WriteLine('STDERR|separate-stream-probe');";
                 string encodedCommand = Convert.ToBase64String(Encoding.Unicode.GetBytes(probeScript));
                 StringBuilder commandLine = new StringBuilder(
-                    """ + powershell + "" -NoLogo -NoProfile -NonInteractive -EncodedCommand " + encodedCommand);
+                    String.Concat((char)34, powershell, (char)34, " -NoLogo -NoProfile -NonInteractive -EncodedCommand ", encodedCommand));
 
                 STARTUPINFOEXW startup = new STARTUPINFOEXW();
                 startup.StartupInfo.cb = (uint)Marshal.SizeOf(typeof(STARTUPINFOEXW));
