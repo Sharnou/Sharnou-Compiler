@@ -481,8 +481,8 @@ namespace Sharnou
                         (value.Length != 2 || !Char.IsLetter(value[0]) || value[1] != ':'))
                         throw new InvalidOperationException("HOMEDRIVE is malformed.");
                     if (String.Equals(name, "HOMEPATH", StringComparison.OrdinalIgnoreCase) &&
-                        (value.Length == 0 || value[0] != '\\\\' ||
-                         (value.Length > 1 && value[1] == '\\\\')))
+                        (value.Length == 0 || value[0] != '\\' ||
+                         (value.Length > 1 && value[1] == '\\')))
                         throw new InvalidOperationException("HOMEPATH is malformed.");
                     entries.Add(entry);
                 }
@@ -559,9 +559,9 @@ namespace Sharnou
                 if (entry.IndexOf('\0') >= 0)
                     throw new InvalidOperationException("Explicit child environment contains an embedded NUL.");
                 block.Append(entry);
-                block.Append('\\0');
+                block.Append('\0');
             }
-            block.Append('\\0');
+            block.Append('\0');
             if (block.Length > 32768)
                 throw new InvalidOperationException("Explicit Unicode environment exceeds 32768 UTF-16 code units.");
             return block.ToString();
