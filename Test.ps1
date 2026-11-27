@@ -7,6 +7,9 @@ $testScript = Join-Path $PSScriptRoot 'Tests\Test-Stage7A.ps1'
 if (-not (Test-Path -LiteralPath $testScript -PathType Leaf)) { throw "Test suite is missing: $testScript" }
 try {
     & $testScript
+    $relocationTest = Join-Path $PSScriptRoot 'Tests\Test-PEBaseRelocations.ps1'
+    if (-not (Test-Path -LiteralPath $relocationTest -PathType Leaf)) { throw "PE relocation test is missing: $relocationTest" }
+    & $relocationTest
     $collectionTest = Join-Path $PSScriptRoot 'Tests\Test-Stage5CollectionImport.ps1'
     if (-not (Test-Path -LiteralPath $collectionTest -PathType Leaf)) { throw "Stage 5 collection regression is missing: $collectionTest" }
     & $collectionTest
