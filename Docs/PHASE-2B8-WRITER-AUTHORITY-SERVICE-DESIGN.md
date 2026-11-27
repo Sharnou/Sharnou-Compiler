@@ -16,7 +16,7 @@ The owner approved the recommended dedicated Windows service authority architect
 
 This approval selects the architecture; it does not assert that a Windows service, key, installer, IPC endpoint, or production authenticated journal has been implemented. The service design and all acceptance gates below remain binding. Crash-time profile recovery stays disabled until those gates are implemented and independently verified.
 
-## 2. Decision and threat boundary
+## Owner approval and implementation boundary
 
 The test evidence proves two important facts:
 
