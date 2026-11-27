@@ -567,6 +567,23 @@ namespace Sharnou
             return block.ToString();
         }
 
+        private static string DescribeEnvironmentNames(IntPtr environmentBlock)
+        {
+            List<string> names = new List<string>();
+            int offset = 0;
+            for (int index = 0; index < 32768; index++)
+            {
+                if (offset >= 32767)
+                    throw new InvalidOperationException("Token environment name scan exceeded its bound.");
+                string entry = Marshal.PtrToStringUni(IntPtr.Add(environmentBlock, checked(offset * 2)));
+                if (String.IsNullOrEmpty(entry)) return String.Join(",", names.ToArray());
+                offset = checked(offset + entry.Length + 1);
+                int equals = entry[0] == '=' ? entry.IndexOf('=', 1) : entry.IndexOf('=');
+                if (equals > 0) names.Add(entry.Substring(0, equals));
+            }
+            throw new InvalidOperationException("Token environment was not double-NUL terminated within the scan bound.");
+        }
+
         private static void VerifyInheritedFlag(IntPtr handle, bool expected)
         {
             uint flags = 0;
