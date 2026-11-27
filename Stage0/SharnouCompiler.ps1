@@ -1077,6 +1077,23 @@ function Emit-DevBrokerRevokeLegacyAppContainerSid {
     Emit-JumpConditional -ConditionCode 0x84 -Label $FailureLabel
 }
 
+function Emit-DevBrokerDebugMarker {
+    param([string] $Marker, [int] $HandleSlot, [int] $WrittenSlot)
+    $item = Register-DataConstant -Value ($Marker + "`r`n")
+    $length = [System.Text.Encoding]::ASCII.GetByteCount($Marker + "`r`n")
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0xC7, 0xC1, 0xF5, 0xFF, 0xFF, 0xFF)) # STD_OUTPUT_HANDLE = -11
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3070) -StackArguments @() # GetStdHandle
+    Emit-StoreRaxFrame -SlotPosition $HandleSlot
+    Emit-LoadRcxFrame -SlotPosition $HandleSlot
+    Emit-DataAddress -DataItem $item
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC2, 0x41, 0xB8))
+    Emit-I32 -Value $length
+    Emit-LeaRaxFrame -SlotPosition $WrittenSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x49, 0x89, 0xC1))
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3078) -StackArguments @(
+        @{ Kind = 'Immediate'; Value = 0 }
+    ) # WriteFile(stdout, marker)
+}
 function Emit-DevBrokerEnsureAppContainerSid {
     param(
         [int] $SidSlot,
@@ -1099,6 +1116,8 @@ function Emit-DevBrokerEnsureAppContainerSid {
     $helperDone = New-UniqueLabel -Prefix 'dev_appcontainer_helper_done'
     $savedRdiSlot = $RandomSlot + 0x20
     $savedRsiSlot = $RandomSlot + 0x28
+    $debugHandleSlot = $RandomSlot + 0x30
+    $debugWrittenSlot = $RandomSlot + 0x38
 
     # This helper uses RSI/RDI for string construction; preserve the caller's
     # nonvolatile registers before any generated code or nested Win32 calls.
@@ -1108,6 +1127,7 @@ function Emit-DevBrokerEnsureAppContainerSid {
     Emit-StoreZero64Frame -SlotPosition $DerivedSidSlot
     Emit-StoreBits32Frame -SlotPosition $ProfileCreatedSlot -Value 0
 
+    Emit-DevBrokerDebugMarker -Marker 'ID0:enter' -HandleSlot $debugHandleSlot -WrittenSlot $debugWrittenSlot
     # A fresh 128-bit execution identifier comes from the system-preferred CNG RNG.
     # It is never derived from a process ID, timestamp, workspace path or user input.
     Emit-Bytes -Bytes ([byte[]]@(0x33, 0xC9)) # hAlgorithm = NULL
@@ -1116,6 +1136,7 @@ function Emit-DevBrokerEnsureAppContainerSid {
     Emit-Win64CallIat -TargetRva ([UInt32]0x3330) -StackArguments @() # BCryptGenRandom(BCRYPT_USE_SYSTEM_PREFERRED_RNG)
     Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
     Emit-JumpConditional -ConditionCode 0x85 -Label $FailureLabel
+    Emit-DevBrokerDebugMarker -Marker 'ID1:rng-ok' -HandleSlot $debugHandleSlot -WrittenSlot $debugWrittenSlot
 
     # Reject the all-zero output even though it is cryptographically negligible.
     Emit-LeaRaxFrame -SlotPosition $RandomSlot
@@ -1158,6 +1179,7 @@ function Emit-DevBrokerEnsureAppContainerSid {
     ))
     Emit-JumpConditional -ConditionCode 0x85 -Label $hexLoop
     Emit-Bytes -Bytes ([byte[]]@(0x66, 0xC7, 0x07, 0x00, 0x00)) # UTF-16 NUL
+    Emit-DevBrokerDebugMarker -Marker 'ID2:name-built' -HandleSlot $debugHandleSlot -WrittenSlot $debugWrittenSlot
 
     # CreateAppContainerProfile must create a new identity. There is deliberately
     # no ERROR_ALREADY_EXISTS adoption/derive fallback: collisions fail closed.
@@ -1173,6 +1195,7 @@ function Emit-DevBrokerEnsureAppContainerSid {
     ) # CreateAppContainerProfile, zero capabilities
     Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
     Emit-JumpConditional -ConditionCode 0x85 -Label $FailureLabel
+    Emit-DevBrokerDebugMarker -Marker 'ID3:create-ok' -HandleSlot $debugHandleSlot -WrittenSlot $debugWrittenSlot
     Emit-StoreBits32Frame -SlotPosition $ProfileCreatedSlot -Value 1
     Emit-LoadRaxFrame -SlotPosition $SidSlot
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x85, 0xC0))
@@ -1186,6 +1209,7 @@ function Emit-DevBrokerEnsureAppContainerSid {
     Emit-Win64CallIat -TargetRva ([UInt32]0x3280) -StackArguments @() # DeriveAppContainerSidFromAppContainerName
     Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
     Emit-JumpConditional -ConditionCode 0x85 -Label $derivedSidFailure
+    Emit-DevBrokerDebugMarker -Marker 'ID4:derive-ok' -HandleSlot $debugHandleSlot -WrittenSlot $debugWrittenSlot
     Emit-LoadRaxFrame -SlotPosition $DerivedSidSlot
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x85, 0xC0))
     Emit-JumpConditional -ConditionCode 0x84 -Label $derivedSidFailure
@@ -1196,6 +1220,7 @@ function Emit-DevBrokerEnsureAppContainerSid {
     Emit-Win64CallIat -TargetRva ([UInt32]0x3350) -StackArguments @() # EqualSid
     Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
     Emit-JumpConditional -ConditionCode 0x84 -Label $derivedSidFailure
+    Emit-DevBrokerDebugMarker -Marker 'ID5:equal-ok' -HandleSlot $debugHandleSlot -WrittenSlot $debugWrittenSlot
     Emit-Jump -Label $sidReady
 
     Mark-CodeLabel -Label $derivedSidFailure
