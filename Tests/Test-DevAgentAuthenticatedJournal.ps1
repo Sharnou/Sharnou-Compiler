@@ -320,8 +320,18 @@ foreach ($case in $parserRejectCases) {
     try {
         [Sharnou.DevAgentDpapiJournalNative]::ValidateCanonicalJournalV2([byte[]]$case.Bytes)
     }
-    catch [IO.IOException] {
-        $rejected = $true
+    catch {
+        $parserException = $_.Exception
+        while ($null -ne $parserException.InnerException) {
+            $parserException = $parserException.InnerException
+        }
+        if (($parserException -is [IO.InvalidDataException]) -or
+            ($parserException -is [IO.EndOfStreamException])) {
+            $rejected = $true
+        }
+        else {
+            throw
+        }
     }
     if (-not $rejected) {
         throw "Strict journal parser accepted invalid case: $($case.Name)"
