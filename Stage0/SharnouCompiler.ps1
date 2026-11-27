@@ -1627,27 +1627,38 @@ function Emit-DevBrokerRecoverAclJournal {
     Emit-JumpConditional -ConditionCode 0x84 -Label $done
     Emit-Bytes -Bytes ([byte[]]@(0x3D, 0x03, 0x00, 0x00, 0x00))
     Emit-JumpConditional -ConditionCode 0x84 -Label $done
-    # Preserve the CreateFile error, then probe the same path without data access.
-    # The diagnostic code distinguishes a bad path from an access-mask/handle failure.
+    # Preserve the original read-open error, then probe the same path with
+    # zero desired access. This distinguishes path resolution from read access.
     Emit-StoreEaxFrame -SlotPosition $expectedSizeSlot
     Emit-LeaRaxFrame -SlotPosition $JournalPathSlot
-    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1))
-    Emit-Win64CallIat -TargetRva ([UInt32]0x31C8) -StackArguments @() # GetFileAttributesA
-    Emit-Bytes -Bytes ([byte[]]@(0x3D, 0xFF, 0xFF, 0xFF, 0xFF))
-    $attributeProbeFailed = New-UniqueLabel -Prefix 'dev_acl_recovery_attribute_probe_failed'
-    Emit-JumpConditional -ConditionCode 0x84 -Label $attributeProbeFailed
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1, 0x33, 0xD2, 0x41, 0xB8, 0x01, 0x00, 0x00, 0x00, 0x45, 0x33, 0xC9))
+    Emit-Win64CallIat -TargetRva ([UInt32]0x30A0) -StackArguments @(
+        @{ Kind = 'Immediate'; Value = 3 },
+        @{ Kind = 'Immediate'; Value = 0x00200080 },
+        @{ Kind = 'Immediate'; Value = 0 }
+    ) # CreateFileA metadata-only diagnostic
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x83, 0xF8, 0xFF))
+    $metadataProbeFailed = New-UniqueLabel -Prefix 'dev_acl_recovery_metadata_probe_failed'
+    Emit-JumpConditional -ConditionCode 0x84 -Label $metadataProbeFailed
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x85, 0xC0))
+    Emit-JumpConditional -ConditionCode 0x84 -Label $metadataProbeFailed
+    Emit-StoreRaxFrame -SlotPosition $JournalHandleSlot
+    Emit-LoadRcxFrame -SlotPosition $JournalHandleSlot
+    Emit-Win64CallIat -TargetRva ([UInt32]0x30B8) -StackArguments @() # CloseHandle
+    Emit-StoreZero64Frame -SlotPosition $JournalHandleSlot
+    Emit-StoreBits32Frame -SlotPosition ($scratch + 0xD58) -Value 0
+    $metadataProbeDone = New-UniqueLabel -Prefix 'dev_acl_recovery_metadata_probe_done'
+    Emit-Jump -Label $metadataProbeDone
+    Mark-CodeLabel -Label $metadataProbeFailed
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3268) -StackArguments @() # GetLastError for metadata-only probe
     Emit-StoreEaxFrame -SlotPosition ($scratch + 0xD58)
-    Emit-LoadEaxFrame -SlotPosition ($scratch + 0xD58)
-    Emit-Bytes -Bytes ([byte[]]@(0xC1, 0xE0, 0x08)) # attributes << 8
-    Emit-LoadEdxFrame -SlotPosition $expectedSizeSlot # original CreateFile error
+    Mark-CodeLabel -Label $metadataProbeDone
+    # Encode original read error and metadata-only error as 1000 + read*256 + metadata.
+    Emit-LoadEaxFrame -SlotPosition $expectedSizeSlot
+    Emit-Bytes -Bytes ([byte[]]@(0xC1, 0xE0, 0x08))
+    Emit-LoadEdxFrame -SlotPosition ($scratch + 0xD58)
     Emit-Bytes -Bytes ([byte[]]@(0x01, 0xD0, 0x05))
     Emit-I32 -Value 1000
-    Emit-StoreEaxFrame -SlotPosition $recoveryStageSlot
-    Emit-Jump -Label $FailureLabel
-    Mark-CodeLabel -Label $attributeProbeFailed
-    Emit-Win64CallIat -TargetRva ([UInt32]0x3268) -StackArguments @() # GetLastError for path probe
-    Emit-Bytes -Bytes ([byte[]]@(0x05))
-    Emit-I32 -Value 2000
     Emit-StoreEaxFrame -SlotPosition $recoveryStageSlot
     Emit-Jump -Label $FailureLabel
 
