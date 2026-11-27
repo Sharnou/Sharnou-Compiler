@@ -245,3 +245,33 @@ The fixture creates only the fixed absolute System32 `whoami.exe` child, with th
 The AppContainer child is **never resumed**. Filesystem access is exercised by impersonating its actual token from the supervisor thread. This is genuine Windows access-control enforcement evidence for the tested paths, but not proof that arbitrary code executed inside the AppContainer. The fixture is PowerShell/.NET in-memory P/Invoke, not the Sharnou-generated PE or production process broker. No production PE import table, compiler source, or emitter changed. Job Object assignment for this launch, clean environment, DLL-search restrictions, explicit output handle list, bounded stdout/stderr, cancellation, network denial, and Windows 10/11 adversarial coverage remain separate gates. The workflow validates on Windows Server 2025 only.
 
 Phase 2B.3 is complete **only as this test-only Windows fixture**. It does not authorize model-facing process execution. Next: Phase 2B.4, fixed suspended AppContainer launch + Job Object assignment + token verification before resume, still in an isolated fixture. Keep autonomous/model-facing process execution DISABLED.
+
+
+## 13. Phase 2B.4 - suspended AppContainer launch, Job Object and pre-resume token gate
+
+Status: **WINDOWS CI PASS - TEST-ONLY FIXTURE** on candidate head `e82826bf889a110d58b46c9427b8e86b672a0a3a`. Dedicated workflow: [run 45917757166](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45917757166), 41/41 assertions. Integrated ABI/AppContainer workflow: [run 45917757077](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45917757077). Frozen regression baseline: [run 45917757102](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45917757102), 83/83. Integrated Stage 7A/runtime ABI: [run 45917757090](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45917757090), 24/24 plus collection 2/2, stack/unwind 6/6, Runtime ABI PASS, 83/83 and Combined result PASS.
+
+### Implemented launch gate
+
+The test-only fixture declares six reviewed KERNEL32 API signatures for Job Object creation/configuration, process assignment/membership checks, thread resume, and job termination. It creates an unnamed Job Object and sets `JOBOBJECT_EXTENDED_LIMIT_INFORMATION` class 9 to:
+- `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`;
+- `JOB_OBJECT_LIMIT_ACTIVE_PROCESS` with `ActiveProcessLimit=1`;
+- `JOB_OBJECT_LIMIT_PROCESS_MEMORY` with `ProcessMemoryLimit=268435456` bytes (256 MiB).
+
+The only child executable is the absolute `%SystemRoot%\System32\whoami.exe`. The fixture passes the genuine package SID using `PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES`, uses `CREATE_SUSPENDED | EXTENDED_STARTUPINFO_PRESENT | CREATE_UNICODE_ENVIRONMENT`, and disables handle inheritance. It verifies the child is still active/suspended, assigns it to the Job Object, calls `IsProcessInJob` for the exact process/job pair, then reads the real child token. Resume is gated on AppContainer flag, exact package SID, integrity RID at most Low, zero capabilities, job policy/configuration, assignment/membership, workspace readiness and the fixed-image-only test policy. The one `ResumeThread` call is below this gate; Windows reported previous suspend count 1. The child completed with exit code 0 within the finite wait.
+
+Four negative controls prove pre-resume failure behavior: stop after process creation, invalid Job Object handle (`ERROR_INVALID_HANDLE=6`), deliberately mismatched package SID, and one false final gate. All show `ResumeThread` was not reached and the suspended child was terminated/reaped. All five scenarios restore exact original workspace owner/group/DACL, delete only profiles created by the fixture, preserve shared-root descriptors and leave no journal/lease/workspace residue.
+
+### Explicit environment blocker
+
+A custom UTF-16 environment block for `CreateProcessW` was attempted with bounded/sorted entries and drive-current-directory data. It repeatedly returned Win32 `ERROR_ENVVAR_NOT_FOUND (203)` on Windows Server 2025. The test fixture was therefore deliberately narrowed to a fixed System32 `whoami.exe` launch with `lpEnvironment=NULL`, inheriting the Actions runner environment. It accepts no model/user-supplied command, image, path, argv or working directory; the script explicitly reports the boundary. **The clean explicit production environment is NOT VERIFIED and remains a hard production blocker.** This test-only exception is not to be copied into the production broker and does not authorize model-facing execution.
+
+### Evidence hashes
+
+- Phase 2B.4 source SHA-256: `D3D1A1AD09FCA84C41B94D5BFB4B1B555A1E591F06FA75140770078CD7DE1FF9`.
+- Workspace transaction SHA-256: `B56FFA342C56AD5238F4809D774835029949DE2E97DBD83DE041295A17477586`.
+- Native interop helper SHA-256: `84D0A64A3AC404FCA0DDBD57980A8A86C069E7F662915241D5DF5F07E5F5CB71`.
+- Native ABI manifest SHA-256: `6A225C40C6876F9FBC1E81C939E64AE52EC0BA15A4463B19ADB77E4A4E06415D`.
+- Fixed System32 whoami image SHA-256: `23240EF9F8B0A9A324110B1C2331DE31DC1B0E08F5359CB707E51A939AF56CD3`.
+
+This is an in-memory PowerShell/.NET P/Invoke test fixture, not a Sharnou-compiled PE, production process emitter or completed sandbox. No production PE import table or compiler source changed. Phase 2B.5 next: STARTUPINFOEX handle allowlist and bounded concurrent stdout/stderr capture. Clean production environment, DLL search, cancellation, network/resource denial, broader OS matrix and final adversarial acceptance remain independent gates. Keep model-facing/autonomous process execution DISABLED.

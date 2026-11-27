@@ -521,3 +521,21 @@ Evidence boundary: this is a test-only PowerShell/.NET P/Invoke fixture; no prod
 
 
 Phase 2B.3 regression closure: the exact code/test head Stage 7A integrated run [45914498926](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45914498926) passed Stage 7A 24/24, collection imports 2/2, stack probe/unwind 6/6, Runtime ABI, M1-M6 83/83, and Combined result. On the documentation-only follow-up head, Phase 2B.3 ACL [45914740334](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45914740334), integrated ABI/AppContainer [45914740286](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45914740286), workspace security [45914740289](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45914740289), and M1-M6 [45914740282](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45914740282) all completed successfully.
+
+
+## Issue #14 update - DevAgent Phase 2B.4 Job Object launch boundary - 2026-11-27
+
+Candidate branch `devagent-secure-process-broker-20261126`, code/test head `e82826bf889a110d58b46c9427b8e86b672a0a3a`. PR #18 remains OPEN / DRAFT / UNMERGED.
+
+Windows evidence on the exact head:
+- Dedicated Phase 2B.4 AppContainer Job Object workflow [45917757166](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45917757166): PASS 41/41.
+- Integrated native ABI/AppContainer workflow [45917757077](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45917757077): PASS, including the 2B.2 token, 2B.3 workspace ACL and 2B.4 Job Object fixtures.
+- Frozen M1-M6 baseline [45917757102](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45917757102): PASS 83/83.
+- Integrated Stage 7A / runtime ABI [45917757090](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45917757090): Stage 7A 24/24, collection imports 2/2, stack/unwind 6/6, Runtime ABI PASS, M1-M6 83/83 and Combined result PASS.
+- Workspace security [45917757120](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45917757120), AppContainer workspace ACL [45917757225](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45917757225), and SDK/API ABI contract [45917757216](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45917757216): PASS.
+
+The fixture configures a Job Object (kill-on-close, one active process, 256 MiB per-process memory), creates the real AppContainer child suspended, assigns and verifies Job Object membership, verifies the real child token (AppContainer=1, exact package SID, integrity at most Low, zero capabilities), then calls ResumeThread only after the complete final gate. The fixed whoami child exits zero. Four negative controls all prove no resume on failure and verified termination/reap; exact ACL rollback/profile ownership cleanup pass across all five scenarios.
+
+**Environment limitation is not waived:** custom explicit environment blocks continue to produce Win32 203 on this Windows Server 2025 CI runner. The test fixture uses `lpEnvironment=NULL` and inherits CI environment for the fixed System32 whoami image only, with no model/user-controlled command or arguments. Source emits a warning. Clean explicit environment remains BLOCKED as a production requirement and must be resolved before production integration/model-facing execution. No compiler/PE production emitter changed. Model-facing execution remains DISABLED.
+
+Phase 2B.4 status: **PASS as an isolated test-only Job Object/token/resume fixture; production sandbox/agent integration NOT ACCEPTED.** Next: Phase 2B.5 handle allowlist and bounded dual-stream output capture, retaining clean environment as an independent blocker.

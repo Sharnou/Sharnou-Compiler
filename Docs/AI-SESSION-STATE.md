@@ -1092,3 +1092,48 @@ Evidence boundary: the real AppContainer child is never resumed. The test uses a
 ### Phase 2B.3 exact-head regression closeout
 
 After the Phase 2B.3 evidence entry above, the integrated Stage 7A workflow [45914498926](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45914498926) completed successfully on code/test head `6761c7ab6f251d487a09f592c96071782622b3ab`: Stage 7A 24/24; collection imports 2/2; stack probe/unwind 6/6; Runtime ABI PASS; M1-M6 83/83; Combined result PASS. The documentation-only head `5655c9c831d698c2a40fa321dcdab2ac73c8b839` independently reran the Phase 2B.3 ACL fixture [45914740334](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45914740334), integrated ABI/AppContainer fixture [45914740286](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45914740286), workspace security [45914740289](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45914740289), and M1-M6 [45914740282](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45914740282); all completed SUCCESS. Stage 7A rerun [45914740232](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45914740232) was still in progress at the time of this follow-up; the completed exact code/test head run above remains the recorded Stage 7A evidence.
+
+
+## 2026-11-27 - DevAgent Phase 2B.4 suspended AppContainer + Job Object launch gates
+
+Starting branch head for this work: `c09b1edd252c8eb980c77b93c42581b47e25996e`. Phase 2B.4 code/test head: `e82826bf889a110d58b46c9427b8e86b672a0a3a`. Branch: `devagent-secure-process-broker-20261126`. PR #18 remains OPEN / DRAFT / UNMERGED.
+
+Phase 2B.4 is **WINDOWS CI PASS as a test-only fixed-image fixture**:
+- Dedicated AppContainer Job Object workflow [45917757166](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45917757166): PASS, 41/41 assertions.
+- Integrated native ABI/AppContainer workflow [45917757077](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45917757077): PASS; includes Phase 2B.2 token fixture, Phase 2B.3 workspace ACL fixture, and Phase 2B.4 Job Object launch fixture.
+- Frozen M1-M6 baseline [45917757102](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45917757102): PASS 83/83.
+- Integrated Stage 7A / regression run [45917757090](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45917757090): PASS; Stage 7A 24/24, collection imports 2/2, stack probe/unwind 6/6, Runtime ABI PASS, M1-M6 83/83, Combined result PASS.
+- Workspace transaction/security [45917757120](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45917757120): PASS.
+- AppContainer workspace ACL [45917757225](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45917757225): PASS.
+- Native SDK/API ABI contract [45917757216](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45917757216): PASS.
+
+Runner: Windows Server 2025 / OS 10.0.26100.0 / x64 / Windows PowerShell 5.1.26100.33822.
+
+### Phase 2B.4 verified behavior
+
+- Test-only API inventory adds six reviewed KERNEL32 functions: `CreateJobObjectW`, `SetInformationJobObject`, `AssignProcessToJobObject`, `IsProcessInJob`, `ResumeThread`, and `TerminateJobObject`.
+- Runtime x64 structure checks: `JOBOBJECT_EXTENDED_LIMIT_INFORMATION=144`, `STARTUPINFOEXW=112`, `PROCESS_INFORMATION=24`.
+- An unnamed Job Object is configured before launch with `KILL_ON_JOB_CLOSE | ACTIVE_PROCESS | PROCESS_MEMORY` (`0x2108`), active-process limit 1, and per-process memory limit 256 MiB.
+- The test creates a genuine OS-owned AppContainer profile and reuses the 2B.3 crash-safe per-execution workspace transaction / package-SID DACL.
+- The only child image is the absolute System32 `whoami.exe`, started with `CREATE_SUSPENDED | EXTENDED_STARTUPINFO_PRESENT | CREATE_UNICODE_ENVIRONMENT`, `bInheritHandles=FALSE`, and no model/user-controlled command, arguments or path.
+- The suspended process is assigned to the configured Job Object. `IsProcessInJob` confirms the exact process/job relationship before token verification or any resume call.
+- The real child token is opened and verified: `TokenIsAppContainer=1`, exact OS-created package SID, integrity RID no higher than Low, and zero `TokenCapabilities`.
+- The only `ResumeThread` call is below the final fail-closed gate. The observed prior suspend count is 1. The fixed image runs and exits 0 within the finite 15-second wait.
+- Four negative controls prove no resume occurs after failure before assignment, invalid Job Object assignment (ERROR_INVALID_HANDLE=6), package-SID mismatch, or a deliberately denied mandatory final gate. Suspended children are terminated and reaped.
+- Normal and failure scenarios close job/process/thread/token handles, restore the exact original workspace owner/group/DACL descriptor, delete only profiles created by the current fixture, and leave no workspace/journal/lease residue.
+
+Phase 2B.4 source SHA-256: `D3D1A1AD09FCA84C41B94D5BFB4B1B555A1E591F06FA75140770078CD7DE1FF9`.
+Workspace transaction SHA-256: `B56FFA342C56AD5238F4809D774835029949DE2E97DBD83DE041295A17477586`.
+Native interop helper SHA-256: `84D0A64A3AC404FCA0DDBD57980A8A86C069E7F662915241D5DF5F07E5F5CB71`.
+Native ABI manifest SHA-256: `6A225C40C6876F9FBC1E81C939E64AE52EC0BA15A4463B19ADB77E4A4E06415D`.
+Fixed System32 whoami image SHA-256: `23240EF9F8B0A9A324110B1C2331DE31DC1B0E08F5359CB707E51A939AF56CD3`.
+
+### Explicit environment blocker - NOT PASSED
+
+An explicit custom UTF-16 environment block was attempted with `CreateProcessW`, including correctly terminated/sorted entries and the drive-current-directory entries. Windows Server 2025 returned Win32 `ERROR_ENVVAR_NOT_FOUND (203)` at process creation. This behavior was not papered over or represented as a successful clean-environment test. To validate the independent Job Object / token / resume-order boundary, the **test-only fixed-image fixture** uses `lpEnvironment=NULL`, which inherits the GitHub Actions runner environment. The fixture logs this boundary explicitly. No untrusted/model-controlled command or executable is passed, and no production process emitter is used.
+
+Therefore: Phase 2B.4 is accepted **only as a test-only Job Object + AppContainer token + fail-closed resume fixture**. The production clean-environment requirement is still BLOCKED and must be solved and tested before any production broker launch or model-facing execution. The custom environment failure is tracked in the Phase 2B design and Issue #14 status. This test does not waive the requirement.
+
+No production compiler source, PE import table, native emitter or DevAgent production broker was changed. No native compile/link, external toolchain, release, or merge occurred. Model-facing/autonomous process execution remains **DISABLED**.
+
+Next: Phase 2B.5 - explicit STARTUPINFOEX handle allowlist plus bounded, concurrent stdout/stderr capture. Carry the clean-environment failure as an independent blocking acceptance item and resolve it before production integration/2B.6 acceptance. Keep the AppContainer launch and handle policy test-only.
