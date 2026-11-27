@@ -61,6 +61,8 @@ namespace Sharnou {
         private static extern bool CloseHandle(IntPtr handle);
         [DllImport("kernel32.dll")]
         private static extern IntPtr GetCurrentProcess();
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern IntPtr OpenProcess(uint access, bool inherit, int processId);
         [DllImport("advapi32.dll", SetLastError = true)]
         private static extern bool OpenProcessToken(IntPtr process, uint access, out IntPtr token);
         [DllImport("advapi32.dll", SetLastError = true)]
@@ -107,6 +109,57 @@ namespace Sharnou {
                 finally { Marshal.FreeHGlobal(buffer); }
             }
             finally { CloseHandle(token); }
+        }
+        private static IntPtr OpenQueryTokenForProcess(int processId, out IntPtr process) {
+            process = OpenProcess(0x1000, false, processId); // PROCESS_QUERY_LIMITED_INFORMATION
+            if (process == IntPtr.Zero)
+                throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error(), "OpenProcess failed.");
+            IntPtr token;
+            if (!OpenProcessToken(process, 0x0008, out token)) {
+                int error = Marshal.GetLastWin32Error();
+                CloseHandle(process);
+                process = IntPtr.Zero;
+                throw new System.ComponentModel.Win32Exception(error, "OpenProcessToken failed.");
+            }
+            return token;
+        }
+        public static uint ProcessTokenIntegrityRid(int processId) {
+            IntPtr process = IntPtr.Zero;
+            IntPtr token = OpenQueryTokenForProcess(processId, out process);
+            try {
+                uint required;
+                GetTokenInformation(token, 25, IntPtr.Zero, 0, out required); // TokenIntegrityLevel
+                int error = Marshal.GetLastWin32Error();
+                if (error != 122 || required < 16 || required > 4096)
+                    throw new System.ComponentModel.Win32Exception(error, "Unexpected process TokenIntegrityLevel size.");
+                IntPtr buffer = Marshal.AllocHGlobal((int)required);
+                try {
+                    if (!GetTokenInformation(token, 25, buffer, required, out required))
+                        throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+                    IntPtr sid = Marshal.ReadIntPtr(buffer);
+                    if (sid == IntPtr.Zero) throw new InvalidOperationException("Process integrity SID is null.");
+                    int count = Marshal.ReadByte(sid, 1);
+                    if (count < 1 || count > 15) throw new InvalidOperationException("Process integrity SID is malformed.");
+                    return unchecked((uint)Marshal.ReadInt32(sid, 8 + ((count - 1) * 4)));
+                }
+                finally { Marshal.FreeHGlobal(buffer); }
+            }
+            finally { CloseHandle(token); CloseHandle(process); }
+        }
+        public static bool ProcessIsAppContainer(int processId) {
+            IntPtr process = IntPtr.Zero;
+            IntPtr token = OpenQueryTokenForProcess(processId, out process);
+            try {
+                IntPtr value = Marshal.AllocHGlobal(4);
+                try {
+                    uint returned;
+                    if (!GetTokenInformation(token, 29, value, 4, out returned) || returned != 4)
+                        throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error(), "TokenIsAppContainer query failed.");
+                    return Marshal.ReadInt32(value) != 0;
+                }
+                finally { Marshal.FreeHGlobal(value); }
+            }
+            finally { CloseHandle(token); CloseHandle(process); }
         }
         public static int Probe(string path, uint access, uint share, uint flags) {
             IntPtr handle = CreateFileA(path, access, share, IntPtr.Zero, 3, flags, IntPtr.Zero);
@@ -633,7 +686,7 @@ try {
     if ((Test-Path -LiteralPath $journalPath) -or (Test-Path -LiteralPath $journalTempPath)) {
         throw 'A successful broker invocation left an ACL journal or temporary file behind.'
     }
-    $aclPaths = @($repoRoot, (Join-Path $repoRoot 'Build'), $buildRoot)
+    $aclPaths = @($repoRoot, $brokerHostRoot, (Join-Path $repoRoot 'Build'), $buildRoot)
     $aclBaseline = @{}
     foreach ($aclPath in $aclPaths) { $aclBaseline[$aclPath] = Get-BrokerSecuritySddl -Path $aclPath }
     $aclDuringCrash = @{}
@@ -652,6 +705,10 @@ try {
         }
         & $verifierPath -Path $outputPath
         $crashProcess = Start-Process -FilePath $outputPath -PassThru -NoNewWindow -RedirectStandardOutput $crashStdoutPath -RedirectStandardError $crashStderrPath
+        $brokerIntegrityRid = [Sharnou.DevAgentJournalProbe]::ProcessTokenIntegrityRid($crashProcess.Id)
+        if ($brokerIntegrityRid -lt 0x2000) {
+            throw ("Trusted broker process started below Medium IL (RID 0x{0:X}); refusing crash-recovery test." -f $brokerIntegrityRid)
+        }
 
         $crashDeadline = [DateTime]::UtcNow.AddSeconds(25)
         while ([DateTime]::UtcNow -lt $crashDeadline) {
@@ -666,6 +723,11 @@ try {
             throw 'Crash probe did not reach the post-ACL/pre-exit state with a committed journal.'
         }
         $crashChildPid = [int](Get-Content -LiteralPath $crashChildPidPath -Raw)
+        $childIsAppContainer = [Sharnou.DevAgentJournalProbe]::ProcessIsAppContainer($crashChildPid)
+        $childIntegrityRid = [Sharnou.DevAgentJournalProbe]::ProcessTokenIntegrityRid($crashChildPid)
+        if (-not $childIsAppContainer -or $childIntegrityRid -ne 0x1000) {
+            throw ("Sandbox child boundary mismatch: AppContainer={0}, IntegrityRID=0x{1:X} (expected AppContainer + Low IL)." -f $childIsAppContainer, $childIntegrityRid)
+        }
         foreach ($aclPath in $aclPaths) {
             $duringCrashSddl = Get-BrokerSecuritySddl -Path $aclPath
             if ([string]::Equals($duringCrashSddl, $aclBaseline[$aclPath], [StringComparison]::Ordinal)) {
@@ -810,6 +872,7 @@ try {
     }
     Write-Host 'PASS: normal execution restored exact DACL and mandatory-label SDDL on workspace root, Build and broker directories' -ForegroundColor Green
     Write-Host 'PASS: forced parent termination preserved its journal and Job Object killed the AppContainer child' -ForegroundColor Green
+    Write-Host ("PASS: trusted broker host stayed Medium-or-higher IL (0x{0:X}); sandbox child remained AppContainer Low IL" -f $brokerIntegrityRid) -ForegroundColor Green
     Write-Host 'PASS: malformed journal signatures, truncation and trailing bytes failed closed without partial rollback' -ForegroundColor Green
     Write-Host 'PASS: next invocation recovered the abandoned ACL transaction and removed the journal' -ForegroundColor Green
 
