@@ -484,26 +484,27 @@ try {
     }
 
     # Header layout: SHAR | ACL1 | version=1 | flags=0 | three 20-byte
-    # descriptor lengths | reserved=0. 93 bytes is one byte longer than the
-    # declared 32 + 20 + 20 + 20 payload, so the trailing-data case must fail.
-    $wellFormedLengthHeader = [byte[]]::new(93)
+    # descriptor lengths | reserved=0. The exact valid size is 92 bytes;
+    # the trailing-data negative adds one byte and must fail the exact-size gate.
+    $validLengthHeader = [byte[]]::new(92)
     [byte[]]$journalMagic = @(0x53, 0x48, 0x41, 0x52, 0x41, 0x43, 0x4C, 0x31)
-    [Array]::Copy($journalMagic, 0, $wellFormedLengthHeader, 0, $journalMagic.Length)
-    $wellFormedLengthHeader[8] = [byte]1
+    [Array]::Copy($journalMagic, 0, $validLengthHeader, 0, $journalMagic.Length)
+    $validLengthHeader[8] = [byte]1
     foreach ($lengthOffset in @(16, 20, 24)) {
-        $wellFormedLengthHeader[$lengthOffset] = [byte]0x14
+        $validLengthHeader[$lengthOffset] = [byte]0x14
     }
+    $trailingDataHeader = [byte[]]::new(93)
+    [Array]::Copy($validLengthHeader, $trailingDataHeader, $validLengthHeader.Length)
     $invalidJournalCases = @(
-        [pscustomobject]@{ Name = 'bad-signature'; Bytes = $null },
-        [pscustomobject]@{ Name = 'truncated-header'; Bytes = [byte[]]::new(31) },
-        [pscustomobject]@{ Name = 'trailing-data'; Bytes = $wellFormedLengthHeader }
+        [pscustomobject]@{ Name = 'bad-signature'; Bytes = $null; ExpectedCode = -405 },
+        [pscustomobject]@{ Name = 'truncated-header'; Bytes = [byte[]]::new(31); ExpectedCode = -404 },
+        [pscustomobject]@{ Name = 'trailing-data'; Bytes = $trailingDataHeader; ExpectedCode = -407 }
     )
-    $invalidJournalExpected = @('-100', '-101', '-119', '-119', '-119', '-119') -join $nl
     foreach ($journalFault in $invalidJournalCases) {
         $faultBytes = [byte[]]$journalFault.Bytes
         if ($journalFault.Name -eq 'bad-signature') {
-            $faultBytes = [byte[]]::new($wellFormedLengthHeader.Length)
-            [Array]::Copy($wellFormedLengthHeader, $faultBytes, $wellFormedLengthHeader.Length)
+            $faultBytes = [byte[]]::new($validLengthHeader.Length)
+            [Array]::Copy($validLengthHeader, $faultBytes, $validLengthHeader.Length)
             $faultBytes[0] = [byte]0
         }
         try {
@@ -514,9 +515,10 @@ try {
             $invalidJournalExitCode = $LASTEXITCODE
             $invalidJournalNumeric = @(Get-BrokerNumericLines -Lines $invalidJournalLines)
             $invalidJournalActual = ($invalidJournalNumeric -join $nl).TrimEnd([char[]]@([char]13, [char]10))
+            $invalidJournalExpected = @('-100', '-101', [string]$journalFault.ExpectedCode, [string]$journalFault.ExpectedCode, [string]$journalFault.ExpectedCode, [string]$journalFault.ExpectedCode) -join $nl
             if ($invalidJournalExitCode -ne 0 -or
                 -not [string]::Equals($invalidJournalActual, $invalidJournalExpected, [StringComparison]::Ordinal)) {
-                throw "Malformed ACL journal '$($journalFault.Name)' was not rejected fail-closed. Expected=[$invalidJournalExpected] Actual=[$invalidJournalActual] ExitCode=$invalidJournalExitCode."
+                throw "Malformed ACL journal '$($journalFault.Name)' was not rejected at the expected validation stage. Expected=[$invalidJournalExpected] Actual=[$invalidJournalActual] ExitCode=$invalidJournalExitCode."
             }
             if (-not (Test-Path -LiteralPath $journalPath -PathType Leaf)) {
                 throw "Malformed ACL journal '$($journalFault.Name)' was deleted instead of retained for operator recovery."
@@ -623,9 +625,25 @@ try {
         # inspect the committed journal's wire format and report exactly which
         # descriptors remain at their transient or baseline SDDL.
         try {
-            $journalInfo = Get-Item -LiteralPath $journalPath
+            # The committed journal is intentionally hidden. Use -Force so the
+            # diagnostic does not misreport a hidden file as missing.
+            $journalInfo = Get-Item -LiteralPath $journalPath -Force
+            [byte[]]$journalBytes = [System.IO.File]::ReadAllBytes($journalPath)
+            $journalMagicText = '<short>'
+            $journalVersion = 0
+            $journalRootLength = 0
+            $journalBuildLength = 0
+            $journalBrokerLength = 0
+            if ($journalBytes.Length -ge 32) {
+                $journalMagicText = [Text.Encoding]::ASCII.GetString($journalBytes, 0, 8)
+                $journalVersion = [BitConverter]::ToUInt32($journalBytes, 8)
+                $journalRootLength = [BitConverter]::ToUInt32($journalBytes, 16)
+                $journalBuildLength = [BitConverter]::ToUInt32($journalBytes, 20)
+                $journalBrokerLength = [BitConverter]::ToUInt32($journalBytes, 24)
+            }
             $journalHash = (Get-FileHash -LiteralPath $journalPath -Algorithm SHA256).Hash
-            Write-Host ("ACL_RECOVERY_JOURNAL|bytes={0}|sha256={1}" -f $journalInfo.Length, $journalHash)
+            Write-Host ("ACL_RECOVERY_JOURNAL|attributes={0}|bytes={1}|magic={2}|version={3}|root={4}|build={5}|broker={6}|sha256={7}" -f
+                $journalInfo.Attributes, $journalBytes.Length, $journalMagicText, $journalVersion, $journalRootLength, $journalBuildLength, $journalBrokerLength, $journalHash)
         }
         catch {
             Write-Host ("ACL_RECOVERY_JOURNAL_READ_FAIL|{0}" -f $_.Exception.Message)
