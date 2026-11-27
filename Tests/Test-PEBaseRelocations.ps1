@@ -67,7 +67,7 @@ Record-Pass 'multiple DIR64 targets share a page with canonical ordering and pad
 $multiplePages = New-SharnouBaseRelocationDirectory -TargetRvas ([UInt32[]]@(0x3018, 0x2FF8, 0x3000)) -ImageSize $imageSize -AllowedRanges $range
 Assert-True ($multiplePages.BlockCount -eq 2) 'Targets on two pages must produce two relocation blocks.'
 Assert-True ($multiplePages.DirectorySize -eq 24) 'Two single-entry page blocks must occupy 24 bytes.'
-Assert-True ((Get-Hex -Bytes $multiplePages.Bytes) -eq '002000000C000000F8AF0000003000000C00000000A018A000') 'Multiple-page relocation blocks are not page-sorted/canonical.'
+Assert-True ((Get-Hex -Bytes $multiplePages.Bytes) -eq '002000000C000000F8AF0000003000000C00000000A018A0') 'Multiple-page relocation blocks are not page-sorted/canonical.'
 Record-Pass 'multiple page blocks are sorted and page-end targets are valid'
 
 # The independent parser must recover the exact target set.
