@@ -517,7 +517,7 @@ try {
     $trailingDataHeader = [byte[]]::new(93)
     [Array]::Copy($validLengthHeader, $trailingDataHeader, $validLengthHeader.Length)
     $invalidJournalCases = @(
-        [pscustomobject]@{ Name = 'bad-signature'; Bytes = $null; ExpectedCode = -405 },
+        [pscustomobject]@{ Name = 'bad-signature'; Bytes = $null; ExpectedCode = -450 },
         [pscustomobject]@{ Name = 'truncated-header'; Bytes = [byte[]]::new(31); ExpectedCode = -404 },
         [pscustomobject]@{ Name = 'trailing-data'; Bytes = $trailingDataHeader; ExpectedCode = -407 }
     )
