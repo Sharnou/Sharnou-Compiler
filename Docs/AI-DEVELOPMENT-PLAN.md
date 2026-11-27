@@ -286,3 +286,14 @@ The failing run returned -2685 for each broker invocation after WAIT_ABANDONED. 
 The milestone also requires a unique AppContainer identity per execution, a versioned recovery journal that can retire a crashed profile after ACL restoration, a deterministic explicit Unicode environment (never lpEnvironment=NULL), production integration of the Phase 2B.5 two-stream handle allowlist, child loader/DLL-search hardening, and same-head crash/adversarial Windows acceptance. New native APIs must be represented in the generated PE import table and checked by the PE verifier; the final executable import table, not a planned manifest, is authoritative.
 
 Model-facing process execution and autonomous execution remain DISABLED.
+
+
+## Phase 2B.8 implementation sequencing update - 2026-11-27
+
+The Phase 2B.8 specification and acceptance gates are in `Docs/PHASE-2B8-CRASH-SAFE-EXECUTION-LIFECYCLE.md`; the reconciliation and code-increment record are in `Docs/PHASE-2B8-IMPLEMENTATION-LOG.md`.
+
+Current PR #24 head `6344632746cd0666025a0beb0d31f4752d6480f6` has targeted Windows evidence for journal recovery, exact ACL/label rollback and Job Object child termination (run 46003358917), plus companion M1-M6 83/83 evidence (run 46003358930). PR #24 remains the Phase 2B.6 integration parent and is not security accepted. The reviewed repository does not establish a separately completed Phase 2B.7 lifecycle implementation.
+
+Draft PR #28 starts Phase 2B.8 on an isolated branch stacked on that exact PR #24 head. Its first code increment adds a Windows CNG/AppContainer identity primitive test to the combined test suite. It is **NOT YET WINDOWS-CI-VERIFIED** and does not change the production broker or its stable profile behavior.
+
+Next dependencies: verify the identity fixture on Windows; implement actual unique identity creation in the emitted broker; design authenticated journal metadata before recording profile names for restart cleanup; integrate idempotent profile deletion with normal and crash recovery; then implement clean environment, separate bounded streams, DLL hardening and exhaustive lifecycle qualification. Model-generated execution remains disabled until all same-commit security gates and human review pass.
