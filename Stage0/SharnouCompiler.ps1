@@ -1038,42 +1038,179 @@ function Emit-DevBrokerVerifyScript {
 }
 
 function Emit-DevBrokerEnsureAppContainerSid {
-    param([int] $SidSlot, [string] $FailureLabel)
-    $nameItem = Register-WideDataConstant -Value 'Sharnou.DevAgent.ProcessBroker.v1'
-    $displayItem = Register-WideDataConstant -Value 'Sharnou DevAgent Process Broker'
-    $descriptionItem = Register-WideDataConstant -Value 'Restricted no-capability AppContainer for fixed DevAgent test tools.'
-    $alreadyExists = New-UniqueLabel -Prefix 'dev_appcontainer_exists'
-    $done = New-UniqueLabel -Prefix 'dev_appcontainer_ready'
+    param(
+        [int] $SidSlot,
+        [int] $ProfileNameSlot,
+        [int] $RandomSlot,
+        [int] $DerivedSidSlot,
+        [int] $ProfileCreatedSlot,
+        [string] $FailureLabel
+    )
+    $prefixItem = Register-WideDataConstant -Value 'Sharnou.DevAgent.'
+    $hexItem = Register-WideDataConstant -Value '0123456789abcdef'
+    $displayItem = Register-WideDataConstant -Value 'Sharnou DevAgent execution'
+    $descriptionItem = Register-WideDataConstant -Value 'Ephemeral zero-capability per-execution identity.'
+    $hexLoop = New-UniqueLabel -Prefix 'dev_appcontainer_hex_loop'
+    $randomCheckLoop = New-UniqueLabel -Prefix 'dev_appcontainer_random_check'
+    $randomNonzero = New-UniqueLabel -Prefix 'dev_appcontainer_random_nonzero'
+    $derivedSidFailure = New-UniqueLabel -Prefix 'dev_appcontainer_derived_sid_failure'
+    $sidReady = New-UniqueLabel -Prefix 'dev_appcontainer_sid_ready'
+
     Emit-StoreZero64Frame -SlotPosition $SidSlot
-    Emit-DataAddress -DataItem $nameItem
-    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1)) # RCX = package name
-    Emit-DataAddress -DataItem $displayItem
-    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC2)) # RDX = display name
-    Emit-DataAddress -DataItem $descriptionItem
-    Emit-Bytes -Bytes ([byte[]]@(0x49, 0x89, 0xC0, 0x45, 0x33, 0xC9)) # R8 = description; R9 = no capabilities
-    Emit-Win64CallIat -TargetRva ([UInt32]0x3278) -StackArguments @(
-        @{ Kind = 'Immediate'; Value = 0 }, # zero capabilities
-        @{ Kind = 'FrameAddress'; SlotPosition = $SidSlot }
-    ) # CreateAppContainerProfile
-    Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
-    Emit-JumpConditional -ConditionCode 0x84 -Label $done
-    Emit-Bytes -Bytes ([byte[]]@(0x3D))
-    Emit-I32 -Value -2147024713 # HRESULT_FROM_WIN32(ERROR_ALREADY_EXISTS)
-    Emit-JumpConditional -ConditionCode 0x84 -Label $alreadyExists
-    Emit-Jump -Label $FailureLabel
-    Mark-CodeLabel -Label $alreadyExists
-    Emit-DataAddress -DataItem $nameItem
-    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1))
-    Emit-LeaRaxFrame -SlotPosition $SidSlot
-    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC2))
-    Emit-Win64CallIat -TargetRva ([UInt32]0x3280) -StackArguments @() # DeriveAppContainerSidFromAppContainerName
+    Emit-StoreZero64Frame -SlotPosition $DerivedSidSlot
+    Emit-StoreBits32Frame -SlotPosition $ProfileCreatedSlot -Value 0
+
+    # A fresh 128-bit execution identifier comes from the system-preferred CNG RNG.
+    # It is never derived from a process ID, timestamp, workspace path or user input.
+    Emit-Bytes -Bytes ([byte[]]@(0x33, 0xC9)) # hAlgorithm = NULL
+    Emit-LeaRaxFrame -SlotPosition $RandomSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC2, 0x41, 0xB8, 0x10, 0x00, 0x00, 0x00, 0x41, 0xB9, 0x02, 0x00, 0x00, 0x00))
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3328) -StackArguments @() # BCryptGenRandom(BCRYPT_USE_SYSTEM_PREFERRED_RNG)
     Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
     Emit-JumpConditional -ConditionCode 0x85 -Label $FailureLabel
-    Mark-CodeLabel -Label $done
+
+    # Reject the all-zero output even though it is cryptographically negligible.
+    Emit-Bytes -Bytes ([byte[]]@(0x33, 0xC0))
+    Emit-LeaRaxFrame -SlotPosition $RandomSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC6, 0xB9))
+    Emit-I32 -Value 16
+    Mark-CodeLabel -Label $randomCheckLoop
+    Emit-Bytes -Bytes ([byte[]]@(0x0A, 0x06, 0x48, 0xFF, 0xC6, 0xFF, 0xC9))
+    Emit-JumpConditional -ConditionCode 0x85 -Label $randomCheckLoop
+    Emit-Bytes -Bytes ([byte[]]@(0x84, 0xC0))
+    Emit-JumpConditional -ConditionCode 0x85 -Label $randomNonzero
+    Emit-Jump -Label $FailureLabel
+    Mark-CodeLabel -Label $randomNonzero
+
+    # Build the bounded canonical profile name:
+    # Sharnou.DevAgent.<32 lowercase hexadecimal characters>.
+    Emit-DataAddress -DataItem $prefixItem
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC6)) # RSI = UTF-16 prefix
+    Emit-LeaRaxFrame -SlotPosition $ProfileNameSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC7, 0xB9))
+    Emit-I32 -Value 34 # 17 UTF-16 characters, excluding the terminator
+    Emit-Bytes -Bytes ([byte[]]@(0xFC, 0xF3, 0xA4)) # CLD; REP MOVSB
+    Emit-DataAddress -DataItem $hexItem
+    Emit-Bytes -Bytes ([byte[]]@(0x49, 0x89, 0xC3)) # R11 = UTF-16 hexadecimal lookup table
+    Emit-LeaRaxFrame -SlotPosition $RandomSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC6, 0x41, 0xBA, 0x10, 0x00, 0x00, 0x00)) # RSI=random, R10D=16
+    Mark-CodeLabel -Label $hexLoop
+    Emit-Bytes -Bytes ([byte[]]@(
+        0x0F, 0xB6, 0x06,             # movzx eax, byte ptr [rsi]
+        0x89, 0xC2,                   # mov edx,eax
+        0xC1, 0xE8, 0x04,             # shr eax,4
+        0x41, 0x0F, 0xB7, 0x04, 0x43, # movzx eax,word ptr [r11+rax*2]
+        0x66, 0x89, 0x07,             # mov word ptr [rdi],ax
+        0x48, 0x83, 0xC7, 0x02,       # add rdi,2
+        0x83, 0xE2, 0x0F,             # and edx,0xf
+        0x41, 0x0F, 0xB7, 0x04, 0x53, # movzx eax,word ptr [r11+rdx*2]
+        0x66, 0x89, 0x07,             # mov word ptr [rdi],ax
+        0x48, 0x83, 0xC7, 0x02,       # add rdi,2
+        0x48, 0xFF, 0xC6,             # inc rsi
+        0x41, 0xFF, 0xCA              # dec r10d
+    ))
+    Emit-JumpConditional -ConditionCode 0x85 -Label $hexLoop
+    Emit-Bytes -Bytes ([byte[]]@(0x66, 0xC7, 0x07, 0x00, 0x00)) # UTF-16 NUL
+
+    # CreateAppContainerProfile must create a new identity. There is deliberately
+    # no ERROR_ALREADY_EXISTS adoption/derive fallback: collisions fail closed.
+    Emit-LeaRaxFrame -SlotPosition $ProfileNameSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1))
+    Emit-DataAddress -DataItem $displayItem
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC2))
+    Emit-DataAddress -DataItem $descriptionItem
+    Emit-Bytes -Bytes ([byte[]]@(0x49, 0x89, 0xC0, 0x45, 0x33, 0xC9))
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3278) -StackArguments @(
+        @{ Kind = 'Immediate'; Value = 0 },
+        @{ Kind = 'FrameAddress'; SlotPosition = $SidSlot }
+    ) # CreateAppContainerProfile, zero capabilities
+    Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
+    Emit-JumpConditional -ConditionCode 0x85 -Label $FailureLabel
+    Emit-StoreBits32Frame -SlotPosition $ProfileCreatedSlot -Value 1
     Emit-LoadRaxFrame -SlotPosition $SidSlot
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x85, 0xC0))
     Emit-JumpConditional -ConditionCode 0x84 -Label $FailureLabel
+
+    # Independently derive the SID from this exact name and require identical SID identity.
+    Emit-LeaRaxFrame -SlotPosition $ProfileNameSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1))
+    Emit-LeaRaxFrame -SlotPosition $DerivedSidSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC2))
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3280) -StackArguments @() # DeriveAppContainerSidFromAppContainerName
+    Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
+    Emit-JumpConditional -ConditionCode 0x85 -Label $derivedSidFailure
+    Emit-LoadRaxFrame -SlotPosition $DerivedSidSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x85, 0xC0))
+    Emit-JumpConditional -ConditionCode 0x84 -Label $derivedSidFailure
+    Emit-LoadRaxFrame -SlotPosition $SidSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1))
+    Emit-LoadRaxFrame -SlotPosition $DerivedSidSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC2))
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3348) -StackArguments @() # EqualSid
+    Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
+    Emit-JumpConditional -ConditionCode 0x84 -Label $derivedSidFailure
+    Emit-Jump -Label $sidReady
+
+    Mark-CodeLabel -Label $derivedSidFailure
+    Emit-LoadRcxFrame -SlotPosition $DerivedSidSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x85, 0xC9))
+    $skipDerivedFree = New-UniqueLabel -Prefix 'dev_appcontainer_skip_derived_free'
+    Emit-JumpConditional -ConditionCode 0x84 -Label $skipDerivedFree
+    Emit-Win64CallIat -TargetRva ([UInt32]0x32A8) -StackArguments @() # FreeSid
+    Emit-StoreZero64Frame -SlotPosition $DerivedSidSlot
+    Mark-CodeLabel -Label $skipDerivedFree
+    Emit-Jump -Label $FailureLabel
+
+    Mark-CodeLabel -Label $sidReady
+    Emit-LoadRcxFrame -SlotPosition $DerivedSidSlot
+    Emit-Win64CallIat -TargetRva ([UInt32]0x32A8) -StackArguments @() # FreeSid
+    Emit-StoreZero64Frame -SlotPosition $DerivedSidSlot
 }
+function Emit-DevBrokerDeleteOwnedAppContainerProfile {
+    param(
+        [int] $ProfileNameSlot,
+        [int] $ProfileCreatedSlot,
+        [int] $ChildActiveSlot,
+        [int] $TransactionActiveSlot,
+        [int] $ResultSlot
+    )
+    $skip = New-UniqueLabel -Prefix 'dev_appcontainer_delete_skip'
+    $deleted = New-UniqueLabel -Prefix 'dev_appcontainer_delete_success'
+    $failed = New-UniqueLabel -Prefix 'dev_appcontainer_delete_failed'
+    Emit-LoadEaxFrame -SlotPosition $ChildActiveSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
+    Emit-JumpConditional -ConditionCode 0x85 -Label $skip
+    Emit-LoadEaxFrame -SlotPosition $TransactionActiveSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
+    Emit-JumpConditional -ConditionCode 0x85 -Label $skip
+    Emit-LoadEaxFrame -SlotPosition $ProfileCreatedSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
+    Emit-JumpConditional -ConditionCode 0x84 -Label $skip
+
+    # The child token, process, thread and Job Object handles have already been
+    # closed. Retry the indeterminate-profile failure once, but never report success
+    # when Windows could not confirm deletion.
+    Emit-LeaRaxFrame -SlotPosition $ProfileNameSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1))
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3338) -StackArguments @() # DeleteAppContainerProfile
+    Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
+    Emit-JumpConditional -ConditionCode 0x84 -Label $deleted
+    Emit-LeaRaxFrame -SlotPosition $ProfileNameSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1))
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3338) -StackArguments @() # retry DeleteAppContainerProfile
+    Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
+    Emit-JumpConditional -ConditionCode 0x85 -Label $failed
+    Mark-CodeLabel -Label $deleted
+    Emit-StoreBits32Frame -SlotPosition $ProfileCreatedSlot -Value 0
+    Emit-Jump -Label $skip
+
+    Mark-CodeLabel -Label $failed
+    Emit-Bytes -Bytes ([byte[]]@(0xB8))
+    Emit-I32 -Value -134 # profile cleanup failed; never treat the execution as successful
+    Emit-StoreEaxFrame -SlotPosition $ResultSlot
+    Mark-CodeLabel -Label $skip
+}
+
 function Emit-DevBrokerUpdateAcl {
     param(
         [int] $PathSlot,
@@ -1332,10 +1469,14 @@ function Emit-DevBrokerRestoreSecurityDescriptor {
     $saclDefaultedSlot = $scratch + 0xD78
     $restoreStageSlot = $scratch + 0xE80
     $restoreErrorSlot = $scratch + 0xE84
+    $actualDaclSlot = $scratch + 0xE88
+    $actualSaclSlot = $scratch + 0xE90
+    $actualDescriptorSlot = $scratch + 0xE98
     $failed = New-UniqueLabel -Prefix 'dev_acl_restore_failed'
     $done = New-UniqueLabel -Prefix 'dev_acl_restore_done'
     Emit-StoreZero64Frame -SlotPosition $handleSlot
-    foreach ($slot in @($daclPresentSlot, $daclSlot, $daclDefaultedSlot, $saclPresentSlot, $saclSlot, $saclDefaultedSlot)) {
+    foreach ($slot in @($daclPresentSlot, $daclSlot, $daclDefaultedSlot, $saclPresentSlot, $saclSlot, $saclDefaultedSlot,
+        $actualDaclSlot, $actualSaclSlot, $actualDescriptorSlot)) {
         Emit-StoreZero64Frame -SlotPosition $slot
     }
     for ($i = 0; $i -lt 7; $i++) { Emit-StoreZero64Frame -SlotPosition ($fileInfoSlot + ($i * 8)) }
@@ -1427,6 +1568,48 @@ function Emit-DevBrokerRestoreSecurityDescriptor {
     Emit-StoreEaxFrame -SlotPosition $restoreErrorSlot # SetSecurityInfo returns a Win32 error code directly
     Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
     Emit-JumpConditional -ConditionCode 0x85 -Label $failed
+
+    # Read the descriptor back from the same opened object. Compare the complete
+    # DACL byte sequence, and the SACL/mandatory-label bytes for Build directories,
+    # before declaring restoration complete.
+    Emit-StoreBits32Frame -SlotPosition $restoreStageSlot -Value 7 # GetSecurityInfo readback
+    Emit-LoadRcxFrame -SlotPosition $handleSlot
+    Emit-Bytes -Bytes ([byte[]]@(0xBA, 0x01, 0x00, 0x00, 0x00, 0x41, 0xB8, 0x14, 0x00, 0x00, 0x00, 0x45, 0x33, 0xC9))
+    Emit-Win64CallIat -TargetRva ([UInt32]0x32C8) -StackArguments @(
+        @{ Kind = 'Immediate'; Value = 0 },
+        @{ Kind = 'FrameAddress'; SlotPosition = $actualDaclSlot },
+        @{ Kind = 'FrameAddress'; SlotPosition = $actualSaclSlot },
+        @{ Kind = 'FrameAddress'; SlotPosition = $actualDescriptorSlot }
+    ) # GetSecurityInfo(DACL + LABEL)
+    Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
+    Emit-JumpConditional -ConditionCode 0x85 -Label $failed
+
+    # DACL must be byte-for-byte identical, including ACE order and flags.
+    Emit-LoadRaxFrame -SlotPosition $daclSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC6, 0x48, 0x85, 0xF6))
+    Emit-JumpConditional -ConditionCode 0x84 -Label $failed
+    Emit-LoadRaxFrame -SlotPosition $actualDaclSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC7, 0x48, 0x85, 0xFF))
+    Emit-JumpConditional -ConditionCode 0x84 -Label $failed
+    Emit-Bytes -Bytes ([byte[]]@(0x0F, 0xB7, 0x46, 0x02, 0x0F, 0xB7, 0x57, 0x02, 0x39, 0xD0))
+    Emit-JumpConditional -ConditionCode 0x85 -Label $failed
+    Emit-Bytes -Bytes ([byte[]]@(0x89, 0xC1, 0xFC, 0xF3, 0xA6)) # CLD; REPE CMPSB
+    Emit-JumpConditional -ConditionCode 0x85 -Label $failed
+
+    if ($RestoreLabel) {
+        # The Low IL mandatory-label SACL must also be byte-for-byte identical.
+        Emit-LoadRaxFrame -SlotPosition $saclSlot
+        Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC6, 0x48, 0x85, 0xF6))
+        Emit-JumpConditional -ConditionCode 0x84 -Label $failed
+        Emit-LoadRaxFrame -SlotPosition $actualSaclSlot
+        Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC7, 0x48, 0x85, 0xFF))
+        Emit-JumpConditional -ConditionCode 0x84 -Label $failed
+        Emit-Bytes -Bytes ([byte[]]@(0x0F, 0xB7, 0x46, 0x02, 0x0F, 0xB7, 0x57, 0x02, 0x39, 0xD0))
+        Emit-JumpConditional -ConditionCode 0x85 -Label $failed
+        Emit-Bytes -Bytes ([byte[]]@(0x89, 0xC1, 0xFC, 0xF3, 0xA6)) # CLD; REPE CMPSB
+        Emit-JumpConditional -ConditionCode 0x85 -Label $failed
+    }
+
     Emit-StoreBits32Frame -SlotPosition $daclPresentSlot -Value 1
     Emit-StoreBits32Frame -SlotPosition $restoreStageSlot -Value 0
     Emit-Jump -Label $done
@@ -1434,6 +1617,13 @@ function Emit-DevBrokerRestoreSecurityDescriptor {
     Mark-CodeLabel -Label $failed
     Emit-StoreBits32Frame -SlotPosition $daclPresentSlot -Value 0
     Mark-CodeLabel -Label $done
+    Emit-LoadRcxFrame -SlotPosition $actualDescriptorSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x85, 0xC9))
+    $skipFreeReadback = New-UniqueLabel -Prefix 'dev_acl_restore_skip_free_readback'
+    Emit-JumpConditional -ConditionCode 0x84 -Label $skipFreeReadback
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3260) -StackArguments @() # LocalFree readback descriptor
+    Emit-StoreZero64Frame -SlotPosition $actualDescriptorSlot
+    Mark-CodeLabel -Label $skipFreeReadback
     Emit-LoadRcxFrame -SlotPosition $handleSlot
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x85, 0xC9))
     $skipClose = New-UniqueLabel -Prefix 'dev_acl_restore_skip_close'
@@ -2245,6 +2435,10 @@ function Emit-DevRunTool {
     $pipeClosedSlot = $scratch + 0xAE4
     $appContainerSidSlot = $scratch + 0xAE8
     $mutexHandleSlot = $scratch + 0xAF0
+    $profileCreatedSlot = $scratch + 0xE7C
+    $profileNameSlot = $scratch + 0xF00
+    $profileRandomSlot = $scratch + 0xF80
+    $derivedProfileSidSlot = $scratch + 0xF90
     $mutexAcquiredSlot = $scratch + 0xAF8
     $attributeListReadySlot = $scratch + 0xAFC
     $childActiveSlot = $scratch + 0xB00
@@ -2290,7 +2484,7 @@ function Emit-DevRunTool {
         $journalBufferSlot
     )) { Emit-StoreZero64Frame -SlotPosition $slot }
     foreach ($slot in @($journalWrittenSlot, $rootDescriptorLengthSlot, $buildDescriptorLengthSlot,
-        $brokerDescriptorLengthSlot, $journalReadCountSlot, $transactionActiveSlot)) {
+        $brokerDescriptorLengthSlot, $journalReadCountSlot, $transactionActiveSlot, $profileCreatedSlot)) {
         Emit-StoreBits32Frame -SlotPosition $slot -Value 0
     }
     Emit-StoreZero64Frame -SlotPosition $journalHeaderSlot
@@ -2667,12 +2861,9 @@ function Emit-DevRunTool {
     # so rebuild the committed journal target before the next transaction starts.
     Emit-DevBrokerBuildWorkspacePath -RootSlot $workspaceRootSlot -RootLengthSlot $rootLengthSlot -SuffixItem $journalSuffixItem -SuffixLength $journalSuffixLength -DestinationSlot $journalPathSlot
 
-    # Retire grants written by the pre-journal broker. REVOKE_ACCESS only narrows
-    # access; no permission expansion is allowed until a durable snapshot commits.
-    Emit-DevBrokerEnsureAppContainerSid -SidSlot $appContainerSidSlot -FailureLabel $appContainerFail
-    Emit-DevBrokerUpdateAcl -PathSlot $workspaceRootSlot -SidSlot $appContainerSidSlot -AccessMask ([UInt32]0) -AccessMode 4 -FailureLabel $aclFail
-    Emit-DevBrokerUpdateAcl -PathSlot $buildPathSlot -SidSlot $appContainerSidSlot -AccessMask ([UInt32]0) -AccessMode 4 -SetLowIntegrityLabel $false -FailureLabel $aclFail
-    Emit-DevBrokerUpdateAcl -PathSlot $brokerDirectorySlot -SidSlot $appContainerSidSlot -AccessMask ([UInt32]0) -AccessMode 4 -SetLowIntegrityLabel $false -FailureLabel $aclFail
+    # The fresh profile SID has never been granted workspace access. Do not mutate
+    # any ACL before the durable snapshot; all permission changes follow the commit.
+    Emit-DevBrokerEnsureAppContainerSid -SidSlot $appContainerSidSlot -ProfileNameSlot $profileNameSlot -RandomSlot $profileRandomSlot -DerivedSidSlot $derivedProfileSidSlot -ProfileCreatedSlot $profileCreatedSlot -FailureLabel $appContainerFail
 
     Emit-DevBrokerWriteAclJournal -JournalPathSlot $journalPathSlot -TempPathSlot $journalTempPathSlot -WorkspaceRootSlot $workspaceRootSlot -BuildPathSlot $buildPathSlot -BrokerDirectorySlot $brokerDirectorySlot -JournalHandleSlot $journalHandleSlot -JournalWrittenSlot $journalWrittenSlot -HeaderSlot $journalHeaderSlot -RootDescriptorSlot $rootDescriptorSlot -BuildDescriptorSlot $buildDescriptorSlot -BrokerDescriptorSlot $brokerDescriptorSlot -RootLengthSlot $rootDescriptorLengthSlot -BuildLengthSlot $buildDescriptorLengthSlot -BrokerLengthSlot $brokerDescriptorLengthSlot -TransactionActiveSlot $transactionActiveSlot -FailureLabel $journalFail
 
@@ -2937,6 +3128,27 @@ function Emit-DevRunTool {
     Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
     Emit-JumpConditional -ConditionCode 0x84 -Label $tokenFail
     Emit-LoadEaxFrame -SlotPosition $tokenInformationSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
+    Emit-JumpConditional -ConditionCode 0x84 -Label $tokenFail
+
+    # The actual primary token must contain this execution's exact package SID,
+    # not merely any AppContainer SID with zero capabilities.
+    for ($i = 0; $i -lt 8; $i++) { Emit-StoreZero64Frame -SlotPosition ($tokenInformationSlot + ($i * 8)) }
+    Emit-StoreZero64Frame -SlotPosition $tokenLengthSlot
+    Emit-LoadRcxFrame -SlotPosition $childTokenSlot
+    Emit-Bytes -Bytes ([byte[]]@(0xBA, 0x1F, 0x00, 0x00, 0x00)) # TokenAppContainerSid = 31
+    Emit-LeaRaxFrame -SlotPosition $tokenInformationSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x49, 0x89, 0xC0, 0x41, 0xB9, 0x08, 0x00, 0x00, 0x00))
+    Emit-Win64CallIat -TargetRva ([UInt32]0x32D8) -StackArguments @(
+        @{ Kind = 'FrameAddress'; SlotPosition = $tokenLengthSlot }
+    ) # GetTokenInformation(TOKEN_APPCONTAINER_INFORMATION)
+    Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
+    Emit-JumpConditional -ConditionCode 0x84 -Label $tokenFail
+    Emit-LoadRaxFrame -SlotPosition $tokenInformationSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x8B, 0x08)) # RCX = returned package SID
+    Emit-LoadRaxFrame -SlotPosition $appContainerSidSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC2)) # RDX = newly created profile SID
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3348) -StackArguments @() # EqualSid
     Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
     Emit-JumpConditional -ConditionCode 0x84 -Label $tokenFail
 
@@ -3439,6 +3651,11 @@ function Emit-DevRunTool {
     Emit-Bytes -Bytes ([byte[]]@(0xB8, 0x80, 0xFF, 0xFF, 0xFF)) # -128: generic ACL rollback failure
     Emit-StoreEaxFrame -SlotPosition $resultSlot
     Mark-CodeLabel -Label $skipAclRollback
+
+    # Delete the unique profile only after the Job Object is empty and all committed
+    # ACL changes have been restored and the journal retired. A crash leaves an
+    # orphaned profile until the separate authenticated service recovery path exists.
+    Emit-DevBrokerDeleteOwnedAppContainerProfile -ProfileNameSlot $profileNameSlot -ProfileCreatedSlot $profileCreatedSlot -ChildActiveSlot $childActiveSlot -TransactionActiveSlot $transactionActiveSlot -ResultSlot $resultSlot
 
     # GetSecurityInfo descriptors are LocalFree allocations; recovery-buffer
     # interior pointers were cleared by RecoverAclJournal and must not be freed here.
@@ -4420,10 +4637,9 @@ $dataRawSize = Align-Up -Value $dataBytes.Length -Alignment 0x200
 # stay stable within .idata. Lookup tables use the disjoint 0x500-0x610 range;
 # no lookup table may overlap any IAT slot or import-by-name string. Emit-CallIat rebases target RVAs after section placement.
 $idata = [byte[]]::new(0x1000)
-# Lookup tables occupy 0x700..0x8D8. Keep twelve import descriptors and the null terminator
-# in a separate 0xA00..0xB04 range.
+# Import descriptors have a dedicated .idata range, disjoint from lookups, IAT and names.
 $descriptorBase = 0xA00
-$importDirectorySize = 0x154
+$importDirectorySize = 0x190
 if (($descriptorBase + $importDirectorySize) -gt $idata.Length) { throw 'Import descriptor table exceeds .idata storage.' }
 $importSets = @(
     [pscustomobject]@{ Descriptor = 0x00; Lookup = 0xC00; Iat = 0x70; Dll = 'KERNEL32.dll'; Names = @('GetStdHandle', 'WriteFile', 'ExitProcess') },
@@ -4441,10 +4657,13 @@ $importSets = @(
     [pscustomobject]@{ Descriptor = 0xF0; Lookup = 0xDC0; Iat = 0x230; Dll = 'KERNEL32.dll'; Names = @('CreatePipe', 'SetHandleInformation', 'PeekNamedPipe', 'InitializeProcThreadAttributeList', 'UpdateProcThreadAttribute', 'DeleteProcThreadAttributeList', 'LocalFree', 'GetLastError') },
     [pscustomobject]@{ Descriptor = 0x104; Lookup = 0xE08; Iat = 0x278; Dll = 'USERENV.dll'; Names = @('CreateAppContainerProfile', 'DeriveAppContainerSidFromAppContainerName') },
     [pscustomobject]@{ Descriptor = 0x118; Lookup = 0xE20; Iat = 0x290; Dll = 'ADVAPI32.dll'; Names = @('GetNamedSecurityInfoA', 'SetEntriesInAclA', 'SetNamedSecurityInfoA', 'FreeSid', 'OpenProcessToken', 'CreateRestrictedToken', 'CreateProcessAsUserA', 'GetSecurityInfo', 'SetSecurityInfo', 'GetTokenInformation', 'GetSecurityDescriptorDacl', 'GetSecurityDescriptorSacl', 'GetSecurityDescriptorLength', 'IsValidSecurityDescriptor') },
-    [pscustomobject]@{ Descriptor = 0x12C; Lookup = 0xE98; Iat = 0x308; Dll = 'KERNEL32.dll'; Names = @('GetFullPathNameA', 'DeleteFileA', 'MoveFileExA', 'FlushFileBuffers') }
+    [pscustomobject]@{ Descriptor = 0x12C; Lookup = 0xE98; Iat = 0x308; Dll = 'KERNEL32.dll'; Names = @('GetFullPathNameA', 'DeleteFileA', 'MoveFileExA', 'FlushFileBuffers') },
+    [pscustomobject]@{ Descriptor = 0x140; Lookup = 0xEC0; Iat = 0x328; Dll = 'BCRYPT.dll'; Names = @('BCryptGenRandom') },
+    [pscustomobject]@{ Descriptor = 0x154; Lookup = 0xED0; Iat = 0x338; Dll = 'USERENV.dll'; Names = @('DeleteAppContainerProfile') },
+    [pscustomobject]@{ Descriptor = 0x168; Lookup = 0xEE0; Iat = 0x348; Dll = 'ADVAPI32.dll'; Names = @('EqualSid') }
 )
 $apiNameRvas = @{}
-$nameCursor = 0x330
+$nameCursor = 0x400
 foreach ($set in $importSets) {
     foreach ($apiName in $set.Names) {
         if (-not $apiNameRvas.ContainsKey($apiName)) {
@@ -4508,6 +4727,7 @@ $script:StdLibIatOffsets = @{
     'OpenProcessToken' = [UInt32]0x2B0; 'CreateRestrictedToken' = [UInt32]0x2B8; 'CreateProcessAsUserA' = [UInt32]0x2C0; 'GetSecurityInfo' = [UInt32]0x2C8; 'SetSecurityInfo' = [UInt32]0x2D0; 'GetTokenInformation' = [UInt32]0x2D8
     'GetSecurityDescriptorDacl' = [UInt32]0x2E0; 'GetSecurityDescriptorSacl' = [UInt32]0x2E8; 'GetSecurityDescriptorLength' = [UInt32]0x2F0; 'IsValidSecurityDescriptor' = [UInt32]0x2F8
     'GetFullPathNameA' = [UInt32]0x308; 'DeleteFileA' = [UInt32]0x310; 'MoveFileExA' = [UInt32]0x318; 'FlushFileBuffers' = [UInt32]0x320
+    'BCryptGenRandom' = [UInt32]0x328; 'DeleteAppContainerProfile' = [UInt32]0x338; 'EqualSid' = [UInt32]0x348
 }
 
 # One DIR64 relocation patches the absolute image-base + entry-point pointer at the dynamic .rdata RVA.
