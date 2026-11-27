@@ -150,6 +150,13 @@ namespace Sharnou
         [DllImport("bcrypt.dll", EntryPoint = "BCryptGenRandom", ExactSpelling = true)]
         private static extern int BCryptGenRandom(IntPtr algorithm, [Out] byte[] buffer, uint length, uint flags);
 
+        [DllImport("kernel32.dll", EntryPoint = "GetEnvironmentStringsW", CharSet = CharSet.Unicode, ExactSpelling = true)]
+        private static extern IntPtr GetEnvironmentStringsW();
+
+        [DllImport("kernel32.dll", EntryPoint = "FreeEnvironmentStringsW", CharSet = CharSet.Unicode, ExactSpelling = true, SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool FreeEnvironmentStringsW(IntPtr environmentBlock);
+
         [DllImport("userenv.dll", EntryPoint = "CreateAppContainerProfile",
             CharSet = CharSet.Unicode, ExactSpelling = true, PreserveSig = true)]
         private static extern int CreateAppContainerProfile(
@@ -365,6 +372,61 @@ namespace Sharnou
             finally { Marshal.FreeHGlobal(info); }
         }
 
+        private static List<string> ReadApprovedDriveEntries()
+        {
+            IntPtr source = GetEnvironmentStringsW();
+            if (source == IntPtr.Zero)
+                throw new Win32Exception(Marshal.GetLastWin32Error(), "GetEnvironmentStringsW failed.");
+
+            List<string> entries = new List<string>();
+            HashSet<string> driveNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            try
+            {
+                int offset = 0;
+                bool terminated = false;
+                for (int index = 0; index < 32768; index++)
+                {
+                    if (offset >= 32767)
+                        throw new InvalidOperationException("Parent environment block exceeds its scan bound.");
+                    string entry = Marshal.PtrToStringUni(IntPtr.Add(source, checked(offset * 2)));
+                    if (String.IsNullOrEmpty(entry))
+                    {
+                        terminated = true;
+                        break;
+                    }
+                    offset = checked(offset + entry.Length + 1);
+                    if (offset > 32768)
+                        throw new InvalidOperationException("Parent environment block exceeds its scan bound.");
+
+                    // Preserve only special per-drive current-directory entries;
+                    // never copy ordinary ambient environment variables.
+                    if (entry.Length < 4 || entry[0] != '=' ||
+                        !Char.IsLetter(entry[1]) || entry[2] != ':' || entry[3] != '=')
+                        continue;
+
+                    string name = entry.Substring(0, 3);
+                    string drivePath = entry.Substring(4);
+                    string expectedRoot = name.Substring(1, 2) + "\\";
+                    if (!Path.IsPathRooted(drivePath) ||
+                        !String.Equals(Path.GetPathRoot(drivePath), expectedRoot, StringComparison.OrdinalIgnoreCase))
+                        throw new InvalidOperationException("Malformed hidden per-drive current-directory entry.");
+                    if (!driveNames.Add(name))
+                        throw new InvalidOperationException("Duplicate hidden per-drive current-directory entry.");
+                    if (entry.IndexOf('\\0') >= 0)
+                        throw new InvalidOperationException("Hidden drive entry contains an embedded NUL.");
+                    entries.Add(entry);
+                }
+                if (!terminated)
+                    throw new InvalidOperationException("Parent environment lacks bounded double-NUL termination.");
+            }
+            finally
+            {
+                if (!FreeEnvironmentStringsW(source))
+                    throw new Win32Exception(Marshal.GetLastWin32Error(), "FreeEnvironmentStringsW failed.");
+            }
+            return entries;
+        }
+
         private static string BuildExplicitEnvironment()
         {
             string systemRoot = Environment.GetEnvironmentVariable("SystemRoot");
@@ -373,7 +435,13 @@ namespace Sharnou
             string systemDrive = Path.GetPathRoot(systemRoot).TrimEnd('\\');
             string systemDirectory = Environment.SystemDirectory;
             string windowsTemp = Path.Combine(systemRoot, "Temp");
-            string[] entries = new string[] {
+
+            // CreateProcessAsUserW returned ERROR_ENVVAR_NOT_FOUND (203) when
+            // this explicit block omitted Windows' special per-drive entries.
+            // Retain validated drive-current-directory records only; all ordinary
+            // broker variables and secret values remain excluded.
+            List<string> entries = ReadApprovedDriveEntries();
+            entries.AddRange(new string[] {
                 "ComSpec=" + Path.Combine(systemDirectory, "cmd.exe"),
                 "OS=Windows_NT",
                 "PATH=" + systemDirectory,
@@ -383,22 +451,27 @@ namespace Sharnou
                 "TEMP=" + windowsTemp,
                 "TMP=" + windowsTemp,
                 "windir=" + systemRoot
-            };
-            Array.Sort(entries, StringComparer.OrdinalIgnoreCase);
+            });
+            entries.Sort(StringComparer.OrdinalIgnoreCase);
+
             HashSet<string> names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             StringBuilder block = new StringBuilder();
             foreach (string entry in entries)
             {
-                int equals = entry.IndexOf('=');
-                if (equals <= 0 || !names.Add(entry.Substring(0, equals)))
-                    throw new InvalidOperationException("Explicit child environment contains a duplicate or invalid name.");
-                if (entry.IndexOf('\0') >= 0)
+                int equals = entry[0] == '=' ? entry.IndexOf('=', 1) : entry.IndexOf('=');
+                if (equals <= 0)
+                    throw new InvalidOperationException("Explicit child environment contains an invalid entry.");
+                string name = entry.Substring(0, equals);
+                if (!names.Add(name))
+                    throw new InvalidOperationException("Explicit child environment contains duplicate name: " + name);
+                if (entry.IndexOf('\\0') >= 0)
                     throw new InvalidOperationException("Explicit child environment contains an embedded NUL.");
                 block.Append(entry);
-                block.Append('\0');
+                block.Append('\\0');
             }
-            block.Append('\0');
-            if (block.Length > 32768) throw new InvalidOperationException("Explicit Unicode environment exceeds 32768 UTF-16 code units.");
+            block.Append('\\0');
+            if (block.Length > 32768)
+                throw new InvalidOperationException("Explicit Unicode environment exceeds 32768 UTF-16 code units.");
             return block.ToString();
         }
 
