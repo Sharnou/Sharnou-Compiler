@@ -538,7 +538,7 @@ namespace Sharnou
                 }
                 allowedEnvironmentList.Add("ComSpec=" + application);
                 allowedEnvironmentList.Add("PATH=" + systemDirectory);
-                allowedEnvironmentList.Add("SystemDrive=" + systemDrive);
+                allowedEnvironmentList.Add("SystemDrive=" + System.IO.Path.GetPathRoot(systemDirectory).TrimEnd('\\'));
                 allowedEnvironmentList.Add("SystemRoot=" + systemRoot);
                 allowedEnvironmentList.Add("windir=" + systemRoot);
                 string[] allowedEnvironment = allowedEnvironmentList.ToArray();
