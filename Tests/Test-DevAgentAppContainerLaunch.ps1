@@ -433,7 +433,7 @@ namespace Sharnou
                 throw new InvalidOperationException("A trusted Windows path is not absolute: " + absolutePath);
             string root = Path.GetPathRoot(absolutePath);
             if (String.IsNullOrEmpty(root) || root.Length != 3 ||
-                !Char.IsLetter(root[0]) || root[1] != ':' || root[2] != '\\\\')
+                !Char.IsLetter(root[0]) || root[1] != ':' || root[2] != '\\')
                 throw new InvalidOperationException("A trusted Windows path is not on a local drive: " + absolutePath);
 
             string variableName = "=" + root.Substring(0, 2);
