@@ -23,21 +23,30 @@ try {
         exit 91
     }
 
-    # Probe user-scope DPAPI through Windows PowerShell's built-in SecureString
-    # serialization. Add-Type is not available in the restricted sandbox command
-    # surface; ConvertFrom-SecureString exercises CurrentUser DPAPI without adding
-    # any assembly or script compilation capability.
+    # Invoke the .NET Framework DPAPI API through reflection. The sandbox
+    # command surface does not expose Add-Type or the SecureString cmdlets, but
+    # loading this framework assembly and invoking the existing Protect method
+    # does not compile code or add executable content.
     $dpapiStatus = $null
     try {
-        $dpapiPlaintext = 'appcontainer-created-dpapi-record-v1'
-        $dpapiSecureString = ConvertTo-SecureString -String $dpapiPlaintext -AsPlainText -Force -ErrorAction Stop
-        $dpapiEnvelopeText = ConvertFrom-SecureString -SecureString $dpapiSecureString -ErrorAction Stop
-        if ([string]::IsNullOrEmpty($dpapiEnvelopeText) -or $dpapiEnvelopeText.Length -gt 65536) {
-            throw 'ConvertFrom-SecureString returned an empty or over-limit DPAPI envelope.'
+        $dpapiAssembly = [Reflection.Assembly]::Load('System.Security')
+        if ($null -eq $dpapiAssembly) { throw 'System.Security assembly could not be loaded.' }
+        $protectedDataType = $dpapiAssembly.GetType('System.Security.Cryptography.ProtectedData', $true)
+        $scopeType = $dpapiAssembly.GetType('System.Security.Cryptography.DataProtectionScope', $true)
+        $scope = [Enum]::ToObject($scopeType, 0) # CurrentUser
+        $parameterTypes = [type[]]@([byte[]], [byte[]], $scopeType)
+        $bindingFlags = [Reflection.BindingFlags]::Public -bor [Reflection.BindingFlags]::Static
+        $protectMethod = $protectedDataType.GetMethod('Protect', $bindingFlags, $null, $parameterTypes, $null)
+        if ($null -eq $protectMethod) { throw 'ProtectedData.Protect(byte[],byte[],DataProtectionScope) was not found.' }
+        $dpapiEntropy = [Text.Encoding]::UTF8.GetBytes('Sharnou.DevAgent.AuthenticatedJournal.v2|user-scope')
+        $dpapiPayload = [Text.Encoding]::ASCII.GetBytes('appcontainer-created-dpapi-record-v1')
+        $dpapiEnvelope = [byte[]]$protectMethod.Invoke($null, [object[]]@($dpapiPayload, $dpapiEntropy, $scope))
+        if ($dpapiEnvelope.Length -lt 32 -or $dpapiEnvelope.Length -gt 65536) {
+            throw 'ProtectedData.Protect returned an empty or over-limit DPAPI envelope.'
         }
-        [IO.File]::WriteAllText($dpapiForgeryPath, $dpapiEnvelopeText, [Text.Encoding]::ASCII)
+        [IO.File]::WriteAllBytes($dpapiForgeryPath, $dpapiEnvelope)
         $dpapiStatus = 'PROTECT_SUCCESS'
-        [Console]::WriteLine(('SANDBOX_DPAPI_PROTECT_SUCCESS|chars={0}' -f $dpapiEnvelopeText.Length))
+        [Console]::WriteLine(('SANDBOX_DPAPI_PROTECT_SUCCESS|bytes={0}' -f $dpapiEnvelope.Length))
     }
     catch {
         $baseException = $_.Exception.GetBaseException()
