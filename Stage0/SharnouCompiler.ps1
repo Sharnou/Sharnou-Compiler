@@ -4,7 +4,8 @@ param(
     [string] $Source,
     [Parameter(Mandatory = $true, Position = 1)]
     [string] $Output,
-    [switch] $EnableDevAgentTools
+    [switch] $EnableDevAgentTools,
+    [switch] $EnableWin64CallbackTests
 )
 
 Set-StrictMode -Version Latest
@@ -4725,11 +4726,13 @@ $builtinDefinitions = @(
     [pscustomobject]@{ Name = 'sh_window_probe'; Builtin = 'WindowProbe'; ParameterTypes = @('String'); ReturnType = 'Integer' },
     [pscustomobject]@{ Name = 'sh_window_pump_once'; Builtin = 'WindowPump'; ParameterTypes = @(); ReturnType = 'Integer' },
     [pscustomobject]@{ Name = 'sh_thread_sync_probe'; Builtin = 'ThreadSyncProbe'; ParameterTypes = @(); ReturnType = 'Integer' },
-    [pscustomobject]@{ Name = 'sh_d3d11_render_demo'; Builtin = 'D3D11RenderDemo'; ParameterTypes = @('String', 'Integer'); ReturnType = 'Integer' },
-    [pscustomobject]@{ Name = 'sh_win64_callback_abi_probe'; Builtin = 'Win64CallbackProbe'; ParameterTypes = @(); ReturnType = 'Integer' }
+    [pscustomobject]@{ Name = 'sh_d3d11_render_demo'; Builtin = 'D3D11RenderDemo'; ParameterTypes = @('String', 'Integer'); ReturnType = 'Integer' }
 )
 if ($EnableDevAgentTools) {
     $builtinDefinitions += [pscustomobject]@{ Name = 'sh_dev_run_tool'; Builtin = 'DevRunTool'; ParameterTypes = @('Integer', 'Integer'); ReturnType = 'Integer' }
+}
+if ($EnableWin64CallbackTests) {
+    $builtinDefinitions += [pscustomobject]@{ Name = 'sh_win64_callback_abi_probe'; Builtin = 'Win64CallbackProbe'; ParameterTypes = @(); ReturnType = 'Integer' }
 }
 foreach ($definition in $builtinDefinitions) { $script:Builtins.Add($definition.Name, $definition) }
 $script:Modules = [System.Collections.Generic.List[object]]::new()
