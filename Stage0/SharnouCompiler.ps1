@@ -4807,8 +4807,45 @@ $workerOffset = [int]$script:Code.Count
 Mark-CodeLabel -Label '__sharnou_worker'
 Emit-Bytes -Bytes ([byte[]]@(0x31, 0xC0, 0xC3)) # return DWORD 0
 
-# The stack-probe helper and worker callback are true leaf routines and need
-# no RUNTIME_FUNCTION entries. Every frame-owning function gets x64 unwind data.
+# Explicit Win64 callback ABI probes are leaf functions. The first probe uses
+# the exact SERVICE_MAIN_FUNCTIONW parameter widths; the second uses the exact
+# HANDLER_FUNCTION_EX four-register layout. They preserve all nonvolatile state.
+if ($script:DataPointerFixups.Count -gt 0) {
+    $callbackMarker = [byte[]]@(0xDE, 0xC0, 0xA7, 0x51)
+
+    Mark-CodeLabel -Label '__r51_service_main_abi_probe'
+    $serviceMainFail = New-UniqueLabel -Prefix 'service_main_abi_fail'
+    Emit-Bytes -Bytes ([byte[]]@(0x81, 0xF9, 0xDF, 0x9B, 0x57, 0x13)) # cmp ecx,13579BDFh
+    Emit-JumpConditional -ConditionCode 0x85 -Label $serviceMainFail
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0xB8))
+    $script:Code.AddRange([BitConverter]::GetBytes([UInt64]0x1122334455667788))
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x39, 0xC2)) # cmp rdx,rax (full-width LPWSTR*).
+    Emit-JumpConditional -ConditionCode 0x85 -Label $serviceMainFail
+    Emit-Bytes -Bytes ([byte[]]@(0xB8)); $script:Code.AddRange($callbackMarker); Emit-Bytes -Bytes ([byte[]]@(0xC3))
+    Mark-CodeLabel -Label $serviceMainFail
+    Emit-Bytes -Bytes ([byte[]]@(0x31, 0xC0, 0xC3))
+
+    Mark-CodeLabel -Label '__r51_handler_ex_abi_probe'
+    $handlerExFail = New-UniqueLabel -Prefix 'handler_ex_abi_fail'
+    Emit-Bytes -Bytes ([byte[]]@(0x81, 0xF9, 0x78, 0x56, 0x34, 0x12)) # cmp ecx,12345678h
+    Emit-JumpConditional -ConditionCode 0x85 -Label $handlerExFail
+    Emit-Bytes -Bytes ([byte[]]@(0x81, 0xFA, 0x21, 0x43, 0x65, 0x87)) # cmp edx,87654321h
+    Emit-JumpConditional -ConditionCode 0x85 -Label $handlerExFail
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0xB8))
+    $script:Code.AddRange([BitConverter]::GetBytes([UInt64]0x1122334455667788))
+    Emit-Bytes -Bytes ([byte[]]@(0x49, 0x39, 0xC0)) # cmp r8,rax (full-width LPVOID).
+    Emit-JumpConditional -ConditionCode 0x85 -Label $handlerExFail
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0xB8))
+    $script:Code.AddRange([BitConverter]::GetBytes([UInt64]0x8877665544332211))
+    Emit-Bytes -Bytes ([byte[]]@(0x49, 0x39, 0xC1)) # cmp r9,rax (full-width LPVOID).
+    Emit-JumpConditional -ConditionCode 0x85 -Label $handlerExFail
+    Emit-Bytes -Bytes ([byte[]]@(0xB8)); $script:Code.AddRange($callbackMarker); Emit-Bytes -Bytes ([byte[]]@(0xC3))
+    Mark-CodeLabel -Label $handlerExFail
+    Emit-Bytes -Bytes ([byte[]]@(0x31, 0xC0, 0xC3))
+}
+
+# The stack-probe helper and worker/callback probes are true leaf routines and
+# need no RUNTIME_FUNCTION rows. Frame-owning functions retain x64 unwind data.
 $orderedFunctions = @($script:Functions.Values | Sort-Object Index)
 $runtimeFunctionSpecs = [System.Collections.Generic.List[object]]::new()
 $entryEndOffset = if ($orderedFunctions.Count -gt 0) { [int]$script:CodeLabels[$orderedFunctions[0].Label] } else { $stackProbeOffset }
@@ -4847,6 +4884,19 @@ $dataRva = [UInt32]([long]$textRva + [long]$textVirtualSpan)
 $relocationImageBoundary = [UInt32]([long]$dataRva + [long]$dataVirtualSpan)
 $relocationTargets = [System.Collections.Generic.List[UInt32]]::new()
 $relocationTargets.Add($dataRva) # Existing .rdata absolute entry-point anchor.
+foreach ($callbackFixup in $script:DataPointerFixups) {
+    if (-not $script:CodeLabels.ContainsKey([string]$callbackFixup.Label)) {
+        throw "Unresolved typed callback code label: $($callbackFixup.Label)"
+    }
+    $callbackOffset = [Int64]$script:CodeLabels[[string]$callbackFixup.Label]
+    if ($callbackOffset -lt 0 -or $callbackOffset -ge $codeBytes.Length) {
+        throw "Typed callback target is outside .text: $($callbackFixup.Label)"
+    }
+    $callbackFixup.TargetRva = [UInt32]([Int64]$textRva + $callbackOffset)
+    $pointerRva = [UInt64]$dataRva + [UInt64]$callbackFixup.DataItem.Offset
+    if ($pointerRva -gt [UInt32]::MaxValue) { throw 'Typed callback pointer data RVA exceeds the PE RVA range.' }
+    $relocationTargets.Add([UInt32]$pointerRva)
+}
 $script:ExpectedRelocationTargetRvas = [UInt32[]]@($relocationTargets)
 $relocationDirectory = New-SharnouBaseRelocationDirectory -TargetRvas $script:ExpectedRelocationTargetRvas -ImageSize $relocationImageBoundary -AllowedRanges @([pscustomobject]@{ StartRva = $dataRva; Size = [Math]::Max(8, $script:DataLength) })
 $relocVirtualSpan = Align-Up -Value $relocationDirectory.DirectorySize -Alignment 0x1000
@@ -4888,6 +4938,13 @@ $codeBytes = $script:Code.ToArray()
 $dataBytes = [byte[]]::new([Math]::Max(8, $script:DataLength))
 # Relocated pointer used by the linker's relocation/verification self-check.
 Set-U64 -Buffer $dataBytes -Offset 0 -Value ([UInt64]([Int64]0x140001000))
+foreach ($callbackFixup in $script:DataPointerFixups) {
+    if ($callbackFixup.DataItem.Bytes.Length -ne 8 -or $callbackFixup.TargetRva -eq 0) {
+        throw "Typed callback pointer fixup is incomplete: $($callbackFixup.Key)"
+    }
+    $callbackVa = [UInt64]([UInt64]0x140000000 + [UInt64]$callbackFixup.TargetRva)
+    Set-U64 -Buffer $callbackFixup.DataItem.Bytes -Offset 0 -Value $callbackVa
+}
 foreach ($item in $script:DataItems) { if ($item.Bytes.Length -gt 0) { Set-Bytes -Buffer $dataBytes -Offset $item.Offset -Bytes $item.Bytes } }
 
 # Dynamically sized RVA layout and independently aligned raw file layout: .text/.rdata/.idata/.reloc.
