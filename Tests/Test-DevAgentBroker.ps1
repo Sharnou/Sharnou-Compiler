@@ -870,7 +870,7 @@ try {
     if ((Test-Path -LiteralPath $journalPath) -or (Test-Path -LiteralPath $journalTempPath)) {
         throw 'Successful crash recovery left a committed or temporary ACL journal behind.'
     }
-    Write-Host 'PASS: normal execution restored exact DACL and mandatory-label SDDL on workspace root, Build and broker directories' -ForegroundColor Green
+    Write-Host 'PASS: normal execution restored exact DACL and mandatory-label SDDL on workspace root, trusted broker host, Build and broker directories' -ForegroundColor Green
     Write-Host 'PASS: forced parent termination preserved its journal and Job Object killed the AppContainer child' -ForegroundColor Green
     Write-Host ("PASS: trusted broker host stayed Medium-or-higher IL (0x{0:X}); sandbox child remained AppContainer Low IL" -f $brokerIntegrityRid) -ForegroundColor Green
     Write-Host 'PASS: malformed journal signatures, truncation and trailing bytes failed closed without partial rollback' -ForegroundColor Green
@@ -890,7 +890,10 @@ try {
         $reparseExitCode = $LASTEXITCODE
         $reparseNumericLines = @(Get-BrokerNumericLines -Lines $reparseLines)
         $reparseActual = ($reparseNumericLines -join $nl).TrimEnd([char[]]@([char]13, [char]10))
-        $reparseExpected = @('-100', '-101', '-103', '-103', '-103', '-103') -join $nl
+        # The post-recovery fixed-directory path gate has its own fail-closed
+        # status (-126); the older generic workspace-path status (-103) is no
+        # longer the expected diagnostic for this descendant reparse fixture.
+        $reparseExpected = @('-100', '-101', '-126', '-126', '-126', '-126') -join $nl
         if ($reparseExitCode -ne 0 -or -not [string]::Equals($reparseActual, $reparseExpected, [StringComparison]::Ordinal)) {
             throw "Workspace reparse-point rejection failed. Expected=[$reparseExpected] Actual=[$reparseActual] ExitCode=$reparseExitCode."
         }
