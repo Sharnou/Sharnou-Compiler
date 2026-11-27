@@ -546,3 +546,12 @@ Acceptance requires: repair and adversarially validate journal recovery; unique 
 - **Fixture status: NOT YET WINDOWS-CI-VERIFIED.** No compiler-emitted broker source or import table was changed in this increment. Stable production AppContainer identity remains a blocker.
 - Follow-up blockers: authenticated journal before persisting profile metadata for privileged recovery; production unique identity and profile cleanup; clean Unicode environment; distinct bounded stdout/stderr; child DLL-search policy; exhaustive crash-cut and concurrency tests; independent evidence verifier.
 - Keep model-facing process execution DISABLED and all related PRs draft/unmerged.
+
+
+## Phase 2B.8 qualification update - 2026-11-27
+
+- Windows identity and DPAPI/schema primitive suite passed on code-bearing commit `907281187ffdf9223d4b345a2847c2a1feb883cf`: run [46021589016](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/46021589016). Eight actual suspended AppContainer child tokens inspected with unique SIDs, Low IL and zero capabilities; eight profiles normal-deletion verified; DPAPI envelope and strict v2 parser negative cases passed.
+- Frozen M1-M6 baseline passed 83/83 on that exact code commit: [46021589107](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/46021589107).
+- Stage 7A combined run [46021589123](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/46021589123) was still running at the last status check. Do not mark full combined suite accepted until final logs are checked.
+- New threat-boundary record: `Docs/PHASE-2B8-JOURNAL-TRUST-BOUNDARY.md`. DPAPI CurrentUser plus optional entropy is not per-process writer authentication against another process running as the same user. A different protected trust anchor is required before native journal integration.
+- Production broker unchanged: stable shared AppContainer profile, v1 ACL journal, inherited environment, merged stdout/stderr. Clean environment, unique production identity, crash-time profile deletion, native journal integration, DLL hardening and full crash matrix remain open. Model execution remains DISABLED.
