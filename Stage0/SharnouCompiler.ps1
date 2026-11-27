@@ -4,7 +4,8 @@ param(
     [string] $Source,
     [Parameter(Mandatory = $true, Position = 1)]
     [string] $Output,
-    [switch] $EnableDevAgentTools
+    [switch] $EnableDevAgentTools,
+    [switch] $EnableAuthorityService
 )
 
 Set-StrictMode -Version Latest
@@ -4606,6 +4607,13 @@ $builtinDefinitions = @(
 if ($EnableDevAgentTools) {
     $builtinDefinitions += [pscustomobject]@{ Name = 'sh_dev_run_tool'; Builtin = 'DevRunTool'; ParameterTypes = @('Integer', 'Integer'); ReturnType = 'Integer' }
 }
+if ($EnableAuthorityService) {
+    $builtinDefinitions += @(
+        [pscustomobject]@{ Name = 'sh_authority_service_host'; Builtin = 'AuthorityServiceHost'; ParameterTypes = @(); ReturnType = 'Integer' },
+        [pscustomobject]@{ Name = 'sh_authority_service_main_start'; Builtin = 'AuthorityServiceMainStart'; ParameterTypes = @(); ReturnType = 'Integer' },
+        [pscustomobject]@{ Name = 'sh_authority_service_control'; Builtin = 'AuthorityServiceControl'; ParameterTypes = @('Integer'); ReturnType = 'Integer' }
+    )
+}
 foreach ($definition in $builtinDefinitions) { $script:Builtins.Add($definition.Name, $definition) }
 $script:Modules = [System.Collections.Generic.List[object]]::new()
 $script:ModuleMap = [System.Collections.Generic.Dictionary[string, object]]::new([System.StringComparer]::OrdinalIgnoreCase)
@@ -4633,6 +4641,9 @@ $script:DataItems = [System.Collections.Generic.List[object]]::new()
 $script:DataMap = [System.Collections.Generic.Dictionary[string, object]]::new([System.StringComparer]::Ordinal)
 $script:DataLength = 8 # reserved absolute entry-point anchor, patched by the base-relocation directory
 $script:UniqueLabel = 0
+$script:AuthorityServiceHostCallCount = 0
+$script:AuthorityServiceName = 'SharnouDevAgentAuthorityR51Test'
+$script:AuthorityServiceStopEventName = 'Local\Sharnou.DevAgentAuthority.R51.Stop'
 
 # Entry point: main code owns a stack frame; every function gets its own frame.
 Mark-CodeLabel -Label '__entry'
@@ -4767,8 +4778,9 @@ $dataRawSize = Align-Up -Value $dataBytes.Length -Alignment 0x200
 # no lookup table may overlap any IAT slot or import-by-name string. Emit-CallIat rebases target RVAs after section placement.
 $idata = [byte[]]::new(0x1000)
 # Import descriptors have a dedicated .idata range, disjoint from lookups, IAT and names.
-$descriptorBase = 0xA00
-$importDirectorySize = 0x190
+$descriptorBase = if ($EnableAuthorityService) { 0xA40 } else { 0xA00 }
+$importDirectorySize = if ($EnableAuthorityService) { 0x1B8 } else { 0x190 }
+$iatDirectorySize = if ($EnableAuthorityService) { 0x330 } else { 0x2F0 }
 if (($descriptorBase + $importDirectorySize) -gt $idata.Length) { throw 'Import descriptor table exceeds .idata storage.' }
 $importSets = @(
     [pscustomobject]@{ Descriptor = 0x00; Lookup = 0xC00; Iat = 0x70; Dll = 'KERNEL32.dll'; Names = @('GetStdHandle', 'WriteFile', 'ExitProcess') },
@@ -4791,8 +4803,14 @@ $importSets = @(
     [pscustomobject]@{ Descriptor = 0x154; Lookup = 0xED0; Iat = 0x340; Dll = 'USERENV.dll'; Names = @('DeleteAppContainerProfile') },
     [pscustomobject]@{ Descriptor = 0x168; Lookup = 0xEE0; Iat = 0x350; Dll = 'ADVAPI32.dll'; Names = @('EqualSid') }
 )
+if ($EnableAuthorityService) {
+    $importSets += @(
+        [pscustomobject]@{ Descriptor = 0x17C; Lookup = 0xF70; Iat = 0x360; Dll = 'KERNEL32.dll'; Names = @('CreateEventW', 'OpenEventW', 'SetEvent') },
+        [pscustomobject]@{ Descriptor = 0x190; Lookup = 0xF90; Iat = 0x380; Dll = 'ADVAPI32.dll'; Names = @('StartServiceCtrlDispatcherW', 'RegisterServiceCtrlHandlerExW', 'SetServiceStatus') }
+    )
+}
 $apiNameRvas = @{}
-$nameCursor = 0x360
+$nameCursor = if ($EnableAuthorityService) { 0x3A0 } else { 0x360 }
 foreach ($set in $importSets) {
     foreach ($apiName in $set.Names) {
         if (-not $apiNameRvas.ContainsKey($apiName)) {
@@ -4803,6 +4821,9 @@ foreach ($set in $importSets) {
             if (($nameCursor % 2) -ne 0) { $nameCursor++ }
         }
     }
+}
+if ($nameCursor -gt $descriptorBase) {
+    throw ("Import-by-name strings overlap the import descriptor table: end=0x{0:X}, descriptorBase=0x{1:X}." -f $nameCursor, $descriptorBase)
 }
 Set-AsciiZ -Buffer $idata -Offset 0xF00 -Value 'KERNEL32.dll'
 Set-AsciiZ -Buffer $idata -Offset 0xF10 -Value 'USER32.dll'
@@ -4858,6 +4879,14 @@ $script:StdLibIatOffsets = @{
     'GetFullPathNameA' = [UInt32]0x308; 'DeleteFileA' = [UInt32]0x310; 'MoveFileExA' = [UInt32]0x318; 'FlushFileBuffers' = [UInt32]0x320
     'BCryptGenRandom' = [UInt32]0x330; 'DeleteAppContainerProfile' = [UInt32]0x340; 'EqualSid' = [UInt32]0x350
 }
+if ($EnableAuthorityService) {
+    $script:StdLibIatOffsets['CreateEventW'] = [UInt32]0x360
+    $script:StdLibIatOffsets['OpenEventW'] = [UInt32]0x368
+    $script:StdLibIatOffsets['SetEvent'] = [UInt32]0x370
+    $script:StdLibIatOffsets['StartServiceCtrlDispatcherW'] = [UInt32]0x380
+    $script:StdLibIatOffsets['RegisterServiceCtrlHandlerExW'] = [UInt32]0x388
+    $script:StdLibIatOffsets['SetServiceStatus'] = [UInt32]0x390
+}
 
 # One DIR64 relocation patches the absolute image-base + entry-point pointer at the dynamic .rdata RVA.
 $reloc = [byte[]]::new(0x200)
@@ -4897,7 +4926,7 @@ Set-U32 -Buffer $image -Offset ($opt + 104) -Value 0; Set-U32 -Buffer $image -Of
 Set-U32 -Buffer $image -Offset ($opt + 120) -Value ([UInt32]([long]$idataRva + [long]$descriptorBase)); Set-U32 -Buffer $image -Offset ($opt + 124) -Value $importDirectorySize
 Set-U32 -Buffer $image -Offset ($opt + 136) -Value $pdataRva; Set-U32 -Buffer $image -Offset ($opt + 140) -Value $pdataBytes.Length
 Set-U32 -Buffer $image -Offset ($opt + 152) -Value $relocRva; Set-U32 -Buffer $image -Offset ($opt + 156) -Value 12
-Set-U32 -Buffer $image -Offset ($opt + 208) -Value ([UInt32]([long]$idataRva + 0x70)); Set-U32 -Buffer $image -Offset ($opt + 212) -Value 0x2F0
+Set-U32 -Buffer $image -Offset ($opt + 208) -Value ([UInt32]([long]$idataRva + 0x70)); Set-U32 -Buffer $image -Offset ($opt + 212) -Value $iatDirectorySize
 $sectionText = 0x188
 Set-Ascii -Buffer $image -Offset $sectionText -Value '.text'; Set-U32 -Buffer $image -Offset ($sectionText + 8) -Value $codeBytes.Length; Set-U32 -Buffer $image -Offset ($sectionText + 12) -Value $textRva; Set-U32 -Buffer $image -Offset ($sectionText + 16) -Value $textRawSize; Set-U32 -Buffer $image -Offset ($sectionText + 20) -Value $textRawPointer; Set-U32 -Buffer $image -Offset ($sectionText + 36) -Value 0x60000020
 $sectionData = 0x1B0
