@@ -1065,14 +1065,13 @@ function Emit-DevBrokerEnsureAppContainerSid {
     Emit-Bytes -Bytes ([byte[]]@(0x33, 0xC9)) # hAlgorithm = NULL
     Emit-LeaRaxFrame -SlotPosition $RandomSlot
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC2, 0x41, 0xB8, 0x10, 0x00, 0x00, 0x00, 0x41, 0xB9, 0x02, 0x00, 0x00, 0x00))
-    Emit-Win64CallIat -TargetRva ([UInt32]0x3328) -StackArguments @() # BCryptGenRandom(BCRYPT_USE_SYSTEM_PREFERRED_RNG)
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3330) -StackArguments @() # BCryptGenRandom(BCRYPT_USE_SYSTEM_PREFERRED_RNG)
     Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
     Emit-JumpConditional -ConditionCode 0x85 -Label $FailureLabel
 
     # Reject the all-zero output even though it is cryptographically negligible.
-    Emit-Bytes -Bytes ([byte[]]@(0x33, 0xC0))
     Emit-LeaRaxFrame -SlotPosition $RandomSlot
-    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC6, 0xB9))
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC6, 0x33, 0xC0, 0xB9))
     Emit-I32 -Value 16
     Mark-CodeLabel -Label $randomCheckLoop
     Emit-Bytes -Bytes ([byte[]]@(0x0A, 0x06, 0x48, 0xFF, 0xC6, 0xFF, 0xC9))
@@ -1146,7 +1145,7 @@ function Emit-DevBrokerEnsureAppContainerSid {
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1))
     Emit-LoadRaxFrame -SlotPosition $DerivedSidSlot
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC2))
-    Emit-Win64CallIat -TargetRva ([UInt32]0x3348) -StackArguments @() # EqualSid
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3350) -StackArguments @() # EqualSid
     Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
     Emit-JumpConditional -ConditionCode 0x84 -Label $derivedSidFailure
     Emit-Jump -Label $sidReady
@@ -1192,12 +1191,12 @@ function Emit-DevBrokerDeleteOwnedAppContainerProfile {
     # when Windows could not confirm deletion.
     Emit-LeaRaxFrame -SlotPosition $ProfileNameSlot
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1))
-    Emit-Win64CallIat -TargetRva ([UInt32]0x3338) -StackArguments @() # DeleteAppContainerProfile
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3340) -StackArguments @() # DeleteAppContainerProfile
     Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
     Emit-JumpConditional -ConditionCode 0x84 -Label $deleted
     Emit-LeaRaxFrame -SlotPosition $ProfileNameSlot
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1))
-    Emit-Win64CallIat -TargetRva ([UInt32]0x3338) -StackArguments @() # retry DeleteAppContainerProfile
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3340) -StackArguments @() # retry DeleteAppContainerProfile
     Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
     Emit-JumpConditional -ConditionCode 0x85 -Label $failed
     Mark-CodeLabel -Label $deleted
@@ -3148,7 +3147,7 @@ function Emit-DevRunTool {
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x8B, 0x08)) # RCX = returned package SID
     Emit-LoadRaxFrame -SlotPosition $appContainerSidSlot
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC2)) # RDX = newly created profile SID
-    Emit-Win64CallIat -TargetRva ([UInt32]0x3348) -StackArguments @() # EqualSid
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3350) -StackArguments @() # EqualSid
     Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
     Emit-JumpConditional -ConditionCode 0x84 -Label $tokenFail
 
@@ -4658,9 +4657,9 @@ $importSets = @(
     [pscustomobject]@{ Descriptor = 0x104; Lookup = 0xE08; Iat = 0x278; Dll = 'USERENV.dll'; Names = @('CreateAppContainerProfile', 'DeriveAppContainerSidFromAppContainerName') },
     [pscustomobject]@{ Descriptor = 0x118; Lookup = 0xE20; Iat = 0x290; Dll = 'ADVAPI32.dll'; Names = @('GetNamedSecurityInfoA', 'SetEntriesInAclA', 'SetNamedSecurityInfoA', 'FreeSid', 'OpenProcessToken', 'CreateRestrictedToken', 'CreateProcessAsUserA', 'GetSecurityInfo', 'SetSecurityInfo', 'GetTokenInformation', 'GetSecurityDescriptorDacl', 'GetSecurityDescriptorSacl', 'GetSecurityDescriptorLength', 'IsValidSecurityDescriptor') },
     [pscustomobject]@{ Descriptor = 0x12C; Lookup = 0xE98; Iat = 0x308; Dll = 'KERNEL32.dll'; Names = @('GetFullPathNameA', 'DeleteFileA', 'MoveFileExA', 'FlushFileBuffers') },
-    [pscustomobject]@{ Descriptor = 0x140; Lookup = 0xEC0; Iat = 0x328; Dll = 'BCRYPT.dll'; Names = @('BCryptGenRandom') },
-    [pscustomobject]@{ Descriptor = 0x154; Lookup = 0xED0; Iat = 0x338; Dll = 'USERENV.dll'; Names = @('DeleteAppContainerProfile') },
-    [pscustomobject]@{ Descriptor = 0x168; Lookup = 0xEE0; Iat = 0x348; Dll = 'ADVAPI32.dll'; Names = @('EqualSid') }
+    [pscustomobject]@{ Descriptor = 0x140; Lookup = 0xEC0; Iat = 0x330; Dll = 'BCRYPT.dll'; Names = @('BCryptGenRandom') },
+    [pscustomobject]@{ Descriptor = 0x154; Lookup = 0xED0; Iat = 0x340; Dll = 'USERENV.dll'; Names = @('DeleteAppContainerProfile') },
+    [pscustomobject]@{ Descriptor = 0x168; Lookup = 0xEE0; Iat = 0x350; Dll = 'ADVAPI32.dll'; Names = @('EqualSid') }
 )
 $apiNameRvas = @{}
 $nameCursor = 0x400
@@ -4727,7 +4726,7 @@ $script:StdLibIatOffsets = @{
     'OpenProcessToken' = [UInt32]0x2B0; 'CreateRestrictedToken' = [UInt32]0x2B8; 'CreateProcessAsUserA' = [UInt32]0x2C0; 'GetSecurityInfo' = [UInt32]0x2C8; 'SetSecurityInfo' = [UInt32]0x2D0; 'GetTokenInformation' = [UInt32]0x2D8
     'GetSecurityDescriptorDacl' = [UInt32]0x2E0; 'GetSecurityDescriptorSacl' = [UInt32]0x2E8; 'GetSecurityDescriptorLength' = [UInt32]0x2F0; 'IsValidSecurityDescriptor' = [UInt32]0x2F8
     'GetFullPathNameA' = [UInt32]0x308; 'DeleteFileA' = [UInt32]0x310; 'MoveFileExA' = [UInt32]0x318; 'FlushFileBuffers' = [UInt32]0x320
-    'BCryptGenRandom' = [UInt32]0x328; 'DeleteAppContainerProfile' = [UInt32]0x338; 'EqualSid' = [UInt32]0x348
+    'BCryptGenRandom' = [UInt32]0x330; 'DeleteAppContainerProfile' = [UInt32]0x340; 'EqualSid' = [UInt32]0x350
 }
 
 # One DIR64 relocation patches the absolute image-base + entry-point pointer at the dynamic .rdata RVA.
