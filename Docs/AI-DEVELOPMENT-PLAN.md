@@ -246,3 +246,23 @@ This is a separate requested product track, not a declaration that an AI agent e
 Dependency order: restore/pin the exact 83-case baseline and retain the ABI gates; then build a restricted process broker; then native search/read/download/quarantine and persistent evidence memory; then local model inference; then planner/subagents and validated agent manifests; then bounded self-correction and static reverse engineering; finally optional provider adapters. The default 7A/compiler scope and the self-hosting prerequisite are not bypassed by this parallel DevAgent track.
 
 Current status: ARCHITECTURE RECORDED; IMPLEMENTATION NOT STARTED; LOCAL INFERENCE NOT BUILT; AUTONOMOUS REPAIR NOT RUN. Acceptance requires offline operation without AI provider credentials, durable restart recovery, process isolation and timeouts, source-hash/evidence journals, passing security/rollback tests, and Windows runtime evidence.
+
+
+## 11. User-approved advanced bug research and escalation - 2026-11-27
+
+The user has made advanced bug-resolution research a required SharnouDevAgent capability. This extends the autonomous-agent scope; it does not mean the capability is already implemented.
+
+Required workflow for a hard defect:
+1. Reproduce the failure and persist the exact source commit, compiler/runtime identity, Windows environment, error/exit code, relevant logs, expected/actual behavior, and a minimal failing test or reduced fixture.
+2. Search local source/history/tests and current official documentation, specifications, and upstream issue trackers. Use bounded HTTPS research with source-host policy, redirect/response limits, timestamps, provenance, and citations.
+3. When local diagnosis remains unresolved, consult configurable OpenAI and Perplexity developer APIs independently or comparatively. OpenAI integration should use the official Responses API and web-search tool where appropriate. Perplexity integration should use its current documented Agent API and/or Search API. Verify current endpoints, authentication, request/response schemas, models, quotas, and pricing from official documentation during implementation.
+4. Do not automate consumer ChatGPT/Perplexity browser sessions, store account passwords/cookies, scrape private sessions, bypass access controls, or treat a ChatGPT subscription as API credentials. Use official developer APIs or approved public search endpoints.
+5. Redact secrets, personal data, machine identifiers, private paths, unrelated proprietary source, and credentials before external submission. Keep provider keys outside source control in the protected Windows credential boundary. Enforce opt-in and minimum-context disclosure for private source.
+6. Treat web results, provider diagnoses, and generated patches as untrusted evidence. Verify claims against primary sources and local reproduction. Model output cannot grant permissions or execute tools directly; all actions pass the existing typed tool broker and policy engine.
+7. Require two independent evidence paths for security-sensitive or high-impact bugs. Record disagreements, confidence, assumptions, unresolved questions, citations, and retrieval timestamps.
+8. Enforce per-provider timeouts, retries/backoff, rate-limit handling, cache freshness, request/token/cost budgets, host allow/deny lists, citation checks, and safe fallback when a provider is unavailable.
+9. Implement credential-free mock contract tests and live-provider tests only when valid credentials are explicitly provisioned. Acceptance must cover provider 401/timeout/rate-limit/malformed response, adversarial instructions, redaction, provider disagreement, stale/missing sources, budget exhaustion, and an end-to-end reproduced-failure -> research -> minimal patch -> regression -> Windows verification -> pull-request workflow.
+
+Provider consultation is an escalation channel, not a prerequisite for every task. Sharnou must continue safe local/offline work when providers are unavailable. The compiler generates the agent executable; configured AI services provide model reasoning. Neither should be described as the other.
+
+Implementation dependency: complete the safe native runtime transport/JSON/secret boundary, durable task/evidence journal, typed broker, isolated patch workflow, and Windows verification gates before enabling model-facing source modification. This research capability is REQUIRED in the final autonomous agent definition of done, but remains NOT IMPLEMENTED until code, tests, provider contracts, and end-to-end evidence exist.
