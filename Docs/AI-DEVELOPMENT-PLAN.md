@@ -286,3 +286,16 @@ The failing run returned -2685 for each broker invocation after WAIT_ABANDONED. 
 The milestone also requires a unique AppContainer identity per execution, a versioned recovery journal that can retire a crashed profile after ACL restoration, a deterministic explicit Unicode environment (never lpEnvironment=NULL), production integration of the Phase 2B.5 two-stream handle allowlist, child loader/DLL-search hardening, and same-head crash/adversarial Windows acceptance. New native APIs must be represented in the generated PE import table and checked by the PE verifier; the final executable import table, not a planned manifest, is authoritative.
 
 Model-facing process execution and autonomous execution remain DISABLED.
+
+
+## 15. Phase 2B.8 implementation status - 2026-11-27
+
+Phase 2B.8 specification: `Docs/PHASE-2B8-CRASH-SAFE-EXECUTION-LIFECYCLE.md`; tracker: issue #25; draft implementation PR #27.
+
+R1 on isolated branch `phase-2b8-r1-journal-evidence-20261127` passed exact-head Windows CI at compiler/test head `396ea1e5cc7d364ba2a77c25ba4ab6d924365def`:
+- Stage 7A 24/24, collection import 2/2, stack-probe/unwind 6/6, Runtime ABI PASS, broker phase-1 PASS, combined PASS.
+- Independent v1 ACL journal decoder verified all three self-relative descriptors against the pre-transaction DACL and mandatory-label state. Journal bytes: 596; descriptor lengths 188/188/188; SHA-256 `18DD6A5DF9CB30707110CF66D8A23DAA884EE3691842E7B2E8CA491946ED2FEC`.
+- Forced-parent-crash recovery followed by a second execution passed; exact security descriptors were restored and no journal/temp residue remained.
+- Frozen M1-M6 same-head run passed 83/83.
+
+R1 only adds test and workflow code. It does not change production broker or compiler-emitter behavior and is not Phase 2B.8 acceptance. The next code-bearing production tranche must implement unique AppContainer profile identities and store the profile identifier in an upgraded crash-recovery journal, with normal and crash recovery cleanup; the existing stable shared profile and v1 journal are unacceptable for multi-execution lifecycle qualification. After that, implement clean environment/DLL policy, separate bounded stdout/stderr, cancellation, and exhaustive crash-cut/concurrency verification. Model-generated process execution remains DISABLED throughout.
