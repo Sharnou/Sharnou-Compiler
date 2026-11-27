@@ -337,7 +337,7 @@ function Invoke-Phase2B5Trial {
             $sentinelAttributes = New-Phase2B5SecurityAttributes -Allocations $allocations
             $sentinelPathPointer = New-Phase2B5Unicode -Value $sentinelPath -Allocations $allocations
             $sentinelHandle = [IntPtr](Invoke-Phase2B5Api 'CreateFileW' @(
-                $sentinelPathPointer,[UInt32]0x80000000,[UInt32]1,$sentinelAttributes,
+                $sentinelPathPointer,[Convert]::ToUInt32('80000000',16),[UInt32]1,$sentinelAttributes,
                 [UInt32]3,[UInt32]0x80,[IntPtr]::Zero
             ))
             if ($sentinelHandle -eq [IntPtr](-1) -or $sentinelHandle -eq [IntPtr]::Zero) {
