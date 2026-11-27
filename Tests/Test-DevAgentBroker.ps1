@@ -107,19 +107,23 @@ function Get-DevAgentAclJournalEvidence {
         $actualLabels = New-Object 'System.Collections.Generic.List[string]'
         if ($null -ne $descriptor.SystemAcl) {
             foreach ($ace in $descriptor.SystemAcl) {
-                if ($ace.AceType -ne [Security.AccessControl.AceType]::SystemMandatoryLabel) {
+                if ([int]$ace.AceType -ne 17) {
                     throw ("Journal record '{0}' contains an SACL ACE outside the broker's DACL/mandatory-label snapshot contract." -f $record.Name)
                 }
-                $actualLabels.Add($ace.GetSddlForm())
+                [byte[]]$aceBytes = [byte[]]::new($ace.BinaryLength)
+                $ace.GetBinaryForm($aceBytes, 0)
+                $actualLabels.Add([Convert]::ToBase64String($aceBytes))
             }
         }
         $expectedLabels = New-Object 'System.Collections.Generic.List[string]'
         if ($null -ne $expectedDescriptor.SystemAcl) {
             foreach ($ace in $expectedDescriptor.SystemAcl) {
-                if ($ace.AceType -ne [Security.AccessControl.AceType]::SystemMandatoryLabel) {
+                if ([int]$ace.AceType -ne 17) {
                     throw ("Pre-run snapshot '{0}' contains an audit SACL ACE that the current journal format does not preserve." -f $record.Name)
                 }
-                $expectedLabels.Add($ace.GetSddlForm())
+                [byte[]]$aceBytes = [byte[]]::new($ace.BinaryLength)
+                $ace.GetBinaryForm($aceBytes, 0)
+                $expectedLabels.Add([Convert]::ToBase64String($aceBytes))
             }
         }
         if ($actualLabels.Count -ne $expectedLabels.Count) {
