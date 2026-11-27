@@ -1047,3 +1047,14 @@ After the prior session record, one more isolated diagnostic commit was added to
 - Sharnou-Engine: default main HEAD 91f90cf34c081184d54e5d3f71435922679ff5f8; open PR #2 production roadmap and PR #1 compiler C++ target fail-closed gate; latest policy run 44594247991 SUCCESS.
 - Honour-War: default main HEAD 6608c5607e187f05b39b198eeb595c2e89af595b; open PR #15 compiler pin; latest stack validation run 44178026612 SUCCESS.
 - No IDE, Engine, or Honour War files were changed in this session. These policy/roadmap runs are not proof of a native IDE/Engine/game executable or gameplay runtime.
+
+
+## Phase 2B.8 milestone generation - 2026-11-27 Africa/Cairo
+
+- Created isolated branch `phase-2b8-crash-safe-execution-lifecycle-20261127` from the current default branch.
+- Added `Docs/PHASE-2B8-CRASH-SAFE-EXECUTION-LIFECYCLE.md`, a normative specification for the full per-execution state machine, unique AppContainer identity/profile lifecycle, integrity-protected write-ahead journal, idempotent crash recovery, exact ACL/SACL/mandatory-label restoration, restricted suspended process creation, clean Unicode environment, DLL-search hardening, explicit handle inheritance, bounded concurrent stdout/stderr, cancellation, Job Object containment, concurrency and independent evidence verification.
+- Created tracking issue #25 and draft documentation PR #26. PR head: `1462a26a72ed6a3627c4b6d9ae78e812299e2efe`; base branch: `Sharnou-Compiler`. PR #26 is documentation-only, OPEN / DRAFT / UNMERGED.
+- Retested evidence carried forward from the prior Phase 2B.6 recovery correction: Windows runs [46001639565](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/46001639565) and [46003358917](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/46003358917) report targeted native broker/recovery assertions passing; run [46003358930](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/46003358930) reports the companion baseline workflow passing. These results establish targeted regression evidence, not complete lifecycle qualification.
+- No compiler, broker, test, workflow, or executable source was changed. No native test was executed by the assistant in this session; no workflow was dispatched.
+- Model-facing process execution remains DISABLED. Phase 2B.8 status: SPECIFICATION GENERATED; IMPLEMENTATION NOT STARTED; NOT SECURITY ACCEPTED. Predecessor PR #24 remains separate and unmerged. Do not infer that Phase 2B.6/2B.7 are fully accepted from targeted tests alone.
+- Next action: review PR #24's exact current head and Phase 2B.7 integration state, then implement the Phase 2B.8 work packages on a fresh code-bearing branch only after predecessor dependencies are reconciled. Require all G0-G9 acceptance gates on one exact Windows-tested commit.
