@@ -1621,6 +1621,9 @@ function Emit-DevBrokerWriteRecoveryTokenDiagnostic {
     $elevationSlot = $scratch + 0xE98
     $openErrorSlot = $scratch + 0xE9C
     $queryErrorSlot = $scratch + 0xEA0
+    $integrityInfoSlot = $scratch + 0xEA8
+    $integrityReturnLengthSlot = $scratch + 0xEB8
+    $integrityRidSlot = $scratch + 0xEC0
     $textBufferSlot = $scratch + 0xF00
     $textLengthSlot = $scratch + 0xF80
     $stdoutHandleSlot = $scratch + 0xD60
@@ -1629,7 +1632,7 @@ function Emit-DevBrokerWriteRecoveryTokenDiagnostic {
     $queryLoopDone = New-UniqueLabel -Prefix 'dev_acl_recovery_token_queries_done'
     $formatReady = New-UniqueLabel -Prefix 'dev_acl_recovery_token_format_ready'
     Emit-StoreZero64Frame -SlotPosition $tokenHandleSlot
-    foreach ($slot in @($tokenInfoSlot, $tokenReturnLengthSlot, $queryErrorSlot)) {
+    foreach ($slot in @($tokenInfoSlot, $tokenReturnLengthSlot, $queryErrorSlot, $integrityInfoSlot, $integrityReturnLengthSlot, $integrityRidSlot)) {
         Emit-StoreZero64Frame -SlotPosition $slot
     }
     foreach ($slot in @($appContainerSlot, $restrictedSlot, $elevationSlot, $openErrorSlot)) {
@@ -1676,6 +1679,35 @@ function Emit-DevBrokerWriteRecoveryTokenDiagnostic {
         Mark-CodeLabel -Label $queryDone
     }
 
+    # TokenIntegrityLevel returns TOKEN_MANDATORY_LABEL (SID_AND_ATTRIBUTES).
+    # Extract the final SID sub-authority RID: 0x1000 low, 0x2000 medium,
+    # 0x3000 high, 0x4000 system.
+    $integrityFailed = New-UniqueLabel -Prefix 'dev_acl_recovery_token_integrity_failed'
+    $integrityDone = New-UniqueLabel -Prefix 'dev_acl_recovery_token_integrity_done'
+    Emit-StoreZero64Frame -SlotPosition $integrityInfoSlot
+    Emit-StoreZero64Frame -SlotPosition $integrityReturnLengthSlot
+    Emit-LoadRcxFrame -SlotPosition $tokenHandleSlot
+    Emit-Bytes -Bytes ([byte[]]@(0xBA, 0x19, 0x00, 0x00, 0x00)) # TokenIntegrityLevel = 25
+    Emit-Bytes -Bytes ([byte[]]@(0x4C, 0x8D, 0x85))
+    Emit-I32 -Value (Get-FrameDisp -SlotPosition $integrityInfoSlot)
+    Emit-Bytes -Bytes ([byte[]]@(0x41, 0xB9, 0x10, 0x00, 0x00, 0x00)) # TOKEN_MANDATORY_LABEL = 16 bytes
+    Emit-Win64CallIat -TargetRva ([UInt32]0x32D8) -StackArguments @(
+        @{ Kind = 'FrameAddress'; SlotPosition = $integrityReturnLengthSlot }
+    ) # GetTokenInformation
+    Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
+    Emit-JumpConditional -ConditionCode 0x84 -Label $integrityFailed
+    Emit-LoadRaxFrame -SlotPosition $integrityInfoSlot # RAX = SID pointer
+    Emit-Bytes -Bytes ([byte[]]@(0x0F, 0xB6, 0x48, 0x01, 0x85, 0xC9)) # MOVZX ECX,[RAX+1]; TEST ECX,ECX
+    Emit-JumpConditional -ConditionCode 0x84 -Label $integrityFailed
+    Emit-Bytes -Bytes ([byte[]]@(0xFF, 0xC9, 0x48, 0x8D, 0x44, 0x88, 0x08, 0x8B, 0x00)) # RID at SID+8+(count-1)*4
+    Emit-StoreEaxFrame -SlotPosition $integrityRidSlot
+    Emit-Jump -Label $integrityDone
+    Mark-CodeLabel -Label $integrityFailed
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3268) -StackArguments @() # GetLastError
+    Emit-StoreEaxFrame -SlotPosition $queryErrorSlot
+    Emit-StoreBits32Frame -SlotPosition $integrityRidSlot -Value 0
+    Mark-CodeLabel -Label $integrityDone
+
     Emit-LoadRcxFrame -SlotPosition $tokenHandleSlot
     Emit-Win64CallIat -TargetRva ([UInt32]0x30B8) -StackArguments @() # CloseHandle
     Emit-Jump -Label $formatReady
@@ -1685,7 +1717,7 @@ function Emit-DevBrokerWriteRecoveryTokenDiagnostic {
     Emit-StoreEaxFrame -SlotPosition $openErrorSlot
     Mark-CodeLabel -Label $formatReady
 
-    $formatItem = Register-DataConstant -Value "ACL_RECOVERY_TOKEN|appcontainer=%u|restricted=%u|elevation=%u|openError=%u|queryError=%u`r`n"
+    $formatItem = Register-DataConstant -Value "ACL_RECOVERY_TOKEN|appcontainer=%u|restricted=%u|elevation=%u|integrityRid=%u|openError=%u|queryError=%u`r`n"
     Emit-LeaRaxFrame -SlotPosition $textBufferSlot
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1))
     Emit-DataAddress -DataItem $formatItem
@@ -1696,6 +1728,7 @@ function Emit-DevBrokerWriteRecoveryTokenDiagnostic {
     Emit-Bytes -Bytes ([byte[]]@(0x41, 0x89, 0xC1))
     Emit-Win64CallIat -TargetRva ([UInt32]0x3090) -StackArguments @(
         @{ Kind = 'FrameDword'; SlotPosition = $elevationSlot },
+        @{ Kind = 'FrameDword'; SlotPosition = $integrityRidSlot },
         @{ Kind = 'FrameDword'; SlotPosition = $openErrorSlot },
         @{ Kind = 'FrameDword'; SlotPosition = $queryErrorSlot }
     ) # wsprintfA
