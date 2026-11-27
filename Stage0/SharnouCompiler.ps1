@@ -2366,7 +2366,9 @@ function Emit-DevRunTool {
     $powerShellSuffix = '\WindowsPowerShell\v1.0\powershell.exe'
     $powerShellSuffixItem = Register-DataConstant -Value $powerShellSuffix
     $powerShellSuffixLength = [System.Text.Encoding]::ASCII.GetByteCount($powerShellSuffix)
-    $imageSuffix = '\Build\DevAgentBroker\DevAgentBroker.exe'
+    # Keep the trusted recovery host outside Low-IL writable Build staging.
+    # A crash must not relabel the image used by the next recovery invocation.
+    $imageSuffix = '\.sharnou-devagent-host\DevAgentBroker.exe'
     $imageSuffixItem = Register-DataConstant -Value $imageSuffix
     $imageSuffixLength = [System.Text.Encoding]::ASCII.GetByteCount($imageSuffix)
     $buildSuffix = '\Build'
