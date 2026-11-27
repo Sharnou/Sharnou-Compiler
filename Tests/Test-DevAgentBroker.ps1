@@ -263,7 +263,8 @@ try {
     if (-not $compilerSource.Contains('Sharnou.DevAgent.') -or
         -not $compilerSource.Contains('0x3330') -or
         -not $compilerSource.Contains('DeleteAppContainerProfile') -or
-        -not $compilerSource.Contains('TokenAppContainerSid = 31') -or
+        -not $compilerSource.Contains('TOKEN_APPCONTAINER_INFORMATION') -or
+        -not $compilerSource.Contains('0x1F, 0x00, 0x00, 0x00') -or
         -not $compilerSource.Contains('EqualSid')) {
         throw 'Native per-execution AppContainer profile creation, child SID binding, or deletion is incomplete.'
     }
