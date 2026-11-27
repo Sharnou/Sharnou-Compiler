@@ -41,3 +41,7 @@ jobs:
       - name: Run native AppContainer execution-identity qualification
         shell: powershell
         run: .\Tests\Test-DevAgentExecutionIdentity.ps1
+
+      - name: Run DPAPI authenticated-journal primitive qualification
+        shell: powershell
+        run: .\Tests\Test-DevAgentAuthenticatedJournal.ps1
