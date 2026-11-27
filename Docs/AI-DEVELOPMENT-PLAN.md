@@ -301,3 +301,12 @@ The Sharnou-compiled persistent AI development agent and the advanced bug-resear
 - Implementation: **PENDING**; no milestone is marked complete by this approval.
 - Existing PRs: remain open/unmerged unless separately reviewed; this automation must not merge them.
 - Dependency order: verify and integrate the frozen M1-M6 baseline/provenance and ABI gates; complete 7B-7E; implement the native runtime and safe process/research interfaces; generate and validate the Sharnou-compiled agent; then complete Engine geometry through world-rendering milestones and integrate Honour War when its prerequisites pass.
+
+
+## 14. Phase 2B.8 - fully qualified crash-safe execution lifecycle
+
+The Phase 2B.8 specification is maintained in [PHASE-2B8-CRASH-SAFE-EXECUTION-LIFECYCLE.md](PHASE-2B8-CRASH-SAFE-EXECUTION-LIFECYCLE.md), tracked by [issue #25](https://github.com/Sharnou/Sharnou-Compiler/issues/25) and draft documentation PR [#26](https://github.com/Sharnou/Sharnou-Compiler/pull/26).
+
+This milestone follows the Phase 2B.6 recovery correction and Phase 2B.7 lifecycle integration review. It requires a unique per-execution AppContainer identity/profile, integrity-protected write-ahead journal, exhaustive crash-cut and idempotent restart recovery, exact workspace security restoration, restricted suspended process creation, explicit clean Unicode environment and DLL policy, STARTUPINFOEX handle allowlist, bounded concurrent stdout/stderr, cancellation, Job Object containment, concurrency tests and an independent evidence verifier.
+
+**Status: SPECIFICATION GENERATED; IMPLEMENTATION NOT STARTED; NOT SECURITY ACCEPTED.** Existing targeted Phase 2B.6 Windows CI passes are prerequisite evidence only. Keep model-generated execution disabled until all same-commit Windows acceptance gates and a separate human security review pass.
