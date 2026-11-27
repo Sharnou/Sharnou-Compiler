@@ -292,3 +292,15 @@ The existing v2 payload fixture is explicitly still incomplete as a production s
 Windows validation is pending on the final exact branch head. The Phase 2B.8 primitive, Stage 7A combined suite and frozen M1-M6 baseline must all pass on the same head before this test increment is called requalified.
 
 **Security disposition:** test-only envelope qualification; production authenticated journal and restart-time profile recovery remain BLOCKED. Model-facing/autonomous process execution remains DISABLED.
+
+## R4 CI evidence hardening (2026-11-27)
+
+Updated all three required Windows workflows on the R4 branch:
+- Pin Stage 7A to the same `windows-2025` runner family as the Phase 2B.8 primitive and frozen M1-M6 suites.
+- Assert that `git rev-parse HEAD` equals `GITHUB_SHA` before testing.
+- Record repository, exact commit, workflow/run attempt, runner OS/architecture and PowerShell version.
+- SHA-256 hash every tracked file in the checkout.
+- Capture test output into per-suite transcripts and upload evidence artifacts even when a test step fails.
+- Keep the three workflows independent so the same commit must pass all three, with evidence separately retrievable.
+
+This is evidence-pipeline hardening, not test completion. R4 remains unqualified until the three final-head artifacts are downloaded and inspected, the signed-journal fixture passes on Windows, Stage 7A ends in `Combined result: PASS`, and M1-M6 reports 83/83 on the identical commit SHA.
