@@ -3312,7 +3312,7 @@ function Emit-DevRunTool {
     Emit-JumpConditional -ConditionCode 0x84 -Label $tokenFail
     Emit-DevBrokerDebugMarker -Marker 'CAPTURE:token-sid-query-ok' -HandleSlot ($scratch + 0xFB0) -WrittenSlot ($scratch + 0xFB8)
     Emit-LoadRaxFrame -SlotPosition $tokenInformationSlot
-    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x8B, 0x08)) # RCX = returned package SID
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1)) # RCX = PSID pointer stored in TOKEN_APPCONTAINER_INFORMATION
     Emit-LoadRaxFrame -SlotPosition $appContainerSidSlot
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC2)) # RDX = newly created profile SID
     Emit-Win64CallIat -TargetRva ([UInt32]0x3350) -StackArguments @() # EqualSid
