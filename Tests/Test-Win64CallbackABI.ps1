@@ -38,15 +38,18 @@ try {
     # The test-only callback intrinsic must not exist in the default compiler surface.
     $disabledOutput = Join-Path $testRoot 'CallbackProbeWithoutOptIn.exe'
     $defaultCompileSucceeded = $false
+    $defaultCompileDiagnostic = ''
     try {
         & $compiler -Source $source -Output $disabledOutput
         $defaultCompileSucceeded = $true
     }
     catch {
-        # Expected: the default builtin catalog must not expose this ABI-test hook.
+        $defaultCompileDiagnostic = [string]$_.Exception.Message
     }
-    if ($defaultCompileSucceeded -or (Test-Path -LiteralPath $disabledOutput -PathType Leaf)) {
-        throw 'Callback ABI test builtin was accepted without -EnableWin64CallbackTests.'
+    if ($defaultCompileSucceeded -or
+        $defaultCompileDiagnostic -notmatch "Undefined function or standard-library intrinsic 'sh_win64_callback_abi_probe'" -or
+        (Test-Path -LiteralPath $disabledOutput -PathType Leaf)) {
+        throw ("Default compiler did not reject the test-only callback intrinsic for the expected reason. Diagnostic: {0}" -f $defaultCompileDiagnostic)
     }
     Write-Host 'PASS: callback ABI test builtin is absent from the default compiler surface.'
 
