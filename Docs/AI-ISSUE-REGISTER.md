@@ -584,3 +584,9 @@ Acceptance requires: repair and adversarially validate journal recovery; unique 
 - Run [46025925905](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/46025925905) passed the new bounded environment builder fixture: 9 entries / 354 UTF-16 code units; CreateProcessW accepted explicit Unicode block; Windows core variables correct; hidden drive entries validated/preserved; parent secret absent.
 - Frozen M1-M6 run [46025925771](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/46025925771) passed 83/83 on exact head `6277f28123b28b56e2710f50d7197239fd034529`.
 - This does not yet qualify the actual AppContainer/restricted-token `CreateProcessAsUserW` path or modify compiler-emitted broker; do not claim Win32 203 closed for production.
+
+## Writer authority, clean environment and sandbox DPAPI status - 2026-11-27
+
+- Recommended journal writer-authority architecture recorded in Docs/PHASE-2B8-WRITER-AUTHORITY-SERVICE-DESIGN.md: service SID owns key and durable transaction; no generic signing oracle. Service installation/key recovery is a deployment approval gate; no service is implemented.
+- Explicit Unicode environment primitive passed Windows run 46025925905: bounded allowlist, hidden drive entries validated/preserved, SystemRoot/windir/SystemDrive/PATH correct, parent secret absent. This is ordinary CreateProcessW proof only, not AppContainer CreateProcessAsUserW integration.
+- Stage 7A run 46025926233 includes an AppContainer-child CurrentUser DPAPI test using ConvertFrom-SecureString (Add-Type is unavailable in the restricted sandbox command surface). Await its final output before classifying whether Low-IL AppContainer can mint an envelope decryptable by the trusted same-user broker.
