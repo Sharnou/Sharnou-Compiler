@@ -555,3 +555,10 @@ Acceptance requires: repair and adversarially validate journal recovery; unique 
 - Stage 7A combined run [46021589123](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/46021589123) was still running at the last status check. Do not mark full combined suite accepted until final logs are checked.
 - New threat-boundary record: `Docs/PHASE-2B8-JOURNAL-TRUST-BOUNDARY.md`. DPAPI CurrentUser plus optional entropy is not per-process writer authentication against another process running as the same user. A different protected trust anchor is required before native journal integration.
 - Production broker unchanged: stable shared AppContainer profile, v1 ACL journal, inherited environment, merged stdout/stderr. Clean environment, unique production identity, crash-time profile deletion, native journal integration, DLL hardening and full crash matrix remain open. Model execution remains DISABLED.
+
+
+### Same-user DPAPI writer-boundary proof - 2026-11-27
+
+- Run [46022134602](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/46022134602) passed the latest dedicated Windows identity/journal primitive suite on `a64b81def96b22315b8ab8034bb60c4af1870e32`.
+- The fixture explicitly demonstrates same-user DPAPI re-protection: a different valid v2 payload can be protected with the same public optional entropy and unprotected. DPAPI user scope is therefore not sufficient writer-process authentication when malicious same-user processes are in scope.
+- The native journal/profile integration gate remains blocked until a separate trust anchor and recovery authority are selected and reviewed. See `Docs/PHASE-2B8-JOURNAL-TRUST-BOUNDARY.md`.
