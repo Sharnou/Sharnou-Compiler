@@ -2235,3 +2235,10 @@ Dedicated Windows run [46022134602](https://github.com/Sharnou/Sharnou-Compiler/
 ### Phase 2B.8 schema precision update
 
 The journal-v2 test schema was corrected to use Windows `FILE_ID_INFO`: 64-bit volume serial plus the complete 128-bit `FILE_ID_128`. The DPAPI writer-boundary negative/positive characterization now uses a separate PowerShell process running as the same Windows user, rather than protecting the forged record inside the same process. Awaiting exact-head Windows CI before claiming these two latest refinements pass.
+
+
+### 2026-11-27 exact Windows verification: FILE_ID_INFO + separate-process DPAPI
+
+- Dedicated Windows workflow [46024410650](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/46024410650) passed on code commit `fc479378a818bc759f298361c6a298e6c143118e`. It verified eight actual suspended child tokens per generated AppContainer profile (exact SID, AppContainer flag, Low IL 0x1000, zero capabilities), normal profile deletion, strict v2 negatives, 128-bit FILE_ID_INFO workspace identity, and a separate same-user PowerShell process successfully creating a DPAPI envelope that the parent unprotected.
+- M1-M6 baseline [46024435843](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/46024435843) passed 83/83 on latest workflow head `cb0551dd1d272deb3c12aab9b5131cc3fb6ed2fb`.
+- Full combined Stage 7A run [46024435792](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/46024435792) was in progress at last inspection. It includes the new sandbox-child DPAPI mint/decrypt characterization. This result is not yet claimed.
