@@ -2500,7 +2500,7 @@ function Emit-DevRunTool {
     Emit-I32 -Value $imageSuffixLength
     Emit-JumpConditional -ConditionCode 0x82 -Label $directoryFailImage
 
-    # Require the exact \Build\DevAgentBroker\DevAgentBroker.exe suffix.
+    # Require the trusted host image to live outside Low-IL writable Build staging.
     Emit-LeaRaxFrame -SlotPosition $workspaceRootSlot
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC7))
     Emit-LoadEaxFrame -SlotPosition $modulePathLengthSlot
