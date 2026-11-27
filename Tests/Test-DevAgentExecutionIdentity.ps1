@@ -257,9 +257,11 @@ try {
         if ($name.Length -gt 64 -or $name -notmatch '^Sharnou\.DevAgent\.[0-9a-f]{32}$') {
             throw "Generated profile name violates the bounded native format: $name"
         }
-        $names.Add($name)
-
         $sid = [Sharnou.DevAgentExecutionIdentityNative]::CreateNewZeroCapabilityProfile($name)
+        # Track only profiles this invocation actually created. A failed
+        # ERROR_ALREADY_EXISTS result must never cause cleanup to delete a
+        # pre-existing profile belonging to another run.
+        $names.Add($name)
         if (-not $sidSet.Add($sid)) {
             throw 'Two distinct execution profile names produced the same AppContainer SID.'
         }
