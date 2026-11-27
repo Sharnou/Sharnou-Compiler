@@ -380,10 +380,9 @@ try {
     $journalRootAfter = Get-SharnouDirectorySddl -Path $journalRoot
     Assert-Phase2B3 ($rootAfter -ceq $rootSddl) 'all success and crash paths preserve the shared workspace-root descriptor'
     Assert-Phase2B3 ($journalRootAfter -ceq $journalRootSddl) 'all success and crash paths preserve the private journal-root descriptor'
-    $residue = @(
-        (Get-ChildItem -LiteralPath $journalRoot -Force -File).Count,
-        (Get-ChildItem -LiteralPath $workspaceRoot -Force).Count
-    )
+    $journalResidue = @(Get-ChildItem -LiteralPath $journalRoot -Force -File)
+    $workspaceResidue = @(Get-ChildItem -LiteralPath $workspaceRoot -Force)
+    $residue = @($journalResidue.Count,$workspaceResidue.Count)
     Assert-Phase2B3 (($residue -join ',') -ceq '0,1') 'journal root is empty and only the fixed shared-parent sentinel remains after recovery'
 }
 catch {
