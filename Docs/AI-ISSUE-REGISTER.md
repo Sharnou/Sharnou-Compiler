@@ -479,3 +479,17 @@ PR #24 candidate head advanced to bd411c2fc777006f9b1160ab8d3d5992c2a15afa. Stag
 - M1-M6 run [45964360562](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45964360562): WINDOWS CI PASS 83/83 on exact head bd411c2fc777006f9b1160ab8d3d5992c2a15afa.
 - Stage 7A/broker run [45964360481](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45964360481): IN PROGRESS at the latest check; no conclusion claimed.
 - Required next evidence: inspect the final log for ACL_RECOVERY_NATIVE_PATH, compare it byte-for-byte with the PowerShell-computed journal path, then decide whether the defect is path construction or process token/ACL access. Do not weaken ACLs to force a pass.
+
+
+## Phase 2B.8 - crash-safe execution lifecycle qualification - 2026-11-27
+
+Tracking issue: [#25 - Phase 2B.8 fully qualify the crash-safe native execution lifecycle](https://github.com/Sharnou/Sharnou-Compiler/issues/25). Specification: `Docs/PHASE-2B8-CRASH-SAFE-EXECUTION-LIFECYCLE.md`. Documentation PR: [#26](https://github.com/Sharnou/Sharnou-Compiler/pull/26), OPEN / DRAFT / UNMERGED.
+
+The Phase 2B.6 recovery correction now has targeted native Windows CI evidence:
+- [Run 46001639565](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/46001639565) passed the targeted broker/recovery assertions, including exact DACL and mandatory-label restoration, parent termination/Job Object child termination, integrity-level separation and malformed-journal fail-closed behavior.
+- [Run 46003358917](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/46003358917) passed the current-candidate Stage 7A/broker workflow and targeted broker assertions.
+- [Run 46003358930](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/46003358930) passed the companion baseline workflow.
+
+These results do not prove the complete execution lifecycle. Unique per-execution AppContainer identity and crash-safe profile deletion, clean explicit environment, DLL-search policy, production handle/output isolation, comprehensive cancellation/concurrency behavior and exhaustive crash-cut recovery remain separate qualification requirements. The earlier environment-block failure (Win32 203) must not be silently treated as resolved by the fixed-tool inherited-environment fixture.
+
+**Disposition:** TARGETED RECOVERY TESTS PASS; FULL PHASE 2B.8 NOT IMPLEMENTED / NOT RUN / NOT SECURITY ACCEPTED. Keep model-generated process execution DISABLED. No security acceptance may be inferred from green predecessor tests.
