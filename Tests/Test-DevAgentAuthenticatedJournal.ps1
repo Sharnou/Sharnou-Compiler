@@ -176,8 +176,8 @@ namespace Sharnou
                     throw new InvalidDataException("Execution identifier is invalid.");
 
                 uint profileLength = reader.ReadUInt32();
-                if (profileLength != 49)
-                    throw new InvalidDataException("AppContainer profile name length is invalid.");
+                if (profileLength < 1 || profileLength > 64)
+                    throw new InvalidDataException("AppContainer profile name length is outside 1..64: " + profileLength + ".");
                 byte[] profileBytes = reader.ReadBytes(checked((int)profileLength));
                 if (profileBytes.Length != profileLength)
                     throw new InvalidDataException("AppContainer profile name is truncated.");
