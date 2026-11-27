@@ -246,6 +246,45 @@ try {
     if (-not $compilerSource.Contains('GetFileAttributesA') -or -not $compilerSource.Contains('GetFileInformationByHandle') -or -not $compilerSource.Contains('GetModuleFileNameA') -or -not $compilerSource.Contains('SetCurrentDirectoryA') -or -not $compilerSource.Contains('0x400') -or -not $compilerSource.Contains('0x00200080')) {
         throw 'Image-relative workspace and opened-handle reparse-point checks are missing.'
     }
+    if ($brokerEmitterSource.Contains('Sharnou.DevAgent.ProcessBroker.v1')) {
+        throw 'Production broker must not reuse the stable shared AppContainer profile.'
+    }
+    if (-not $compilerSource.Contains('BCRYPT_USE_SYSTEM_PREFERRED_RNG') -and
+        -not $compilerSource.Contains('BCryptGenRandom(BCRYPT_USE_SYSTEM_PREFERRED_RNG)')) {
+        throw 'Per-execution identity must use the system-preferred CNG random generator.'
+    }
+    if (-not $compilerSource.Contains('Sharnou.DevAgent.') -or
+        -not $compilerSource.Contains('0x3328') -or
+        -not $compilerSource.Contains('DeleteAppContainerProfile') -or
+        -not $compilerSource.Contains('TokenAppContainerSid = 31') -or
+        -not $compilerSource.Contains('EqualSid')) {
+        throw 'Native per-execution AppContainer profile creation, child SID binding, or deletion is incomplete.'
+    }
+    if ($brokerEmitterSource.Contains('-AccessMode 4')) {
+        throw 'A freshly generated per-execution SID must not require a pre-journal stale-profile ACL revoke.'
+    }
+    $tokenSidCheckOffset = $brokerEmitterSource.IndexOf('TokenAppContainerSid = 31', [StringComparison]::Ordinal)
+    $resumeChildOffset = $brokerEmitterSource.IndexOf('TargetRva ([UInt32]0x31A8)', [StringComparison]::Ordinal)
+    if ($tokenSidCheckOffset -lt 0 -or $resumeChildOffset -le $tokenSidCheckOffset) {
+        throw 'The primary token package SID must match the created profile SID before ResumeThread.'
+    }
+    $restoreHelperStart = $compilerSource.IndexOf('function Emit-DevBrokerRestoreSecurityDescriptor', [StringComparison]::Ordinal)
+    $restoreHelperEnd = $compilerSource.IndexOf('function Emit-DevBrokerWriteAclJournal', $restoreHelperStart, [StringComparison]::Ordinal)
+    $restoreHelperSource = $compilerSource.Substring($restoreHelperStart, $restoreHelperEnd - $restoreHelperStart)
+    if (-not $restoreHelperSource.Contains('GetSecurityInfo(DACL + LABEL)') -or
+        -not $restoreHelperSource.Contains('REPE CMPSB') -or
+        -not $restoreHelperSource.Contains('$actualDescriptorSlot')) {
+        throw 'ACL rollback must independently read back and byte-compare the restored DACL and mandatory-label SACL.'
+    }
+    $profileCleanupStart = $compilerSource.IndexOf('function Emit-DevBrokerDeleteOwnedAppContainerProfile', [StringComparison]::Ordinal)
+    $profileCleanupEnd = $compilerSource.IndexOf('function Emit-DevBrokerUpdateAcl', $profileCleanupStart, [StringComparison]::Ordinal)
+    $profileCleanupSource = $compilerSource.Substring($profileCleanupStart, $profileCleanupEnd - $profileCleanupStart)
+    if (-not $profileCleanupSource.Contains('$ChildActiveSlot') -or
+        -not $profileCleanupSource.Contains('$TransactionActiveSlot') -or
+        -not $profileCleanupSource.Contains('TargetRva ([UInt32]0x3338)')) {
+        throw 'Profile deletion must be gated on Job Object emptiness and completed ACL transaction rollback.'
+    }
+
     if (-not $brokerEmitterSource.Contains('$imageSuffix = ''\.sharnou-devagent-host\DevAgentBroker.exe''')) {
         throw 'Recovery broker image must be outside Low-IL writable Build staging.'
     }
@@ -278,7 +317,10 @@ try {
         'SetEntriesInAclA',
         'TRUSTEE_IS_SID',
         'PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES',
-        'HANDLE_LIST'
+        'HANDLE_LIST',
+        'BCryptGenRandom',
+        'DeleteAppContainerProfile',
+        'EqualSid'
     )) {
         if (-not $compilerSource.Contains($required)) {
             throw "Native sandbox security component is missing: $required"
@@ -287,7 +329,7 @@ try {
     $importArrayMatch = [regex]::Match($compilerSource, '\$importSets\s*=\s*@\(([\s\S]*?)\r?\n\)')
     if (-not $importArrayMatch.Success) { throw 'Native import-set declarations could not be parsed.' }
     $importRecords = [regex]::Matches($importArrayMatch.Groups[1].Value, "Descriptor = (0x[0-9A-Fa-f]+); Lookup = (0x[0-9A-Fa-f]+); Iat = (0x[0-9A-Fa-f]+); Dll = '([^']+)'; Names = @\(([^)]*)\)")
-    if ($importRecords.Count -ne 16) { throw "Expected 16 import descriptors, found $($importRecords.Count)." }
+    if ($importRecords.Count -ne 19) { throw "Expected 19 import descriptors, found $($importRecords.Count)." }
     $iatRanges = @()
     $lookupRanges = @()
     foreach ($record in $importRecords) {
