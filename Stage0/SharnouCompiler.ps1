@@ -3899,7 +3899,6 @@ function Emit-BuiltinCall {
         'Win64CallbackProbe' {
             $serviceMainPointer = Register-CodeCallbackPointer -Key 'CALLBACK:SERVICE_MAIN_FUNCTIONW' -Label '__r51_service_main_abi_probe' -Signature 'SERVICE_MAIN_FUNCTIONW'
             $handlerExPointer = Register-CodeCallbackPointer -Key 'CALLBACK:HANDLER_FUNCTION_EX' -Label '__r51_handler_ex_abi_probe' -Signature 'HANDLER_FUNCTION_EX'
-            $script:CallbackProbeServiceMainVector = Register-ByteDataConstant -Key 'CALLBACK:PROBE:SERVICE_MAIN_VECTOR' -Bytes ([byte[]]::new(8))
             $failLabel = New-UniqueLabel -Prefix 'win64_callback_probe_fail'
             $doneLabel = New-UniqueLabel -Prefix 'win64_callback_probe_done'
 
