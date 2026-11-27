@@ -1611,6 +1611,56 @@ function Emit-DevBrokerWriteDiagnosticPath {
     Mark-CodeLabel -Label $skip
 }
 
+function Emit-DevBrokerWriteRecoveryAttributeDiagnostic {
+    param([int] $JournalPathSlot)
+    $scratch = [int]$script:ActiveContext.ScratchPosition
+    $attributeSlot = $scratch + 0xD70
+    $errorSlot = $scratch + 0xD74
+    $textBufferSlot = $scratch + 0xD78
+    $textLengthSlot = $scratch + 0xD80
+    $stdoutHandleSlot = $scratch + 0xD60
+    $bytesWrittenSlot = $scratch + 0xD68
+    $attributeFailed = New-UniqueLabel -Prefix 'dev_acl_recovery_getattr_failed'
+    $formatted = New-UniqueLabel -Prefix 'dev_acl_recovery_getattr_formatted'
+    $formatItem = Register-DataConstant -Value "ACL_RECOVERY_GETATTR|attrs=0x%08X|error=%u`r`n"
+
+    # Read-only path/metadata probe. This does not alter ACLs or open the journal.
+    Emit-LeaRaxFrame -SlotPosition $JournalPathSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1))
+    Emit-Win64CallIat -TargetRva ([UInt32]0x31C8) -StackArguments @() # GetFileAttributesA
+    Emit-StoreEaxFrame -SlotPosition $attributeSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x3D, 0xFF, 0xFF, 0xFF, 0xFF))
+    Emit-JumpConditional -ConditionCode 0x84 -Label $attributeFailed
+    Emit-StoreBits32Frame -SlotPosition $errorSlot -Value 0
+    Emit-Jump -Label $formatted
+    Mark-CodeLabel -Label $attributeFailed
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3268) -StackArguments @() # GetLastError
+    Emit-StoreEaxFrame -SlotPosition $errorSlot
+    Mark-CodeLabel -Label $formatted
+
+    Emit-LeaRaxFrame -SlotPosition $textBufferSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1))
+    Emit-DataAddress -DataItem $formatItem
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC2))
+    Emit-LoadEaxFrame -SlotPosition $attributeSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x41, 0x89, 0xC0)) # R8D = attributes
+    Emit-LoadEaxFrame -SlotPosition $errorSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x41, 0x89, 0xC1)) # R9D = Win32 error
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3090) -StackArguments @() # wsprintfA
+    Emit-StoreEaxFrame -SlotPosition $textLengthSlot
+
+    Emit-Bytes -Bytes ([byte[]]@(0xB9, 0xF5, 0xFF, 0xFF, 0xFF)) # STD_OUTPUT_HANDLE
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3070) -StackArguments @() # GetStdHandle
+    Emit-StoreRaxFrame -SlotPosition $stdoutHandleSlot
+    Emit-LoadRcxFrame -SlotPosition $stdoutHandleSlot
+    Emit-LeaRaxFrame -SlotPosition $textBufferSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC2))
+    Emit-LoadEaxFrame -SlotPosition $textLengthSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x41, 0x89, 0xC0))
+    Emit-LeaR9Frame -SlotPosition $bytesWrittenSlot
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3078) -StackArguments @(@{ Kind = 'Immediate'; Value = 0 }) # WriteFile
+}
+
 function Emit-DevBrokerRecoverAclJournal {
     param(
         [int] $JournalPathSlot,
@@ -1672,6 +1722,7 @@ function Emit-DevBrokerRecoverAclJournal {
     # to redirected stdout before the metadata-only probe.
     Emit-StoreEaxFrame -SlotPosition $expectedSizeSlot
     Emit-DevBrokerWriteDiagnosticPath -PathSlot $JournalPathSlot -PathLengthSlot $PathLengthSlot
+    Emit-DevBrokerWriteRecoveryAttributeDiagnostic -JournalPathSlot $JournalPathSlot
     Emit-LeaRaxFrame -SlotPosition $JournalPathSlot
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1, 0x33, 0xD2, 0x41, 0xB8, 0x01, 0x00, 0x00, 0x00, 0x45, 0x33, 0xC9))
     Emit-Win64CallIat -TargetRva ([UInt32]0x30A0) -StackArguments @(
