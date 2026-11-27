@@ -1678,7 +1678,6 @@ function Emit-DevBrokerRestoreSecurityDescriptor {
         Emit-JumpConditional -ConditionCode 0x85 -Label $failed
         Mark-CodeLabel -Label $saclPresenceMatched
     }
-}
 
     Emit-StoreBits32Frame -SlotPosition $daclPresentSlot -Value 1
     Emit-StoreBits32Frame -SlotPosition $restoreStageSlot -Value 0
