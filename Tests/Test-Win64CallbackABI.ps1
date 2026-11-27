@@ -34,6 +34,22 @@ function Convert-RvaToRawOffset {
 
 try {
     [IO.File]::WriteAllText($source, "let callbackProbeResult = sh_win64_callback_abi_probe();" + [Environment]::NewLine, $encoding)
+
+    # The test-only callback intrinsic must not exist in the default compiler surface.
+    $disabledOutput = Join-Path $testRoot 'CallbackProbeWithoutOptIn.exe'
+    $defaultCompileSucceeded = $false
+    try {
+        & $compiler -Source $source -Output $disabledOutput
+        $defaultCompileSucceeded = $true
+    }
+    catch {
+        # Expected: the default builtin catalog must not expose this ABI-test hook.
+    }
+    if ($defaultCompileSucceeded -or (Test-Path -LiteralPath $disabledOutput -PathType Leaf)) {
+        throw 'Callback ABI test builtin was accepted without -EnableWin64CallbackTests.'
+    }
+    Write-Host 'PASS: callback ABI test builtin is absent from the default compiler surface.'
+
     & $compiler -Source $source -Output $output -EnableWin64CallbackTests
     if (-not (Test-Path -LiteralPath $output -PathType Leaf)) {
         throw 'Sharnou compiler did not produce the Win64 callback ABI probe executable.'
