@@ -306,3 +306,25 @@ Updated all three required Windows workflows on the R4 branch:
 This is evidence-pipeline hardening, not test completion. R4 remains unqualified until the three final-head artifacts are downloaded and inspected, the signed-journal fixture passes on Windows, Stage 7A ends in `Combined result: PASS`, and M1-M6 reports 83/83 on the identical commit SHA.
 
 The Stage 7A and M1-M6 workflows initialize their evidence directory and source-hash manifest once, before source-encoding validation, then capture the complete suite transcript in the test step. This avoids duplicate manifest generation while retaining an artifact on early gate failure.
+
+## R4 consolidated exact-head gate (2026-11-27)
+
+Added `.github/workflows/phase-2b8-r4-exact-head-gate.yml`.
+
+This is the authoritative R4 aggregate gate. It executes the complete qualification sequence in one Windows Server 2025 job against the single checkout SHA:
+1. AppContainer identity and actual child-token SID.
+2. Signed journal envelope, strict v2 parser and DPAPI boundary fixture.
+3. Bounded explicit Unicode environment.
+4. Restricted-token AppContainer process-launch fixture.
+5. Separate bounded stdout/stderr fixture.
+6. Root `Test.ps1` combined Stage 7A, collection-import, unwind/stack-probe, Runtime ABI and broker suites.
+7. Frozen M1-M6 83-case baseline.
+
+The job verifies `git rev-parse HEAD == GITHUB_SHA`, records OS/runner/PowerShell metadata, hashes every tracked file, captures suite transcripts, and uploads one evidence bundle. It writes an explicit exact-head PASS manifest only after every suite completes successfully. A failing earlier step leaves the workflow failed and still attempts to upload the available evidence.
+
+This removes ambiguity from independently timed workflows: the authoritative aggregate result is one job, one runner, one immutable checkout SHA, and one artifact bundle.
+
+**Current R4 head before this log update:** `607657dea5a94f1d7dff3f40561515511b6b06c5`.
+
+The consolidated workflow has not yet been observed completing. The next acceptable evidence is a successful run of this workflow on the final commit, followed by inspection of the uploaded transcript and SHA-256 manifest. This CI addition does not implement the authority service or change the production broker.
+
