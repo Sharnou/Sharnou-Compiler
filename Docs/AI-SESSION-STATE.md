@@ -2242,3 +2242,11 @@ The journal-v2 test schema was corrected to use Windows `FILE_ID_INFO`: 64-bit v
 - Dedicated Windows workflow [46024410650](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/46024410650) passed on code commit `fc479378a818bc759f298361c6a298e6c143118e`. It verified eight actual suspended child tokens per generated AppContainer profile (exact SID, AppContainer flag, Low IL 0x1000, zero capabilities), normal profile deletion, strict v2 negatives, 128-bit FILE_ID_INFO workspace identity, and a separate same-user PowerShell process successfully creating a DPAPI envelope that the parent unprotected.
 - M1-M6 baseline [46024435843](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/46024435843) passed 83/83 on latest workflow head `cb0551dd1d272deb3c12aab9b5131cc3fb6ed2fb`.
 - Full combined Stage 7A run [46024435792](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/46024435792) was in progress at last inspection. It includes the new sandbox-child DPAPI mint/decrypt characterization. This result is not yet claimed.
+
+
+### Explicit environment builder primitive - 2026-11-27
+
+- Added `Tests/Test-DevAgentEnvironmentBlock.ps1` to the combined suite and dedicated Windows workflow.
+- Run [46025925905](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/46025925905) completed **SUCCESS** on `6277f28123b28b56e2710f50d7197239fd034529`: non-NULL Unicode block, 9 entries / 354 UTF-16 code units, SystemRoot/windir/SystemDrive/PATH present, validated hidden drive-current-directory entries preserved, ordinary parent vars discarded, unique parent secret absent.
+- Run [46025925771](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/46025925771) passed frozen M1-M6 baseline 83/83 on the same commit.
+- Limitation: test uses ordinary `CreateProcessW`, not the broker's `CreateProcessAsUserW` + AppContainer security-capability launch. No production broker environment change is made; `lpEnvironment=NULL` remains in the emitted candidate and Win32 203 remains a blocker to integrate until AppContainer-specific proof passes.
