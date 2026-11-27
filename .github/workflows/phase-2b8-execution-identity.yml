@@ -45,3 +45,7 @@ jobs:
       - name: Run DPAPI authenticated-journal primitive qualification
         shell: powershell
         run: .\Tests\Test-DevAgentAuthenticatedJournal.ps1
+
+      - name: Run bounded explicit Unicode environment qualification
+        shell: powershell
+        run: .\Tests\Test-DevAgentEnvironmentBlock.ps1
