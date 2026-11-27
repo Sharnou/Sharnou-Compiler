@@ -483,13 +483,30 @@ namespace Sharnou
                         throw new Win32Exception(Marshal.GetLastWin32Error(), "DestroyEnvironmentBlock failed.");
                 }
 
-                string[] allowedEnvironment = new string[] {
-                    "ComSpec=" + application,
-                    "PATH=" + systemDirectory,
-                    "SystemDrive=" + System.IO.Path.GetPathRoot(systemRoot).TrimEnd('\\'),
-                    "SystemRoot=" + systemRoot,
-                    "windir=" + systemRoot
-                };
+                string systemDrive = System.IO.Path.GetPathRoot(systemDirectory).TrimEnd('\\');
+                string currentDirectory = Environment.CurrentDirectory;
+                string currentDrive = System.IO.Path.GetPathRoot(currentDirectory).TrimEnd('\\');
+                if (String.IsNullOrEmpty(systemDrive) || String.IsNullOrEmpty(currentDrive) ||
+                    systemDrive.Length != 2 || currentDrive.Length != 2 ||
+                    !System.IO.Path.IsPathRooted(currentDirectory))
+                    throw new InvalidOperationException("Could not derive bounded drive-relative environment entries.");
+
+                // Windows preserves hidden per-drive current-directory entries
+                // (for example, =D:=D:\workspace). Omitting them can make
+                // CreateProcessW fail with ERROR_ENVVAR_NOT_FOUND (203) on a
+                // cross-drive runner even when ordinary allowlisted variables exist.
+                // Reconstruct only the system drive and current validated drive;
+                // do not copy arbitrary inherited environment variables.
+                var allowedEnvironmentList = new List<string>();
+                allowedEnvironmentList.Add("=" + systemDrive + "=" + systemDirectory);
+                if (!String.Equals(systemDrive, currentDrive, StringComparison.OrdinalIgnoreCase))
+                    allowedEnvironmentList.Add("=" + currentDrive + "=" + currentDirectory);
+                allowedEnvironmentList.Add("ComSpec=" + application);
+                allowedEnvironmentList.Add("PATH=" + systemDirectory);
+                allowedEnvironmentList.Add("SystemDrive=" + systemDrive);
+                allowedEnvironmentList.Add("SystemRoot=" + systemRoot);
+                allowedEnvironmentList.Add("windir=" + systemRoot);
+                string[] allowedEnvironment = allowedEnvironmentList.ToArray();
                 Array.Sort(allowedEnvironment, StringComparer.OrdinalIgnoreCase);
                 string environmentText = String.Join("\0", allowedEnvironment) + "\0\0";
                 if (environmentText.Length > 32768)
