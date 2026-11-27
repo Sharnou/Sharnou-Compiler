@@ -127,3 +127,30 @@ This probe qualifies the pointer relocation and those two callback ABIs only. It
 ## Current exact-head qualification
 
 R5.1.a and R5.1.b have separate exact-head Windows workflows. Their acceptance state must be taken from the matching workflow run and inspected evidence bundle on the exact PR head. Do not infer a pass from successful file creation or a pending workflow.
+
+
+## R5.1.a and R5.1.b exact-head engineering results — 2026-11-27
+
+### R5.1.a — ACCEPTED for relocation primitive scope
+
+- PR #33, source head `2583faec76d5e469962756d17d2ffabecd6fcd98`.
+- Windows Server 2025 x64 exact-head run [46066382172](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/46066382172): SUCCESS.
+- Focused PE relocation parser/builder suite 21/21; Stage 7A 24/24; Stage 5 collection 25/25; stack-probe/unwind 6/6; Runtime ABI PASS; broker and Phase 2B.8 primitive suites PASS; frozen M1-M6 83/83; Combined PASS.
+- Exact-head acceptance manifest generated and verified against checked-out commit.
+- Evidence artifact 15231785189, `r5-1a-relocation-evidence`, ZIP SHA-256 `698ebd55dfb66b529cd8b001aa986e4832e995e8f37a68f7906c7db19546b725`; bundle downloaded and inspected.
+- Residual: the Low-IL AppContainer DPAPI protection subtest recorded `INCONCLUSIVE` because Windows PowerShell could not load `System.Security` (FileNotFoundException). This is not a pass and remains an outstanding Phase 2B.8 evidence gap.
+
+### R5.1.b — callback ABI primitives verified on predecessor exact head; re-stacked candidate queued
+
+- Predecessor callback implementation head `beb7f47989b1180dcc83c916422cee5123ce58d2` passed Windows Server 2025 run [46066393744](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/46066393744): focused callback ABI test PASS; combined suite PASS; frozen M1-M6 83/83 PASS; exact-head manifest created.
+- Evidence artifact 15230738893, `r5-1b-callback-abi-evidence`, ZIP SHA-256 `90a45413274ff3f86d665fb0ecdf90a03071cc81ca30da076eef139a7317bed1`; bundle downloaded and inspected.
+- Callback scope: strict `SERVICE_MAIN_FUNCTIONW(DWORD, LPWSTR*)` and `HANDLER_FUNCTION_EX(DWORD, DWORD, LPVOID, LPVOID)` signatures, aligned relocated callback pointer slots, code-label fixups, indirect invocation and runtime ABI probes. The test builtin requires explicit `-EnableWin64CallbackTests` and is absent from the default compiler catalog.
+- The predecessor PR #34 had an older base commit and has been closed as superseded. Its implementation has been recreated as draft PR #35, branch `phase-2b8-r5-1b-win64-callback-abi-r2-20261127`, stacked on the accepted R5.1.a head `2583faec76d5e469962756d17d2ffabecd6fcd98`.
+- PR #35 exact-head run [46067337857](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/46067337857) is PENDING. The predecessor-source callback pass is recorded, but PR #35 must pass its own exact-head workflow before the newly stacked candidate is accepted.
+- The Low-IL AppContainer DPAPI subtest was likewise INCONCLUSIVE on the predecessor run due to missing `System.Security`; it remains open for Phase 2B.8.
+
+### R5.1 boundary and next step
+
+R5.1.a qualifies bounded multi-target DIR64 relocation generation and parsing. R5.1.b qualifies two callback-pointer ABI contracts. Neither creates an SCM service. R5.1.c is next: genuine Sharnou-generated inert Windows SCM host, SERVICE_TABLE_ENTRYW callback wiring, service status/control lifecycle, actual import-table verification, and disposable Windows service install/start/stop/shutdown/failure-injection tests.
+
+No service SID, production CNG key, named-pipe transport, production signed journal, process execution authority or crash recovery is implemented yet. Full Phase 2B.8 remains NOT SECURITY ACCEPTED. Model-facing and autonomous execution remain DISABLED.
