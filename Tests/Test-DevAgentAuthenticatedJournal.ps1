@@ -249,9 +249,9 @@ if ($wrongContextResult -and [Convert]::ToBase64String($wrongContextPlaintext).E
     throw 'A journal protected with different optional entropy reproduced the original plaintext.'
 }
 
-if (Test-ByteSequence -Haystack $protected -Needle ([Text.Encoding]::ASCII.GetBytes('SHARJNL2')) -or
-    Test-ByteSequence -Haystack $protected -Needle ([Text.Encoding]::ASCII.GetBytes($profileName)) -or
-    Test-ByteSequence -Haystack $protected -Needle ([Text.Encoding]::ASCII.GetBytes($packageSid))) {
+if ((Test-ByteSequence -Haystack $protected -Needle ([Text.Encoding]::ASCII.GetBytes('SHARJNL2'))) -or
+    (Test-ByteSequence -Haystack $protected -Needle ([Text.Encoding]::ASCII.GetBytes($profileName))) -or
+    (Test-ByteSequence -Haystack $protected -Needle ([Text.Encoding]::ASCII.GetBytes($packageSid)))) {
     throw 'Protected test envelope contains cleartext journal markers or identity metadata.'
 }
 
