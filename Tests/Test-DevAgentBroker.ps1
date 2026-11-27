@@ -87,12 +87,49 @@ function Get-DevAgentAclJournalEvidence {
         if ($null -eq $descriptor.DiscretionaryAcl -or $descriptor.BinaryLength -ne $record.Length) {
             throw ("Journal record '{0}' has an invalid DACL or binary length." -f $record.Name)
         }
-        $actualSddl = $descriptor.GetSddlForm($sections)
         $expected = [string]$ExpectedSddl[$record.Path]
-        if (-not [string]::Equals($actualSddl, $expected, [StringComparison]::Ordinal)) {
-            Write-Host ("DEVAGENT_JOURNAL_DESCRIPTOR_DIFF|record={0}|path={1}|expected={2}|actual={3}|controlFlags={4}|binaryLength={5}" -f
-                $record.Name, $record.Path, $expected, $actualSddl, [int]$descriptor.ControlFlags, $descriptor.BinaryLength)
-            throw ("Journal record '{0}' does not match the independent pre-run DACL/mandatory-label snapshot for {1}." -f $record.Name, $record.Path)
+        $expectedDescriptor = [Security.AccessControl.RawSecurityDescriptor]::new($expected)
+
+        # Compare the full DACL form and every mandatory-label ACE separately.
+        # GetSecurityInfo(LABEL_SECURITY_INFORMATION) can serialize an absent
+        # label as a present-but-NULL SACL (SDDL S:PAINO_ACCESS_CONTROL). That
+        # wire representation is semantically "no mandatory label" and differs
+        # textually from Get-Acl's omitted S: field. Do not compare that null
+        # SACL marker as though it were a label ACE.
+        $actualDacl = $descriptor.GetSddlForm([Security.AccessControl.AccessControlSections]::Access)
+        $expectedDacl = $expectedDescriptor.GetSddlForm([Security.AccessControl.AccessControlSections]::Access)
+        if (-not [string]::Equals($actualDacl, $expectedDacl, [StringComparison]::Ordinal)) {
+            Write-Host ("DEVAGENT_JOURNAL_DACL_DIFF|record={0}|path={1}|expected={2}|actual={3}" -f
+                $record.Name, $record.Path, $expectedDacl, $actualDacl)
+            throw ("Journal record '{0}' DACL differs from the independent pre-run snapshot for {1}." -f $record.Name, $record.Path)
+        }
+
+        $actualLabels = New-Object 'System.Collections.Generic.List[string]'
+        if ($null -ne $descriptor.SystemAcl) {
+            foreach ($ace in $descriptor.SystemAcl) {
+                if ($ace.AceType -ne [Security.AccessControl.AceType]::SystemMandatoryLabel) {
+                    throw ("Journal record '{0}' contains an SACL ACE outside the broker's DACL/mandatory-label snapshot contract." -f $record.Name)
+                }
+                $actualLabels.Add($ace.GetSddlForm())
+            }
+        }
+        $expectedLabels = New-Object 'System.Collections.Generic.List[string]'
+        if ($null -ne $expectedDescriptor.SystemAcl) {
+            foreach ($ace in $expectedDescriptor.SystemAcl) {
+                if ($ace.AceType -ne [Security.AccessControl.AceType]::SystemMandatoryLabel) {
+                    throw ("Pre-run snapshot '{0}' contains an audit SACL ACE that the current journal format does not preserve." -f $record.Name)
+                }
+                $expectedLabels.Add($ace.GetSddlForm())
+            }
+        }
+        if ($actualLabels.Count -ne $expectedLabels.Count) {
+            throw ("Journal record '{0}' mandatory-label ACE count differs: expected={1}, actual={2}." -f
+                $record.Name, $expectedLabels.Count, $actualLabels.Count)
+        }
+        for ($labelIndex = 0; $labelIndex -lt $expectedLabels.Count; $labelIndex++) {
+            if (-not [string]::Equals($actualLabels[$labelIndex], $expectedLabels[$labelIndex], [StringComparison]::Ordinal)) {
+                throw ("Journal record '{0}' mandatory-label ACE {1} differs from the pre-run snapshot." -f $record.Name, $labelIndex)
+            }
         }
         $offset += $record.Length
     }
