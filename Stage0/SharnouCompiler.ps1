@@ -4827,11 +4827,12 @@ if ($script:DataPointerFixups.Count -gt 0) {
     $serviceMainFail = New-UniqueLabel -Prefix 'service_main_abi_fail'
     Emit-Bytes -Bytes ([byte[]]@(0x81, 0xF9, 0xDF, 0x9B, 0x57, 0x13)) # cmp ecx,13579BDFh
     Emit-JumpConditional -ConditionCode 0x85 -Label $serviceMainFail
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x85, 0xD2)) # test rdx,rdx; require non-null LPWSTR*.
+    Emit-JumpConditional -ConditionCode 0x84 -Label $serviceMainFail
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0xB8))
-    $script:Code.AddRange([BitConverter]::GetBytes([UInt64]::Parse('1122334455667788', [System.Globalization.NumberStyles]::HexNumber)))
-    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x39, 0xC2)) # cmp rdx,rax (full-width LPWSTR*).
-    Emit-JumpConditional -ConditionCode 0x85 -Label $serviceMainFail
-    Emit-Bytes -Bytes ([byte[]]@(0xB8)); $script:Code.AddRange($callbackMarker); Emit-Bytes -Bytes ([byte[]]@(0xC3))
+    $script:Code.AddRange([BitConverter]::GetBytes([UInt64]::Parse('0000000051A7C0DE', [System.Globalization.NumberStyles]::HexNumber)))
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0x02)) # write a test LPWSTR value into argv[0].
+    Emit-Bytes -Bytes ([byte[]]@(0x31, 0xC0, 0xC3)) # VOID callback; return value is intentionally ignored.
     Mark-CodeLabel -Label $serviceMainFail
     Emit-Bytes -Bytes ([byte[]]@(0x31, 0xC0, 0xC3))
 
