@@ -46,6 +46,8 @@ $childPidPath = Join-Path $buildRoot 'child.pid'
 $sandboxMarkerPath = Join-Path $buildRoot 'sandbox-write-probe.ok'
 $deniedMarkerPath = Join-Path $PSScriptRoot 'DevAgentBroker\denied-write-probe.tmp'
 $capturedOutputPath = Join-Path $buildRoot 'captured-output.bin'
+$dpapiForgeryPath = Join-Path $buildRoot 'appcontainer-dpapi-forgery.bin'
+$dpapiStatusPath = Join-Path $buildRoot 'appcontainer-dpapi-status.txt'
 $journalPath = Join-Path $repoRoot '.sharnou-devagent-acl.journal'
 $journalTempPath = Join-Path $repoRoot '.sharnou-devagent-acl.journal.tmp'
 
@@ -478,6 +480,8 @@ try {
     Remove-Item -LiteralPath $deniedMarkerPath -Force -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath (Join-Path $brokerHostRoot 'sandbox-host-write-probe.tmp') -Force -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $capturedOutputPath -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $dpapiForgeryPath -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $dpapiStatusPath -Force -ErrorAction SilentlyContinue
 
     Remove-Item -LiteralPath $disabledOutputPath -Force -ErrorAction SilentlyContinue
     $disabledRejected = $false
@@ -560,6 +564,47 @@ try {
         if (Test-Path -LiteralPath $deniedMarkerPath -PathType Leaf) {
             throw 'AppContainer unexpectedly wrote into the read-only Tests workspace.'
         }
+
+        if (-not (Test-Path -LiteralPath $dpapiStatusPath -PathType Leaf)) {
+            throw 'Sandbox probe did not publish the bounded CurrentUser DPAPI characterization status.'
+        }
+        $dpapiStatus = [IO.File]::ReadAllText($dpapiStatusPath, [Text.Encoding]::ASCII).Trim()
+        if ($dpapiStatus -ceq 'PROTECT_SUCCESS') {
+            if (-not (Test-Path -LiteralPath $dpapiForgeryPath -PathType Leaf)) {
+                throw 'Sandbox reported DPAPI protection success without publishing its envelope.'
+            }
+            $dpapiEnvelopeInfo = Get-Item -LiteralPath $dpapiForgeryPath
+            if ($dpapiEnvelopeInfo.Length -lt 32 -or $dpapiEnvelopeInfo.Length -gt 65536) {
+                throw "Sandbox DPAPI envelope length is outside 32..65536 bytes: $($dpapiEnvelopeInfo.Length)"
+            }
+            Add-Type -AssemblyName System.Security -ErrorAction Stop
+            $dpapiEntropy = [Text.Encoding]::UTF8.GetBytes('Sharnou.DevAgent.AuthenticatedJournal.v2|user-scope')
+            $dpapiEnvelope = [IO.File]::ReadAllBytes($dpapiForgeryPath)
+            try {
+                $dpapiPlaintext = [Security.Cryptography.ProtectedData]::Unprotect(
+                    $dpapiEnvelope,
+                    $dpapiEntropy,
+                    [Security.Cryptography.DataProtectionScope]::CurrentUser)
+            }
+            catch {
+                throw ("AppContainer created a CurrentUser DPAPI envelope, but the trusted broker user context could not unprotect it: {0}" -f $_.Exception.GetBaseException().Message)
+            }
+            $dpapiPlaintextText = [Text.Encoding]::ASCII.GetString($dpapiPlaintext)
+            if ($dpapiPlaintextText -cne 'appcontainer-created-dpapi-record-v1') {
+                throw 'AppContainer DPAPI envelope did not decrypt to the exact sandbox fixture payload.'
+            }
+            Write-Host 'PASS: Low-IL AppContainer can mint a CurrentUser DPAPI envelope decryptable by the trusted broker user context; DPAPI does not isolate a hostile sandbox child from this user-scope writer boundary.' -ForegroundColor Yellow
+        }
+        elseif ($dpapiStatus.StartsWith('PROTECT_FAILURE|', [StringComparison]::Ordinal)) {
+            if (Test-Path -LiteralPath $dpapiForgeryPath -PathType Leaf) {
+                throw 'Sandbox DPAPI failure status was accompanied by an unexpected partial envelope.'
+            }
+            Write-Host ('INCONCLUSIVE: Low-IL AppContainer DPAPI protection call failed: {0}' -f $dpapiStatus) -ForegroundColor Yellow
+        }
+        else {
+            throw ("Sandbox DPAPI probe returned an unrecognized status: {0}" -f $dpapiStatus)
+        }
+
         if (-not (Test-Path -LiteralPath $capturedOutputPath -PathType Leaf)) {
             throw 'Bounded stdout/stderr capture did not persist captured-output.bin.'
         }
@@ -941,4 +986,6 @@ finally {
     Set-Location -LiteralPath $originalLocation
     Remove-Item -LiteralPath $sandboxMarkerPath -Force -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $deniedMarkerPath -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $dpapiForgeryPath -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $dpapiStatusPath -Force -ErrorAction SilentlyContinue
 }
