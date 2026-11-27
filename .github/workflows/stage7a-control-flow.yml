@@ -10,6 +10,7 @@ on:
       - devagent-sandbox-tool-order-diagnostics-20261126
       - devagent-abandoned-mutex-failclosed-20261126
       - devagent-acl-transaction-recovery-20261126
+      - phase-2b8-identity-profile-qualification-20261127
   pull_request:
     branches:
       - Sharnou-Compiler
