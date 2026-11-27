@@ -299,7 +299,11 @@ namespace Sharnou
 
         private static void Check(bool result, string operation)
         {
-            if (!result) throw new Win32Exception(Marshal.GetLastWin32Error(), operation + " failed.");
+            if (!result)
+            {
+                int error = Marshal.GetLastWin32Error();
+                throw new Win32Exception(error, operation + " failed (Win32=" + error + ").");
+            }
         }
 
         private static string NewProfileName()
