@@ -160,3 +160,19 @@ The fixture remains non-production: no compiler-emitted broker integration, no c
 The test-only v2 schema now models Windows `FILE_ID_INFO` correctly: an unsigned 64-bit volume serial plus the full 16-byte `FILE_ID_128`, rather than a legacy 64-bit file index. Parser tests reject a zero volume serial and an all-zero 128-bit file identifier. The current test fixture has increased by 12 bytes accordingly.
 
 The DPAPI writer-boundary proof now launches a separate Windows PowerShell process under the same user, asks it to protect a different canonical journal payload with the public optional entropy, and verifies that the parent process can unprotect the resulting envelope. This is a real cross-process demonstration; it is not a same-process simulation. It remains a test of the user-scope DPAPI property, not production journal integration.
+
+
+## 2026-11-27 FILE_ID_INFO and separate-process DPAPI qualification
+
+The latest identity/journal primitive code commit is `fc479378a818bc759f298361c6a298e6c143118e`. Dedicated Windows Server 2025 run [46024410650](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/46024410650) completed **SUCCESS** and independently verified:
+
+- Eight new CNG-generated execution identifiers and zero-capability AppContainer profiles.
+- Eight real suspended child processes; before resume, each process token reported AppContainer=1, the exact expected package SID, Low IL RID `0x1000`, and zero capability groups.
+- All eight profiles passed delete -> fresh recreation -> final delete.
+- The strict v2 parser accepted the canonical record and rejected unsupported version, truncation, trailing bytes, profile length overflow, missing volume identity, all-zero 128-bit FILE_ID_128, empty execution ID, malformed AppContainer SID, descriptor count/length mismatch and unsupported policy version.
+- The canonical fixture is 279 bytes and stores a 64-bit volume serial plus full 128-bit FILE_ID_128, matching the Windows FILE_ID_INFO shape.
+- A separate PowerShell process running under the same Windows user minted a different valid DPAPI envelope with the same public optional entropy. The test process decrypted the child-generated envelope and matched the exact alternate payload. This demonstrates a real cross-process same-user writer: CurrentUser DPAPI does not authenticate one process as the unique writer.
+
+The frozen M1-M6 baseline passed 83/83 on the latest workflow head `cb0551dd1d272deb3c12aab9b5131cc3fb6ed2fb` in run [46024435843](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/46024435843).
+
+The full Stage 7A combined workflow [46024435792](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/46024435792) had passed checkout and source-encoding and remained in its native combined test step at the last status check. It includes the new AppContainer-originated DPAPI characterization in `SandboxProbe.ps1`; the parent harness attempts to decrypt any sandbox-created envelope using the broker's CurrentUser context. This run's final result is required before classifying that adversarial boundary.
