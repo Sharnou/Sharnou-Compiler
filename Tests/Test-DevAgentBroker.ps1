@@ -350,9 +350,9 @@ try {
             }
         }
     }
-    $iatEnd = ($iatRanges | Measure-Object -Property End -Maximum).Maximum
-    if ($iatEnd -ne 0x330 -or -not $compilerSource.Contains('Value 0x2C0')) {
-        throw "Import Address Table extent must include the final zero thunk through offset 0x330; actual end=$('{0:X}' -f $iatEnd)."
+    $iatEnd = [int](($iatRanges | Measure-Object -Property End -Maximum).Maximum)
+    if ($iatEnd -ne 0x360 -or -not $compilerSource.Contains('Value 0x2F0')) {
+        throw ("Import Address Table extent must include every final zero thunk through 0x360; expected=0x360 actual=0x{0:X}." -f $iatEnd)
     }
     Write-Host 'PASS: import lookup and IAT arrays are disjoint, including each module terminator' -ForegroundColor Green
 
@@ -367,7 +367,10 @@ try {
         'TargetRva ([UInt32]0x32F0)', # GetSecurityDescriptorLength
         'TargetRva ([UInt32]0x32F8)', # IsValidSecurityDescriptor
         'TargetRva ([UInt32]0x3318)', # MoveFileExA
-        'TargetRva ([UInt32]0x3320)'  # FlushFileBuffers
+        'TargetRva ([UInt32]0x3320)', # FlushFileBuffers
+        'TargetRva ([UInt32]0x3330)', # BCryptGenRandom
+        'TargetRva ([UInt32]0x3340)', # DeleteAppContainerProfile
+        'TargetRva ([UInt32]0x3350)'  # EqualSid
     )
     foreach ($expectedCall in $expectedHelperIatCalls) {
         if (-not $compilerSource.Contains($expectedCall)) {
