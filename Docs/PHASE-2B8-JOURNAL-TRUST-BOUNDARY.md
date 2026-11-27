@@ -1,6 +1,6 @@
 # Phase 2B.8 - Journal Protection Trust Boundary
 
-**Status:** DESIGN GATE - DPAPI PRIMITIVE QUALIFIED; PRODUCTION WRITER AUTHENTICATION NOT APPROVED  
+**Status:** DESIGN GATE - DPAPI LIMITATION QUALIFIED; SIGNED ENVELOPE TEST FIXTURE ADDED; PRODUCTION WRITER AUTHENTICATION NOT IMPLEMENTED  
 **Date:** 2026-11-27  
 **Applies to:** native DevAgent ACL journal, profile metadata and crash recovery.
 
@@ -73,3 +73,20 @@ The outer journal must be written to an exclusive temporary file, completely wri
 The Windows primitive tests are green on the exact implementation branch at the time of the recorded evidence. The native broker still uses the stable shared AppContainer profile and version-1 ACL journal. No production DPAPI journal, per-execution profile creation, authenticated profile cleanup, or crash-recovery changes have been made.
 
 **Gate:** select and approve a real writer-authentication trust anchor before changing the native broker journal format or using persisted identity metadata for privileged cleanup.
+
+## 7. Signed-envelope qualification boundary
+
+The follow-on test fixture defines an outer signed envelope independently of DPAPI:
+
+- 8-byte magic `SHASIG1!`, format version 1 and algorithm identifier 1.
+- A 32-byte key identifier equal to SHA-256 of the pinned CNG `GenericPublicBlob`.
+- A bounded payload length (80..16384 bytes) and fixed 384-byte signature length.
+- The exact version-2 journal payload bytes.
+- A 3072-bit RSA-PSS/SHA-256 signature over the fixed envelope header and payload, prefixed by the domain separator `Sharnou.DevAgent.AuthenticatedJournal.Signature.v1\0`.
+
+The key identifier, format, algorithm, payload length and signature length are validated as bounded framing. The verifier then checks the key identifier against an independently supplied pinned public key, verifies the signature over the complete header and payload, and only after success invokes the inner strict journal parser. A trusted signature over a malformed inner record is still rejected by the inner parser. A different same-user test key is rejected because its public-key identifier is not in the trusted pin set.
+
+This is a test contract, not a production authentication authority. The signing private key in the fixture is ephemeral and test-scoped. It does not prove a machine-scope non-exportable CNG key, the service SID's private-operation ACL, service startup/key-loss behavior, key rotation, signed journal persistence, service-owned transaction semantics, or secure IPC. Do not treat it as authorization for profile deletion or ACL recovery.
+
+The current version-2 payload fixture remains intentionally incomplete for production: the service record must additionally bind the canonical final workspace path, fixed tool identifier and SHA-256, transaction state, monotonic transition sequence and all service policy fields. Native descriptor validation and opened-handle workspace identity comparison are also required. Those fields and semantic checks must be completed in the service-owned record implementation before recovery is enabled.
+
