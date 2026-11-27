@@ -3001,12 +3001,14 @@ function Emit-DevRunTool {
 
     # Rebuild this path because outputPathSlot held the temporary ACL journal name.
     Emit-DevBrokerBuildWorkspacePath -RootSlot $workspaceRootSlot -RootLengthSlot $rootLengthSlot -SuffixItem $captureSuffixItem -SuffixLength $captureSuffixLength -DestinationSlot $outputPathSlot
+    Emit-DevBrokerDebugMarker -Marker 'MAIN:capture-path-built' -HandleSlot ($scratch + 0xFB0) -WrittenSlot ($scratch + 0xFB8)
 
     # Create a new exclusive capture file before launch. CREATE_NEW cannot reopen an old
     # reparse point or hard link; the held non-inheritable handle is reused for persistence.
     Emit-LeaRaxFrame -SlotPosition $outputPathSlot
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1))
     Emit-Win64CallIat -TargetRva ([UInt32]0x3310) -StackArguments @() # DeleteFileA; stale files are removed only before CREATE_NEW
+    Emit-DevBrokerDebugMarker -Marker 'MAIN:stale-capture-deleted' -HandleSlot ($scratch + 0xFB0) -WrittenSlot ($scratch + 0xFB8)
     Emit-LeaRaxFrame -SlotPosition $outputPathSlot
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1, 0xBA, 0x80, 0x00, 0x00, 0x40, 0x45, 0x33, 0xC0, 0x45, 0x33, 0xC9))
     Emit-Win64CallIat -TargetRva ([UInt32]0x30A0) -StackArguments @(
@@ -3014,6 +3016,7 @@ function Emit-DevRunTool {
         @{ Kind = 'Immediate'; Value = 0x00200080 }, # OPEN_REPARSE_POINT | FILE_ATTRIBUTE_NORMAL
         @{ Kind = 'Immediate'; Value = 0 }
     ) # CreateFileA(captured-output.bin), share mode = 0
+    Emit-DevBrokerDebugMarker -Marker 'MAIN:capture-created' -HandleSlot ($scratch + 0xFB0) -WrittenSlot ($scratch + 0xFB8)
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x83, 0xF8, 0xFF))
     Emit-JumpConditional -ConditionCode 0x84 -Label $outputFail
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x85, 0xC0))
