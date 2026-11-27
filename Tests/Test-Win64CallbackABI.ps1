@@ -34,7 +34,7 @@ function Convert-RvaToRawOffset {
 
 try {
     [IO.File]::WriteAllText($source, "sh_win64_callback_abi_probe();" + [Environment]::NewLine, $encoding)
-    & $compiler -Source $source -Output $output
+    & $compiler -Source $source -Output $output -EnableWin64CallbackTests
     if (-not (Test-Path -LiteralPath $output -PathType Leaf)) {
         throw 'Sharnou compiler did not produce the Win64 callback ABI probe executable.'
     }
