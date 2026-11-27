@@ -14,6 +14,7 @@ if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) {
 if (-not ('Sharnou.DevAgentExecutionIdentityNative' -as [type])) {
     Add-Type -TypeDefinition @'
 using System;
+using System.Collections.Generic;
 using System.ComponentModel;
 using System.Runtime.InteropServices;
 using System.Security.Principal;
@@ -296,6 +297,19 @@ namespace Sharnou
             public uint dwThreadId;
         }
 
+        [DllImport("userenv.dll", EntryPoint = "CreateEnvironmentBlock",
+            ExactSpelling = true, SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool CreateEnvironmentBlock(
+            out IntPtr environmentBlock,
+            IntPtr token,
+            [MarshalAs(UnmanagedType.Bool)] bool inherit);
+
+        [DllImport("userenv.dll", EntryPoint = "DestroyEnvironmentBlock",
+            ExactSpelling = true, SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool DestroyEnvironmentBlock(IntPtr environmentBlock);
+
         [DllImport("kernel32.dll", EntryPoint = "InitializeProcThreadAttributeList",
             ExactSpelling = true, SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]
@@ -430,20 +444,59 @@ namespace Sharnou
                 string systemDirectory = Environment.SystemDirectory;
                 string application = System.IO.Path.Combine(systemDirectory, "cmd.exe");
 
-                // Win32 error 203 is the required regression here: an empty
-                // Unicode environment is rejected by this Windows process-start
-                // path. Supply a deterministic allowlist, not lpEnvironment=NULL.
-                string systemRoot = Environment.GetEnvironmentVariable("SystemRoot");
-                if (String.IsNullOrEmpty(systemRoot))
-                    throw new InvalidOperationException("SystemRoot is required to build the explicit child environment.");
+                // Seed from the OS-generated environment with inheritance disabled,
+                // then copy only fixed policy-owned values into a new bounded block.
+                // Never pass the original block or inherit arbitrary runner variables.
+                IntPtr templateEnvironment = IntPtr.Zero;
+                if (!CreateEnvironmentBlock(out templateEnvironment, IntPtr.Zero, false))
+                    throw new Win32Exception(Marshal.GetLastWin32Error(), "CreateEnvironmentBlock(inherit=false) failed.");
+
+                string systemRoot = null;
+                try
+                {
+                    bool terminated = false;
+                    int offsetCharacters = 0;
+                    for (int entryIndex = 0; entryIndex < 32768; entryIndex++)
+                    {
+                        string entry = Marshal.PtrToStringUni(IntPtr.Add(templateEnvironment, checked(offsetCharacters * 2)));
+                        if (String.IsNullOrEmpty(entry))
+                        {
+                            terminated = true;
+                            break;
+                        }
+                        offsetCharacters = checked(offsetCharacters + entry.Length + 1);
+                        if (entry[0] == '=') continue; // discard hidden per-drive entries
+                        int separator = entry.IndexOf('=');
+                        if (separator <= 0) continue;
+                        string key = entry.Substring(0, separator);
+                        if (String.Equals(key, "SystemRoot", StringComparison.OrdinalIgnoreCase))
+                        {
+                            systemRoot = entry.Substring(separator + 1);
+                            break;
+                        }
+                    }
+                    if (systemRoot == null)
+                        throw new InvalidOperationException("CreateEnvironmentBlock did not provide SystemRoot.");
+                    if (!terminated)
+                        throw new InvalidOperationException("CreateEnvironmentBlock lacked a bounded double-NUL terminator.");
+                }
+                finally
+                {
+                    if (!DestroyEnvironmentBlock(templateEnvironment))
+                        throw new Win32Exception(Marshal.GetLastWin32Error(), "DestroyEnvironmentBlock failed.");
+                }
+
                 string[] allowedEnvironment = new string[] {
                     "ComSpec=" + application,
                     "PATH=" + systemDirectory,
+                    "SystemDrive=" + System.IO.Path.GetPathRoot(systemRoot).TrimEnd('\\'),
                     "SystemRoot=" + systemRoot,
                     "windir=" + systemRoot
                 };
                 Array.Sort(allowedEnvironment, StringComparer.OrdinalIgnoreCase);
                 string environmentText = String.Join("\0", allowedEnvironment) + "\0\0";
+                if (environmentText.Length > 32768)
+                    throw new InvalidOperationException("Explicit child environment exceeds the 32768-WCHAR policy bound.");
                 char[] environmentChars = environmentText.ToCharArray();
                 environment = Marshal.AllocHGlobal(checked(environmentChars.Length * 2));
                 for (int environmentIndex = 0; environmentIndex < environmentChars.Length; environmentIndex++)
