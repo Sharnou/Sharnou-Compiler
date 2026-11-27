@@ -3212,13 +3212,32 @@ function Emit-DevRunTool {
     Emit-JumpConditional -ConditionCode 0x84 -Label $tokenFail
 
     # The actual primary token must contain this execution's exact package SID,
-    # not merely any AppContainer SID with zero capabilities.
+    # not merely any AppContainer SID with zero capabilities. Probe the required
+    # TOKEN_APPCONTAINER_INFORMATION size instead of assuming a fixed ABI length.
     for ($i = 0; $i -lt 8; $i++) { Emit-StoreZero64Frame -SlotPosition ($tokenInformationSlot + ($i * 8)) }
     Emit-StoreZero64Frame -SlotPosition $tokenLengthSlot
     Emit-LoadRcxFrame -SlotPosition $childTokenSlot
-    Emit-Bytes -Bytes ([byte[]]@(0xBA, 0x1F, 0x00, 0x00, 0x00)) # TokenAppContainerSid = 31
+    Emit-Bytes -Bytes ([byte[]]@(0xBA, 0x1F, 0x00, 0x00, 0x00, 0x45, 0x33, 0xC0, 0x45, 0x33, 0xC9))
+    Emit-Win64CallIat -TargetRva ([UInt32]0x32D8) -StackArguments @(
+        @{ Kind = 'FrameAddress'; SlotPosition = $tokenLengthSlot }
+    ) # GetTokenInformation(TokenAppContainerSid) sizing query
+    Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
+    Emit-JumpConditional -ConditionCode 0x85 -Label $tokenFail # sizing call must fail for zero-length output
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3268) -StackArguments @() # GetLastError
+    Emit-Bytes -Bytes ([byte[]]@(0x3D, 0x7A, 0x00, 0x00, 0x00)) # ERROR_INSUFFICIENT_BUFFER
+    Emit-JumpConditional -ConditionCode 0x85 -Label $tokenFail
+    Emit-LoadEaxFrame -SlotPosition $tokenLengthSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x3D, 0x08, 0x00, 0x00, 0x00))
+    Emit-JumpConditional -ConditionCode 0x82 -Label $tokenFail # require at least a PSID pointer
+    Emit-Bytes -Bytes ([byte[]]@(0x3D, 0x40, 0x00, 0x00, 0x00))
+    Emit-JumpConditional -ConditionCode 0x87 -Label $tokenFail # bounded stack buffer = 64 bytes
+
+    Emit-LoadRcxFrame -SlotPosition $childTokenSlot
+    Emit-Bytes -Bytes ([byte[]]@(0xBA, 0x1F, 0x00, 0x00, 0x00))
     Emit-LeaRaxFrame -SlotPosition $tokenInformationSlot
-    Emit-Bytes -Bytes ([byte[]]@(0x49, 0x89, 0xC0, 0x41, 0xB9, 0x08, 0x00, 0x00, 0x00))
+    Emit-Bytes -Bytes ([byte[]]@(0x49, 0x89, 0xC0))
+    Emit-LoadEaxFrame -SlotPosition $tokenLengthSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x41, 0x89, 0xC1))
     Emit-Win64CallIat -TargetRva ([UInt32]0x32D8) -StackArguments @(
         @{ Kind = 'FrameAddress'; SlotPosition = $tokenLengthSlot }
     ) # GetTokenInformation(TOKEN_APPCONTAINER_INFORMATION)
