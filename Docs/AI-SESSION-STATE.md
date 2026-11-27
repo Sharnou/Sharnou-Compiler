@@ -2187,3 +2187,28 @@ Phase 2B.6 acceptance work:
 7. Pass same-head native ABI, M6 baseline, Stage 7A, AppContainer, ACL crash/recovery, environment, output, loader and cleanup tests.
 
 The existing PR #24 candidate contains real native AppContainer/ACL/job/pipe/journal emitter code but is not production-accepted while crash recovery fails. No model-facing or autonomous execution permission is enabled.
+
+
+## Phase 2B.8 implementation start - 2026-11-27
+
+### Reconciliation
+
+- Current PR #24 exact head: `6344632746cd0666025a0beb0d31f4752d6480f6` on `devagent-acl-transaction-recovery-20261126`.
+- Exact-head Windows run [46003358917](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/46003358917) passed Stage 7A 24/24, Runtime ABI, native broker phase-1, targeted crash recovery, exact DACL/mandatory-label restoration, host/child integrity separation, malformed-journal rejection, abandoned-journal recovery and combined result. Companion run [46003358930](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/46003358930) passed the M1-M6 baseline 83/83.
+- PR #24 remains a large diverged candidate and was not changed, merged or rebased. Phase 2B.7 does not have a separately recorded/accepted complete lifecycle implementation in the reviewed candidate docs; do not mark it complete by inference. PR #24 is treated as the Phase 2B.6 broker/journal integration parent.
+
+### Code-bearing Phase 2B.8 increment
+
+- Isolated stacked branch: `phase-2b8-identity-profile-qualification-20261127`, based exactly on PR #24 head above.
+- Draft implementation PR #28 targets PR #24's branch; it is separate from PR #24 and the Phase 2B.8 specification PR #26.
+- Added `Tests/Test-DevAgentExecutionIdentity.ps1` and integrated it into root `Test.ps1`.
+- The fixture calls CNG `BCryptGenRandom` using the system-preferred RNG, creates uniquely named zero-capability AppContainer profiles, checks SID/name derivation, rejects pre-existing profile adoption, and verifies deletion by successful recreation followed by deletion.
+- Added `Docs/PHASE-2B8-CRASH-SAFE-EXECUTION-LIFECYCLE.md` and `Docs/PHASE-2B8-IMPLEMENTATION-LOG.md` to the stacked branch.
+
+### Evidence and limitations
+
+- The new identity fixture is NOT YET WINDOWS-CI-VERIFIED; no assistant-executed Windows test is available in this session. Do not call the increment passed until an exact-head Windows run reports the fixture results.
+- This is a test-only API qualification increment. The compiler-emitted broker still uses the stable profile identity; no production broker code, journal format, process launch behavior, or generated executable was changed.
+- Before profile name metadata is consumed during restart recovery, design and validate an authenticated journal/key boundary. Do not add unauthenticated profile names to a journal and use them for profile deletion.
+- Clean Unicode environment, separate stdout/stderr, child DLL policy, comprehensive crash cut-points and concurrency acceptance remain open.
+- Model-facing process execution remains DISABLED. Phase 2B.8 remains NOT SECURITY ACCEPTED.
