@@ -382,6 +382,7 @@ namespace Sharnou
             IntPtr attributeList = IntPtr.Zero;
             IntPtr attributeBuffer = IntPtr.Zero;
             IntPtr environment = IntPtr.Zero;
+            IntPtr securityCapabilitiesPtr = IntPtr.Zero;
             IntPtr childToken = IntPtr.Zero;
             PROCESS_INFORMATION process = new PROCESS_INFORMATION();
             bool childCreated = false;
@@ -415,20 +416,16 @@ namespace Sharnou
                 securityCapabilities.Capabilities = IntPtr.Zero;
                 securityCapabilities.CapabilityCount = 0;
                 securityCapabilities.Reserved = 0;
-                IntPtr securityCapabilitiesPtr = Marshal.AllocHGlobal(Marshal.SizeOf(typeof(SECURITY_CAPABILITIES)));
-                try
-                {
-                    Marshal.StructureToPtr(securityCapabilities, securityCapabilitiesPtr, false);
-                    IntPtr securityCapabilitiesAttribute = new IntPtr(0x00020009); // PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES
-                    if (!UpdateProcThreadAttribute(
-                        attributeList, 0, securityCapabilitiesAttribute, securityCapabilitiesPtr,
-                        (UIntPtr)Marshal.SizeOf(typeof(SECURITY_CAPABILITIES)), IntPtr.Zero, IntPtr.Zero))
-                        throw new Win32Exception(Marshal.GetLastWin32Error(), "Security-capabilities process attribute failed.");
-                }
-                finally
-                {
-                    Marshal.FreeHGlobal(securityCapabilitiesPtr);
-                }
+                // UpdateProcThreadAttribute retains the supplied value pointer until
+                // CreateProcessW consumes the attribute list. Keep this allocation
+                // alive through process creation; freeing it immediately is unsafe.
+                securityCapabilitiesPtr = Marshal.AllocHGlobal(Marshal.SizeOf(typeof(SECURITY_CAPABILITIES)));
+                Marshal.StructureToPtr(securityCapabilities, securityCapabilitiesPtr, false);
+                IntPtr securityCapabilitiesAttribute = new IntPtr(0x00020009); // PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES
+                if (!UpdateProcThreadAttribute(
+                    attributeList, 0, securityCapabilitiesAttribute, securityCapabilitiesPtr,
+                    new UIntPtr((uint)Marshal.SizeOf(typeof(SECURITY_CAPABILITIES))), IntPtr.Zero, IntPtr.Zero))
+                    throw new Win32Exception(Marshal.GetLastWin32Error(), "Security-capabilities process attribute failed.");
 
                 // A two-WCHAR empty block is explicit and terminated; do not inherit
                 // the broker/test runner environment into this identity probe.
@@ -520,6 +517,7 @@ namespace Sharnou
                 if (process.hThread != IntPtr.Zero) CloseHandle(process.hThread);
                 if (process.hProcess != IntPtr.Zero) CloseHandle(process.hProcess);
                 if (attributeListInitialized) DeleteProcThreadAttributeList(attributeList);
+                if (securityCapabilitiesPtr != IntPtr.Zero) Marshal.FreeHGlobal(securityCapabilitiesPtr);
                 if (attributeBuffer != IntPtr.Zero) Marshal.FreeHGlobal(attributeBuffer);
                 if (environment != IntPtr.Zero) Marshal.FreeHGlobal(environment);
                 if (packageSid != IntPtr.Zero) FreeSid(packageSid);
