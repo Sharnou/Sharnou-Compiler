@@ -670,7 +670,8 @@ try {
     foreach ($recoveryDiagnostic in $recoveryLines) {
         $diagnosticText = [string]$recoveryDiagnostic
         if ($diagnosticText.StartsWith('ACL_RECOVERY_NATIVE_PATH|', [StringComparison]::Ordinal) -or
-            $diagnosticText.StartsWith('ACL_RECOVERY_GETATTR|', [StringComparison]::Ordinal)) {
+            $diagnosticText.StartsWith('ACL_RECOVERY_GETATTR|', [StringComparison]::Ordinal) -or
+            $diagnosticText.StartsWith('ACL_RECOVERY_TOKEN|', [StringComparison]::Ordinal)) {
             Write-Host ('DEVAGENT_RECOVERY_DIAGNOSTIC|' + $diagnosticText)
         }
     }
