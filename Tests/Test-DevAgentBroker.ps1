@@ -699,6 +699,11 @@ try {
             $journalHash = (Get-FileHash -LiteralPath $journalPath -Algorithm SHA256).Hash
             Write-Host ("ACL_RECOVERY_JOURNAL|attributes={0}|bytes={1}|magic={2}|version={3}|root={4}|build={5}|broker={6}|sha256={7}" -f
                 $journalInfo.Attributes, $journalBytes.Length, $journalMagicText, $journalVersion, $journalRootLength, $journalBuildLength, $journalBrokerLength, $journalHash)
+            $journalSecurity = Get-Acl -LiteralPath $journalPath
+            $journalSecuritySddl = $journalSecurity.GetSecurityDescriptorSddlForm([Security.AccessControl.AccessControlSections]::Access)
+            $currentIdentity = [Security.Principal.WindowsIdentity]::GetCurrent()
+            Write-Host ("ACL_RECOVERY_JOURNAL_SECURITY|owner={0}|identity={1}|sddl={2}" -f
+                $journalSecurity.Owner, $currentIdentity.User.Value, $journalSecuritySddl)
         }
         catch {
             Write-Host ("ACL_RECOVERY_JOURNAL_READ_FAIL|{0}" -f $_.Exception.Message)
