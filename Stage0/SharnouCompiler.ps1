@@ -1571,9 +1571,50 @@ function Emit-DevBrokerWriteAclJournal {
     Mark-CodeLabel -Label $done
 }
 
+function Emit-DevBrokerWriteDiagnosticPath {
+    param([int] $PathSlot, [int] $PathLengthSlot)
+    $scratch = [int]$script:ActiveContext.ScratchPosition
+    $stdoutHandleSlot = $scratch + 0xD60
+    $bytesWrittenSlot = $scratch + 0xD68
+    $prefixItem = Register-DataConstant -Value 'ACL_RECOVERY_NATIVE_PATH|'
+    $newlineItem = Register-ByteDataConstant -Key 'ACL_RECOVERY_NATIVE_PATH_NEWLINE' -Bytes ([byte[]]@(13, 10))
+    $skip = New-UniqueLabel -Prefix 'dev_acl_recovery_path_diagnostic_skip'
+
+    Emit-Bytes -Bytes ([byte[]]@(0xB9, 0xF5, 0xFF, 0xFF, 0xFF)) # STD_OUTPUT_HANDLE
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3070) -StackArguments @() # GetStdHandle
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x83, 0xF8, 0xFF))
+    Emit-JumpConditional -ConditionCode 0x84 -Label $skip
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x85, 0xC0))
+    Emit-JumpConditional -ConditionCode 0x84 -Label $skip
+    Emit-StoreRaxFrame -SlotPosition $stdoutHandleSlot
+
+    Emit-LoadRcxFrame -SlotPosition $stdoutHandleSlot
+    Emit-DataAddress -DataItem $prefixItem
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC2, 0x41, 0xB8))
+    Emit-I32 -Value ([int]($prefixItem.Bytes.Length - 1))
+    Emit-LeaR9Frame -SlotPosition $bytesWrittenSlot
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3078) -StackArguments @(@{ Kind = 'Immediate'; Value = 0 }) # WriteFile
+
+    Emit-LoadRcxFrame -SlotPosition $stdoutHandleSlot
+    Emit-LeaRaxFrame -SlotPosition $PathSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC2))
+    Emit-LoadEaxFrame -SlotPosition $PathLengthSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x41, 0x89, 0xC0)) # R8D = path length
+    Emit-LeaR9Frame -SlotPosition $bytesWrittenSlot
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3078) -StackArguments @(@{ Kind = 'Immediate'; Value = 0 }) # WriteFile
+
+    Emit-LoadRcxFrame -SlotPosition $stdoutHandleSlot
+    Emit-DataAddress -DataItem $newlineItem
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC2, 0x41, 0xB8, 0x02, 0x00, 0x00, 0x00))
+    Emit-LeaR9Frame -SlotPosition $bytesWrittenSlot
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3078) -StackArguments @(@{ Kind = 'Immediate'; Value = 0 }) # WriteFile
+    Mark-CodeLabel -Label $skip
+}
+
 function Emit-DevBrokerRecoverAclJournal {
     param(
         [int] $JournalPathSlot,
+        [int] $PathLengthSlot,
         [int] $TempPathSlot,
         [int] $WorkspaceRootSlot,
         [int] $BuildPathSlot,
@@ -1627,9 +1668,10 @@ function Emit-DevBrokerRecoverAclJournal {
     Emit-JumpConditional -ConditionCode 0x84 -Label $done
     Emit-Bytes -Bytes ([byte[]]@(0x3D, 0x03, 0x00, 0x00, 0x00))
     Emit-JumpConditional -ConditionCode 0x84 -Label $done
-    # Preserve the original read-open error, then probe the same path with
-    # zero desired access. This distinguishes path resolution from read access.
+    # Preserve the original read-open error and emit the exact native path
+    # to redirected stdout before the metadata-only probe.
     Emit-StoreEaxFrame -SlotPosition $expectedSizeSlot
+    Emit-DevBrokerWriteDiagnosticPath -PathSlot $JournalPathSlot -PathLengthSlot $PathLengthSlot
     Emit-LeaRaxFrame -SlotPosition $JournalPathSlot
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1, 0x33, 0xD2, 0x41, 0xB8, 0x01, 0x00, 0x00, 0x00, 0x45, 0x33, 0xC9))
     Emit-Win64CallIat -TargetRva ([UInt32]0x30A0) -StackArguments @(
@@ -2024,6 +2066,7 @@ function Emit-DevRunTool {
     $journalReadCountSlot = $scratch + 0xE70
     $transactionActiveSlot = $scratch + 0xE78
     $journalPathSlot = $pathScratchSlot
+    $journalPathLengthSlot = $scratch + 0xD5C
     $journalTempPathSlot = $outputPathSlot
 
     $jobHandleSlot = Get-TempSlotPosition -Depth ($BaseDepth + 2)
@@ -2322,7 +2365,11 @@ function Emit-DevRunTool {
     Emit-Jump -Label $mutexReady # WAIT_ABANDONED grants ownership; recover before any new child
 
     Mark-CodeLabel -Label $mutexReady
-    Emit-DevBrokerRecoverAclJournal -JournalPathSlot $journalPathSlot -TempPathSlot $journalTempPathSlot -WorkspaceRootSlot $workspaceRootSlot -BuildPathSlot $buildPathSlot -BrokerDirectorySlot $brokerDirectorySlot -JournalHandleSlot $journalHandleSlot -JournalReadCountSlot $journalReadCountSlot -HeaderSlot $journalHeaderSlot -JournalBufferSlot $journalBufferSlot -RootLengthSlot $rootDescriptorLengthSlot -BuildLengthSlot $buildDescriptorLengthSlot -BrokerLengthSlot $brokerDescriptorLengthSlot -RootDescriptorSlot $rootDescriptorSlot -BuildDescriptorSlot $buildDescriptorSlot -BrokerDescriptorSlot $brokerDescriptorSlot -FailureLabel $aclRecoveryFail
+    Emit-LoadEaxFrame -SlotPosition $rootLengthSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x05))
+    Emit-I32 -Value $journalSuffixLength
+    Emit-StoreEaxFrame -SlotPosition $journalPathLengthSlot
+    Emit-DevBrokerRecoverAclJournal -JournalPathSlot $journalPathSlot -PathLengthSlot $journalPathLengthSlot -TempPathSlot $journalTempPathSlot -WorkspaceRootSlot $workspaceRootSlot -BuildPathSlot $buildPathSlot -BrokerDirectorySlot $brokerDirectorySlot -JournalHandleSlot $journalHandleSlot -JournalReadCountSlot $journalReadCountSlot -HeaderSlot $journalHeaderSlot -JournalBufferSlot $journalBufferSlot -RootLengthSlot $rootDescriptorLengthSlot -BuildLengthSlot $buildDescriptorLengthSlot -BrokerLengthSlot $brokerDescriptorLengthSlot -RootDescriptorSlot $rootDescriptorSlot -BuildDescriptorSlot $buildDescriptorSlot -BrokerDescriptorSlot $brokerDescriptorSlot -FailureLabel $aclRecoveryFail
 
     # Recovery has restored the pre-run descriptors, so descendant path checks
     # can now execute without being blocked by a crashed AppContainer's stale
