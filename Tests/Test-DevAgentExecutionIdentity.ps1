@@ -470,10 +470,7 @@ namespace Sharnou
                         if (separator <= 0) continue;
                         string key = entry.Substring(0, separator);
                         if (String.Equals(key, "SystemRoot", StringComparison.OrdinalIgnoreCase))
-                        {
                             systemRoot = entry.Substring(separator + 1);
-                            break;
-                        }
                     }
                     if (systemRoot == null)
                         throw new InvalidOperationException("CreateEnvironmentBlock did not provide SystemRoot.");
