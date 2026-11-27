@@ -3073,6 +3073,7 @@ function Emit-DevRunTool {
     Emit-StoreZero64Frame -SlotPosition ($securityCapabilitiesSlot + 8) # Capability SID_AND_ATTRIBUTES pointer = NULL
     Emit-StoreBits32Frame -SlotPosition ($securityCapabilitiesSlot + 16) -Value 0 # CapabilityCount
     Emit-StoreBits32Frame -SlotPosition ($securityCapabilitiesSlot + 20) -Value 0 # Reserved
+    Emit-DevBrokerDebugMarker -Marker 'CAPTURE:security-capabilities-ready' -HandleSlot ($scratch + 0xFB0) -WrittenSlot ($scratch + 0xFB8)
 
     # Create inherited anonymous-pipe endpoints and a NUL standard-input handle.
     Emit-StoreBits32Frame -SlotPosition $pipeSecuritySlot -Value 24 # sizeof(SECURITY_ATTRIBUTES)
@@ -3162,6 +3163,7 @@ function Emit-DevRunTool {
     ) # UpdateProcThreadAttribute(SECURITY_CAPABILITIES)
     Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
     Emit-JumpConditional -ConditionCode 0x84 -Label $attributeFail
+    Emit-DevBrokerDebugMarker -Marker 'CAPTURE:security-capabilities-added' -HandleSlot ($scratch + 0xFB0) -WrittenSlot ($scratch + 0xFB8)
 
     # The inherited-handle allowlist contains exactly NUL stdin and the pipe writer.
     Emit-LoadRaxFrame -SlotPosition $nulHandleSlot
@@ -3178,6 +3180,7 @@ function Emit-DevRunTool {
     ) # UpdateProcThreadAttribute(HANDLE_LIST)
     Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
     Emit-JumpConditional -ConditionCode 0x84 -Label $attributeFail
+    Emit-DevBrokerDebugMarker -Marker 'CAPTURE:handle-list-added' -HandleSlot ($scratch + 0xFB0) -WrittenSlot ($scratch + 0xFB8)
 
     # STARTUPINFOEXA: stdin=NUL, stdout=stderr=one pipe writer, exact attribute list.
     for ($i = 0; $i -lt 14; $i++) { Emit-StoreZero64Frame -SlotPosition ($startupSlot + ($i * 8)) }
@@ -3211,6 +3214,7 @@ function Emit-DevRunTool {
     Emit-Win64CallIat -TargetRva ([UInt32]0x3198) -StackArguments @() # SetInformationJobObject
     Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
     Emit-JumpConditional -ConditionCode 0x84 -Label $jobConfigFail
+    Emit-DevBrokerDebugMarker -Marker 'CAPTURE:job-configured' -HandleSlot ($scratch + 0xFB0) -WrittenSlot ($scratch + 0xFB8)
 
     # Create the restricted-token/AppContainer child suspended; only the explicit handle list is inherited.
     Emit-LoadRaxFrame -SlotPosition $restrictedTokenSlot
