@@ -221,31 +221,27 @@ function New-SharnouTrackedEnvironmentBlock {
     [Array]::Sort($ordered,[StringComparer]::OrdinalIgnoreCase)
     $seenNames = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
     foreach ($entry in $ordered) {
+        if ([string]::IsNullOrEmpty($entry)) { throw 'Environment block contains an empty entry.' }
+        if ($entry.IndexOf([char]0) -ge 0) { throw 'Environment block entry contains an embedded NUL.' }
         if ($entry.StartsWith('=')) {
-            # CreateProcessW supports the special per-drive current-directory
-            # variables (for example, =C:=C:\Windows\System32). They must be
-            # retained explicitly when a custom environment block is supplied.
-            if ($entry -notmatch '^=[A-Za-z]:=.+
-    $blockText = ($ordered -join [char]0) + [char]0 + [char]0
-    $bytes = [Text.Encoding]::Unicode.GetBytes($blockText)
-    if ($bytes.Length -lt 4 -or $bytes.Length -gt 32768 -or $bytes[$bytes.Length-1] -ne 0 -or $bytes[$bytes.Length-2] -ne 0 -or $bytes[$bytes.Length-3] -ne 0 -or $bytes[$bytes.Length-4] -ne 0) {
-        throw 'Environment block is not a bounded UTF-16 double-NUL-terminated block.'
-    }
-    $pointer = [Runtime.InteropServices.Marshal]::AllocHGlobal($bytes.Length)
-    if ($pointer -eq [IntPtr]::Zero) { throw 'AllocHGlobal returned NULL for the environment block.' }
-    [Runtime.InteropServices.Marshal]::Copy($bytes,0,$pointer,$bytes.Length)
-    $Allocations.Add($pointer)
-    return $pointer
-}
-) { throw "Invalid per-drive environment entry: $entry" }
+            # Special per-drive current-directory entries have the form =C:=C:\path.
+            # They sort before ordinary names and must be preserved for CreateProcessW.
+            if ($entry.Length -lt 6 -or $entry[2] -ne ':' -or $entry[3] -ne '=') {
+                throw 'Invalid per-drive current-directory environment entry.'
+            }
+            $driveCode = [int][char]::ToUpperInvariant($entry[1])
+            if ($driveCode -lt 65 -or $driveCode -gt 90) { throw 'Invalid drive letter in environment entry.' }
             $variableName = $entry.Substring(0,3)
+            $valueStart = 4
         }
         else {
-            if ($entry -notmatch '^[^=]+=') { throw "Invalid environment block entry: $entry" }
-            $variableName = $entry.Substring(0,$entry.IndexOf('='))
+            $separator = $entry.IndexOf('=')
+            if ($separator -le 0) { throw "Invalid environment block entry: $entry" }
+            $variableName = $entry.Substring(0,$separator)
+            $valueStart = $separator + 1
         }
+        if ($valueStart -ge $entry.Length) { throw "Environment variable has an empty value: $variableName" }
         if (-not $seenNames.Add($variableName)) { throw "Duplicate environment variable name: $variableName" }
-        if ($entry.IndexOf([char]0) -ge 0) { throw 'Environment block entry contains an embedded NUL.' }
     }
     $blockText = ($ordered -join [char]0) + [char]0 + [char]0
     $bytes = [Text.Encoding]::Unicode.GetBytes($blockText)

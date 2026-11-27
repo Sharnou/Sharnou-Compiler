@@ -263,9 +263,24 @@ function Invoke-Phase2B4Trial {
         }
 
         $driveRoot = [System.IO.Path]::GetPathRoot($script:SystemDirectory)
-        if ($driveRoot -notmatch '^[A-Za-z]:\\
+        if ($driveRoot.Length -ne 3 -or $driveRoot[1] -ne ':' -or [char]$driveRoot[2] -ne [char]92) {
+            throw 'The fixed System32 directory is not on a canonical local drive.'
+        }
+        if ([string]::IsNullOrWhiteSpace($env:SystemRoot)) { throw 'SystemRoot is missing from the supervisor environment.' }
+        $driveCurrentDirectoryEntry = ('=' + $driveRoot.Substring(0,2) + '=' + $script:SystemDirectory)
+        $environmentEntries = @(
+            $driveCurrentDirectoryEntry,
+            ('SystemRoot=' + $env:SystemRoot),
+            ('WINDIR=' + $env:SystemRoot),
+            ('PATH=' + $script:SystemDirectory),
+            ('TEMP=' + $script:TempDirectory),
+            ('TMP=' + $script:TempDirectory)
+        )
         foreach ($entry in $environmentEntries) {
-            if ($entry -match '^(SystemRoot|WINDIR|PATH|TEMP|TMP)= { throw 'The explicit child environment contains an empty required value.' }
+            $separator = if ($entry.StartsWith('=')) { $entry.IndexOf('=',3) } else { $entry.IndexOf('=') }
+            if ($separator -lt 1 -or $separator -eq ($entry.Length - 1)) {
+                throw 'The explicit child environment contains a malformed or empty value.'
+            }
         }
         $environment = New-SharnouTrackedEnvironmentBlock -Entries $environmentEntries -Allocations $allocations
 
