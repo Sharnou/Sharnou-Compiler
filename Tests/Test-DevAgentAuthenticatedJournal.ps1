@@ -314,6 +314,23 @@ $sidLength = [BitConverter]::ToUInt32($plaintext, $sidLengthOffset)
 $workspaceVolumeOffset = $sidLengthOffset + 4 + [int]$sidLength
 [BitConverter]::GetBytes([uint32]0).CopyTo($badWorkspaceIdentity, $workspaceVolumeOffset)
 $parserRejectCases.Add(@{ Name = 'missing workspace volume identity'; Bytes = $badWorkspaceIdentity })
+$emptyExecutionId = [byte[]]$plaintext.Clone()
+for ($i = 12; $i -lt 28; $i++) { $emptyExecutionId[$i] = 0 }
+$parserRejectCases.Add(@{ Name = 'empty execution identifier'; Bytes = $emptyExecutionId })
+$badPackageSid = [byte[]]$plaintext.Clone()
+$sidStart = $sidLengthOffset + 4
+$badPackageSid[$sidStart] = [byte][char]'X'
+$parserRejectCases.Add(@{ Name = 'malformed package SID'; Bytes = $badPackageSid })
+$descriptorCountOffset = $workspaceVolumeOffset + 12
+$badDescriptorCount = [byte[]]$plaintext.Clone()
+[BitConverter]::GetBytes([uint32]2).CopyTo($badDescriptorCount, $descriptorCountOffset)
+$parserRejectCases.Add(@{ Name = 'descriptor count mismatch'; Bytes = $badDescriptorCount })
+$badDescriptorLength = [byte[]]$plaintext.Clone()
+[BitConverter]::GetBytes([uint32]19).CopyTo($badDescriptorLength, ($descriptorCountOffset + 4))
+$parserRejectCases.Add(@{ Name = 'descriptor length below minimum'; Bytes = $badDescriptorLength })
+$badPolicyVersion = [byte[]]$plaintext.Clone()
+[BitConverter]::GetBytes([uint32]1).CopyTo($badPolicyVersion, ($badPolicyVersion.Length - 4))
+$parserRejectCases.Add(@{ Name = 'unsupported security policy version'; Bytes = $badPolicyVersion })
 
 foreach ($case in $parserRejectCases) {
     $rejected = $false
@@ -377,6 +394,23 @@ if ((Test-ByteSequence -Haystack $protected -Needle ([Text.Encoding]::ASCII.GetB
     (Test-ByteSequence -Haystack $protected -Needle ([Text.Encoding]::ASCII.GetBytes($packageSid)))) {
     throw 'Protected test envelope contains cleartext journal markers or identity metadata.'
 }
+
+# DPAPI user-scope protection does not prove which same-user process created
+# the record. This fixture deliberately demonstrates that another process in
+# the same user context can protect a different valid payload using public entropy.
+[byte[]]$sameUserForgedPayload = $plaintext.Clone()
+$sameUserForgedPayload[12] = [byte]($sameUserForgedPayload[12] -bxor 0x01)
+[Sharnou.DevAgentDpapiJournalNative]::ValidateCanonicalJournalV2($sameUserForgedPayload)
+[byte[]]$sameUserForgedEnvelope = [Sharnou.DevAgentDpapiJournalNative]::Protect($sameUserForgedPayload, $entropy)
+[byte[]]$sameUserForgedRoundTrip = $null
+$sameUserForgedError = 0
+if (-not [Sharnou.DevAgentDpapiJournalNative]::TryUnprotect($sameUserForgedEnvelope, $entropy, [ref]$sameUserForgedRoundTrip, [ref]$sameUserForgedError)) {
+    throw "Same-user DPAPI writer-boundary demonstration could not decrypt the forged envelope: $sameUserForgedError"
+}
+if (-not [Convert]::ToBase64String($sameUserForgedRoundTrip).Equals([Convert]::ToBase64String($sameUserForgedPayload), [StringComparison]::Ordinal)) {
+    throw 'Same-user DPAPI writer-boundary demonstration failed exact payload verification.'
+}
+Write-Host 'PASS: same-user process can mint a different valid DPAPI envelope with the public entropy; DPAPI is not writer-process authentication' -ForegroundColor Green
 
 $plainHash = [BitConverter]::ToString([Security.Cryptography.SHA256]::Create().ComputeHash($plaintext)).Replace('-', '')
 $envelopeHash = [BitConverter]::ToString([Security.Cryptography.SHA256]::Create().ComputeHash($protected)).Replace('-', '')
