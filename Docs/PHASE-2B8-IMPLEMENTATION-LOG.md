@@ -272,3 +272,23 @@ The emitted helper also preserves the caller's nonvolatile RSI and RDI registers
 Crash-time profile recovery remains disabled. The v1 workspace journal does not persist an authenticated execution/profile identity, and DPAPI CurrentUser is not a separate writer identity. The owner-approved service design is architecture approval only; the Windows authority service, protected CNG key, typed IPC, installation lifecycle and authenticated journal v2 remain unimplemented.
 
 **Disposition:** R3 normal execution identity and cleanup are implemented in the emitted native broker, but Phase 2B.8 remains **IMPLEMENTATION / NOT SECURITY ACCEPTED**. PR #29 remains draft and unmerged. Model-facing and autonomous process execution remain **DISABLED**.
+
+## R4 addendum - signed journal envelope qualification (2026-11-27)
+
+Starting point: Phase 2B.8 R3 PR #29 exact head `5be8faf1af2440accdb432862ee38a0a1b17ad5c`.
+
+Isolated branch: `phase-2b8-r4-signed-journal-qualification-20261127`.
+
+Code-bearing scope:
+- Adds a test-only RSA-3072 CNG signing fixture using RSA-PSS/SHA-256 and a domain-separated signed envelope.
+- Pins the verifier to an independently supplied CNG public-key blob; the key identifier is SHA-256 of that public blob.
+- Verifies bounded framing, exact envelope length, pinned key identity and signature before invoking the inner strict journal parser.
+- Adds negative cases for malformed envelope version/algorithm/lengths, truncation, trailing bytes, key substitution, payload/signature tampering and a trusted signature over a malformed inner record.
+- Does not add production service code, key provisioning, journal persistence, native broker journal migration, profile recovery or any model-facing process-execution capability.
+- The test key is ephemeral. This fixture does not prove non-exportability or service-SID key ACL enforcement.
+
+The existing v2 payload fixture is explicitly still incomplete as a production service record: canonical path, fixed tool identity/hash, transaction state and monotonic sequence, actual descriptor validation and opened-handle identity checks remain required before service-owned recovery can be implemented.
+
+Windows validation is pending on the final exact branch head. The Phase 2B.8 primitive, Stage 7A combined suite and frozen M1-M6 baseline must all pass on the same head before this test increment is called requalified.
+
+**Security disposition:** test-only envelope qualification; production authenticated journal and restart-time profile recovery remain BLOCKED. Model-facing/autonomous process execution remains DISABLED.
