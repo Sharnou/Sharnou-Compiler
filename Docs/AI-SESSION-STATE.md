@@ -978,3 +978,53 @@ Normal human review of PR #11 remains the integration decision; do not auto-merg
 - Existing tests do not explicitly prove Boolean function argument/return rejection while the Windows x64 function ABI remains integer-only. Add negative cases before any ABI extension.
 - Next 7B proposal (not accepted, not implemented): add four dynamic-variable-left AND/OR skip/evaluate cases, two Boolean function ABI rejection cases, one three-level nested-loop target case, and strengthen the four machine checks with a bounded rel32 decoder that validates each target lies on an expected instruction boundary inside .text. Keep the existing 83 + 23 + 32 = 138 cases and add these seven cases for a 145-case same-commit Windows gate (20 positive, 15 negative, 4 instruction checks for the expanded 7B suite). The original 83-case files remain byte-for-byte frozen.
 - No 7B source, tests, fixtures or PR were modified. No workflow was dispatched. Milestone 7B remains unaccepted; use a fresh isolated feature branch only after explicit scope approval and baseline/provenance prerequisites.
+
+## Scheduled engineering session - 2026-11-27
+
+### Live repository state
+
+- Repository: Sharnou/Sharnou-Compiler.
+- Default branch: Sharnou-Compiler; latest status-only HEAD after this session's plan and issue-register writes: db06b25f5d9e0a413552d9fe03b9d4fe3d98dfe0.
+- Active DevAgent ACL recovery PR: #24, OPEN / DRAFT / UNMERGED, branch devagent-acl-transaction-recovery-20261126, head 21d00a80f51f3df7ebde4a16c18702d601402a25, base 8893ef5156b271132a4104300beb55cac5a74923. Mergeability metadata was null on the final read; the branch is stale relative to current default and must not be rebased or merged automatically.
+- Other relevant candidates remain open: PR #18 Phase 2B.4 fixture/broker foundation; PR #17 baseline/ABI integration candidate; PR #5 old 7B candidate; PR #7 historical native test orchestrator. No PR was merged.
+
+### Changes made
+
+**Isolated PR #24 branch only**
+- Commit 208c3d67398cfc6c823ca21b554e4c96f854da61: fixed the PowerShell diagnostic conversion of unsigned 0x80000000 so journal inspection no longer throws before reading the file.
+- Commit 0ab5826d26fbe660ec7d8231b619b2e1549ea188: split journal signature/version rejection into distinct diagnostic stages.
+- Commit b01b24acc71112919c02f1be3b286a1c32de1d4a: updated the bad-signature test to expect the more precise first-signature rejection code.
+- Commit addc5b856bdb38bee1ae589b0d77d5f3e1592c2f: added a GetFileAttributesA path diagnostic after the native journal read-open failure.
+- Commit 21d00a80f51f3df7ebde4a16c18702d601402a25: replaced the attribute probe with a native metadata-only CreateFile diagnostic to distinguish path resolution from data-read access.
+- Changed paths: Stage0/SharnouCompiler.ps1; Tests/Test-DevAgentBroker.ps1.
+- Current Git blob IDs: Stage0/SharnouCompiler.ps1 = 30fa431beb15809d82c035ef92041c98f7555b40; Tests/Test-DevAgentBroker.ps1 = a9631ac7550325fc0b07d91fd74c9dacb503c198.
+- These are diagnostic/test changes only. They do not establish successful ACL recovery or enable model-facing execution.
+
+**Default branch status-only documentation**
+- Commit 0d72e58940d2fe295da4539eea2cf4f98a77ec48 updated Docs/AI-DEVELOPMENT-PLAN.md to record the user's explicit approval of 7B-7E and 8-13 plus the autonomous agent/research scope. This is scope approval only, not implementation acceptance or PR approval.
+- Commit db06b25f5d9e0a413552d9fe03b9d4fe3d98dfe0 appended the live findings to Docs/AI-ISSUE-REGISTER.md.
+- No compiler source, verifier, tests, fixtures, workflow, runtime, Engine, IDE or game source was changed on the default branch.
+
+### Windows CI evidence
+
+- [45963617323](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45963617323): WINDOWS CI PASS, frozen M1-M6 baseline 83/83 on PR #24 head 21d00a80f51f3df7ebde4a16c18702d601402a25. Counts: Stage 2 25/25; Stage 4 20/20; PE verifier 4/4; Stage 5 25/25; Stage 6 9/9.
+- [45963690266](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45963690266): WINDOWS CI PASS, default Stage 7A 23/23 on documentation-only commit 0d72e58940d2fe295da4539eea2cf4f98a77ec48.
+- [45963617259](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45963617259): candidate Stage 7A/broker workflow was IN_PROGRESS at the latest live check. It is NOT classified as pass, failure, or complete. Re-check its final job log in the next run.
+- [45963052813](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45963052813): WINDOWS CI FAILURE on earlier candidate head addc5b856bdb38bee1ae589b0d77d5f3e1592c2f. Three malformed-journal negative cases passed. The forced-crash recovery failed: native CreateFileA and subsequent GetFileAttributesA path probe returned Win32 ERROR_ACCESS_DENIED (5); broker status -2405; exact pre-run DACL/mandatory-label restoration did not occur. The PowerShell probe could open/read the journal and its header was valid (magic SHARACL1, version 1, descriptor lengths 188 bytes each; journal SHA-256 18DD6A5DF9CB30707110CF66D8A23DAA884EE3691842E7B2E8CA491946ED2FEC).
+- [45962694782](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45962694782): candidate failure because the bad-signature diagnostic was refined from generic -405 to -450 before its test expectation was updated.
+- [45962179131](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45962179131): candidate failure due the same diagnostic expectation mismatch; the three malformed-journal cases were not yet all validated under the refined stage code.
+- [45961851035](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45961851035): candidate failure because the diagnostic script threw on Convert.ToUInt32("-2147483648") before it could print the journal contents.
+
+### Evidence classification
+
+- WINDOWS CI PASS: frozen M1-M6 83/83 on candidate head 21d00a80f51f3df7ebde4a16c18702d601402a25; default Stage 7A 23/23 on 0d72e58940d2fe295da4539eea2cf4f98a77ec48.
+- WINDOWS CI FAILURE: crash-safe ACL recovery on earlier candidate head addc5b856bdb38bee1ae589b0d77d5f3e1592c2f; exact rollback is not proven.
+- IN PROGRESS / NOT RUN: candidate run 45963617259 final result.
+- REPOSITORY PRESENT / STATIC REVIEWED: compiler emitter, journal format, broker test harness, current PR #24.
+- NOT IMPLEMENTED / NOT RUN: Sharnou-compiled autonomous AI source-generating agent, provider adapters, persistent worker deployment, restart/checkpoint proof, and end-to-end issue-to-PR autonomy.
+- BLOCKED: production broker crash recovery; clean explicit environment (prior Phase 2B.4 fixture error 203); full handle/output isolation; native self-hosted compiler and persistent host; live OpenAI/Perplexity credentials.
+- User-approved scope: 7B-7E and Engine/Honour War 8-13 plus the autonomous agent and research escalation. PR #5 remains a stale candidate implementation, not accepted code. No 7B-7E implementation was performed in this session.
+
+### Next dependency-ordered task
+
+Retrieve the final result of run 45963617259. Decode whether the native metadata-only journal open succeeds. If it succeeds, isolate the generic-read/access check; if it fails, inspect the constructed path buffer and broker process token/ACL context. Reproduce and fix the native failure without weakening the ACL policy. Then rerun the complete crash-recovery adversarial suite and prove exact DACL/mandatory-label rollback and journal retirement. Keep PR #24 draft/unmerged and model-facing process execution disabled. After the security boundary is proven, return to the accepted compiler sequence: baseline provenance/ABI, 7B-7E, native runtime and SharnouDevAgent, then Engine 8-13 and Honour War integration.
