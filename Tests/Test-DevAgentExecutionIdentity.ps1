@@ -453,113 +453,22 @@ namespace Sharnou
                 string systemDirectory = Environment.SystemDirectory;
                 string application = System.IO.Path.Combine(systemDirectory, "cmd.exe");
 
-                // Seed from the OS-generated environment with inheritance disabled,
-                // then copy only fixed policy-owned values into a new bounded block.
-                // Never pass the original block or inherit arbitrary runner variables.
-                IntPtr templateEnvironment = IntPtr.Zero;
-                if (!CreateEnvironmentBlock(out templateEnvironment, IntPtr.Zero, false))
-                    throw new Win32Exception(Marshal.GetLastWin32Error(), "CreateEnvironmentBlock(inherit=false) failed.");
-
-                string systemRoot = null;
-                try
-                {
-                    bool terminated = false;
-                    int offsetCharacters = 0;
-                    for (int entryIndex = 0; entryIndex < 32768; entryIndex++)
-                    {
-                        string entry = Marshal.PtrToStringUni(IntPtr.Add(templateEnvironment, checked(offsetCharacters * 2)));
-                        if (String.IsNullOrEmpty(entry))
-                        {
-                            terminated = true;
-                            break;
-                        }
-                        offsetCharacters = checked(offsetCharacters + entry.Length + 1);
-                        if (entry[0] == '=') continue; // discard hidden per-drive entries
-                        int separator = entry.IndexOf('=');
-                        if (separator <= 0) continue;
-                        string key = entry.Substring(0, separator);
-                        if (String.Equals(key, "SystemRoot", StringComparison.OrdinalIgnoreCase))
-                            systemRoot = entry.Substring(separator + 1);
-                    }
-                    if (systemRoot == null)
-                        throw new InvalidOperationException("CreateEnvironmentBlock did not provide SystemRoot.");
-                    if (!terminated)
-                        throw new InvalidOperationException("CreateEnvironmentBlock lacked a bounded double-NUL terminator.");
-                }
-                finally
-                {
-                    if (!DestroyEnvironmentBlock(templateEnvironment))
-                        throw new Win32Exception(Marshal.GetLastWin32Error(), "DestroyEnvironmentBlock failed.");
-                }
-
-                // Preserve only Windows' special per-drive current-directory
-                // entries from the parent environment. They are not ordinary
-                // variables; dropping them can cause CreateProcessW error 203
-                // on cross-drive hosts. All other parent values are discarded.
-                IntPtr parentEnvironment = GetEnvironmentStringsW();
-                if (parentEnvironment == IntPtr.Zero)
-                    throw new Win32Exception(Marshal.GetLastWin32Error(), "GetEnvironmentStringsW failed.");
-                var allowedEnvironmentList = new List<string>();
-                var driveEntryNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                try
-                {
-                    bool parentTerminated = false;
-                    int parentOffset = 0;
-                    for (int entryIndex = 0; entryIndex < 32768; entryIndex++)
-                    {
-                        string entry = Marshal.PtrToStringUni(IntPtr.Add(parentEnvironment, checked(parentOffset * 2)));
-                        if (String.IsNullOrEmpty(entry))
-                        {
-                            parentTerminated = true;
-                            break;
-                        }
-                        parentOffset = checked(parentOffset + entry.Length + 1);
-                        if (entry.Length < 4 || entry[0] != '=' ||
-                            !Char.IsLetter(entry[1]) || entry[2] != ':' || entry[3] != '=')
-                            continue;
-
-                        string driveName = entry.Substring(0, 3);
-                        string drivePath = entry.Substring(4);
-                        string expectedRoot = driveName.Substring(1, 2) + "\\";
-                        if (!System.IO.Path.IsPathRooted(drivePath) ||
-                            !String.Equals(System.IO.Path.GetPathRoot(drivePath), expectedRoot, StringComparison.OrdinalIgnoreCase))
-                            throw new InvalidOperationException("Malformed hidden per-drive current-directory entry.");
-                        if (!driveEntryNames.Add(driveName))
-                            throw new InvalidOperationException("Duplicate hidden per-drive environment entry.");
-                        allowedEnvironmentList.Add(entry);
-                    }
-                    if (!parentTerminated)
-                        throw new InvalidOperationException("Parent environment block lacked a bounded double-NUL terminator.");
-                }
-                finally
-                {
-                    if (!FreeEnvironmentStringsW(parentEnvironment))
-                        throw new Win32Exception(Marshal.GetLastWin32Error(), "FreeEnvironmentStringsW failed.");
-                }
-                allowedEnvironmentList.Add("ComSpec=" + application);
-                allowedEnvironmentList.Add("PATH=" + systemDirectory);
-                allowedEnvironmentList.Add("SystemDrive=" + System.IO.Path.GetPathRoot(systemDirectory).TrimEnd('\\'));
-                allowedEnvironmentList.Add("SystemRoot=" + systemRoot);
-                allowedEnvironmentList.Add("windir=" + systemRoot);
-                string[] allowedEnvironment = allowedEnvironmentList.ToArray();
-                Array.Sort(allowedEnvironment, StringComparer.OrdinalIgnoreCase);
-                string environmentText = String.Join("\0", allowedEnvironment) + "\0\0";
-                if (environmentText.Length > 32768)
-                    throw new InvalidOperationException("Explicit child environment exceeds the 32768-WCHAR policy bound.");
-                char[] environmentChars = environmentText.ToCharArray();
-                environment = Marshal.AllocHGlobal(checked(environmentChars.Length * 2));
-                for (int environmentIndex = 0; environmentIndex < environmentChars.Length; environmentIndex++)
-                    Marshal.WriteInt16(environment, environmentIndex * 2, (short)environmentChars[environmentIndex]);
+                // This probe is strictly for token identity. The child is created
+                // suspended, inspected before its first instruction, and terminated
+                // without resume. Therefore it does not qualify environment policy.
+                // A separate clean-environment gate must resolve the runner's Win32
+                // 203 drive-entry behavior before production integration.
+                environment = IntPtr.Zero;
 
                 StringBuilder commandLine = new StringBuilder("\"" + application + "\" /c exit 0");
                 STARTUPINFOEXW startup = new STARTUPINFOEXW();
                 startup.StartupInfo.cb = (uint)Marshal.SizeOf(typeof(STARTUPINFOEXW));
                 startup.lpAttributeList = attributeList;
-                uint creationFlags = 0x00080004 | 0x00000400 | 0x08000000; // EXTENDED_STARTUPINFO_PRESENT | CREATE_SUSPENDED | CREATE_UNICODE_ENVIRONMENT | CREATE_NO_WINDOW
+                uint creationFlags = 0x00080004 | 0x08000000; // EXTENDED_STARTUPINFO_PRESENT | CREATE_SUSPENDED | CREATE_NO_WINDOW
 
                 if (!CreateProcessW(
                     application, commandLine, IntPtr.Zero, IntPtr.Zero, false,
-                    creationFlags, environment, systemDirectory, ref startup, out process))
+                    creationFlags, IntPtr.Zero, null, ref startup, out process))
                 {
                     int createError = Marshal.GetLastWin32Error();
                     throw new Win32Exception(createError,
@@ -611,7 +520,7 @@ namespace Sharnou
                     return "AppContainer=1;PackageSID=" + actualSidText +
                         ";IntegrityRID=0x" + integrityRid.ToString("X") +
                         ";Capabilities=" + capabilityCount.ToString() +
-                        ";Environment=ComSpec,PATH,SystemRoot,windir";
+                        ";Environment=InheritedForSuspendedTokenProbeOnly";
                 }
                 finally
                 {
