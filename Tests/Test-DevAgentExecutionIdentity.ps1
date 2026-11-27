@@ -191,9 +191,16 @@ namespace Sharnou
             ValidateProfileName(profileName);
             int deleteHr = DeleteAppContainerProfile(profileName);
             if (deleteHr != 0)
-                throw new InvalidOperationException(
-                    "DeleteAppContainerProfile failed; HRESULT=0x" +
-                    unchecked((uint)deleteHr).ToString("X8"));
+            {
+                // The API documents an indeterminate profile state on failure
+                // and recommends retrying deletion.
+                int retryDeleteHr = DeleteAppContainerProfile(profileName);
+                if (retryDeleteHr != 0)
+                    throw new InvalidOperationException(
+                        "DeleteAppContainerProfile failed twice; HRESULTs=0x" +
+                        unchecked((uint)deleteHr).ToString("X8") + "/0x" +
+                        unchecked((uint)retryDeleteHr).ToString("X8"));
+            }
 
             // A second Create must return S_OK. ERROR_ALREADY_EXISTS means the
             // profile survived cleanup, so the lifecycle test fails closed.
@@ -209,10 +216,16 @@ namespace Sharnou
             if (recreateHr != 0)
             {
                 if (sid != IntPtr.Zero) FreeSid(sid);
+                int cleanupHr = DeleteAppContainerProfile(profileName);
+                if (cleanupHr != 0)
+                    throw new InvalidOperationException(
+                        "Profile recreation failed and cleanup retry also failed; Create HRESULT=0x" +
+                        unchecked((uint)recreateHr).ToString("X8") + ", Delete HRESULT=0x" +
+                        unchecked((uint)cleanupHr).ToString("X8"));
                 throw new InvalidOperationException(
-                    "Profile was not absent after DeleteAppContainerProfile; Create HRESULT=0x" +
+                    "Profile was not proven absent after DeleteAppContainerProfile; Create HRESULT=0x" +
                     unchecked((uint)recreateHr).ToString("X8") +
-                    (recreateHr == HResultAlreadyExists ? " (profile still existed)." : "."));
+                    (recreateHr == HResultAlreadyExists ? " (profile still existed; cleanup retry succeeded)." : "."));
             }
 
             if (sid == IntPtr.Zero)
@@ -224,9 +237,14 @@ namespace Sharnou
             FreeSid(sid);
             int finalDeleteHr = DeleteAppContainerProfile(profileName);
             if (finalDeleteHr != 0)
-                throw new InvalidOperationException(
-                    "Final profile cleanup failed; HRESULT=0x" +
-                    unchecked((uint)finalDeleteHr).ToString("X8"));
+            {
+                int finalRetryHr = DeleteAppContainerProfile(profileName);
+                if (finalRetryHr != 0)
+                    throw new InvalidOperationException(
+                        "Final profile cleanup failed twice; HRESULTs=0x" +
+                        unchecked((uint)finalDeleteHr).ToString("X8") + "/0x" +
+                        unchecked((uint)finalRetryHr).ToString("X8"));
+            }
         }
 
         public static void BestEffortDelete(string profileName)
