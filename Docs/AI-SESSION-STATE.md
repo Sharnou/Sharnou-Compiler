@@ -2212,3 +2212,16 @@ The existing PR #24 candidate contains real native AppContainer/ACL/job/pipe/jou
 - Before profile name metadata is consumed during restart recovery, design and validate an authenticated journal/key boundary. Do not add unauthenticated profile names to a journal and use them for profile deletion.
 - Clean Unicode environment, separate stdout/stderr, child DLL policy, comprehensive crash cut-points and concurrency acceptance remain open.
 - Model-facing process execution remains DISABLED. Phase 2B.8 remains NOT SECURITY ACCEPTED.
+
+
+## Phase 2B.8 Windows evidence update - 2026-11-27
+
+Code-bearing commit: `907281187ffdf9223d4b345a2847c2a1feb883cf`.
+
+- Dedicated Windows run [46021589016](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/46021589016): **PASS**. Eight unique CNG-generated AppContainer profile identities/SIDs; eight real suspended child-token inspections (AppContainer=1, expected package SID, Low integrity RID 0x1000, zero capabilities); eight profile delete/recreate/delete verifications. DPAPI user-scope journal-envelope round-trip/tamper/wrong-entropy/cleartext tests pass. Strict v2 fixture parser accepted canonical schema and rejected unsupported version, truncation, trailing byte, profile length overflow and missing workspace identity.
+- Frozen M1-M6 baseline [46021589107](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/46021589107): **PASS 83/83**.
+- Stage 7A/combined run [46021589123](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/46021589123): encoding gate PASS; full run still in progress at this note. Earlier exact baseline revision bfb7f573... passed Stage7A combined run 46020834321.
+- Identity child-token fixture uses inherited environment while suspended and never resumed; clean Unicode environment is NOT qualified. Attempts to create a custom block hit Win32 203 and were removed from the token test rather than silently treating them as a pass.
+- DPAPI user-scope envelope is NOT a trusted writer identity when other same-user processes are in the threat model. The new `Docs/PHASE-2B8-JOURNAL-TRUST-BOUNDARY.md` requires an independently protected writer-authentication trust anchor before native profile metadata is persisted/used for cleanup.
+- No production compiler-emitted broker/journal code has changed. Production still uses stable AppContainer profile and v1 ACL journal. Phase 2B.8 remains NOT SECURITY ACCEPTED.
+- Model-facing/autonomous process execution remains DISABLED.
