@@ -412,7 +412,7 @@ namespace Sharnou
                         throw new InvalidOperationException("Malformed hidden per-drive current-directory entry.");
                     if (!driveNames.Add(name))
                         throw new InvalidOperationException("Duplicate hidden per-drive current-directory entry.");
-                    if (entry.IndexOf('\\0') >= 0)
+                    if (entry.IndexOf('\0') >= 0)
                         throw new InvalidOperationException("Hidden drive entry contains an embedded NUL.");
                     entries.Add(entry);
                 }
@@ -464,12 +464,12 @@ namespace Sharnou
                 string name = entry.Substring(0, equals);
                 if (!names.Add(name))
                     throw new InvalidOperationException("Explicit child environment contains duplicate name: " + name);
-                if (entry.IndexOf('\\0') >= 0)
+                if (entry.IndexOf('\0') >= 0)
                     throw new InvalidOperationException("Explicit child environment contains an embedded NUL.");
                 block.Append(entry);
-                block.Append('\\0');
+                block.Append('\0');
             }
-            block.Append('\\0');
+            block.Append('\0');
             if (block.Length > 32768)
                 throw new InvalidOperationException("Explicit Unicode environment exceeds 32768 UTF-16 code units.");
             return block.ToString();
