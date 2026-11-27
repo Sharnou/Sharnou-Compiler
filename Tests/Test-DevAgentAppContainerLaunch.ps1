@@ -389,7 +389,7 @@ namespace Sharnou
                 return false;
             string root = Path.GetPathRoot(value);
             return !String.IsNullOrEmpty(root) && root.Length == 3 &&
-                Char.IsLetter(root[0]) && root[1] == ':' && root[2] == '\\\\';
+                Char.IsLetter(root[0]) && root[1] == ':' && root[2] == '\\';
         }
 
         private static bool IsAllowedUserEnvironmentName(string name)
@@ -447,7 +447,7 @@ namespace Sharnou
                         break;
                     }
                     offset = checked(offset + entry.Length + 1);
-                    if (offset > 32768 || entry.IndexOf('\\0') >= 0)
+                    if (offset > 32768 || entry.IndexOf('\0') >= 0)
                         throw new InvalidOperationException("Token environment contains an invalid entry or exceeds its scan limit.");
 
                     if (entry[0] == '=')
@@ -473,7 +473,7 @@ namespace Sharnou
                     if (!seen.Add(name))
                         throw new InvalidOperationException("Token environment contains a duplicate allowlisted variable: " + name);
                     string value = entry.Substring(equals + 1);
-                    if (value.IndexOf('\\0') >= 0 || value.Length > 4096)
+                    if (value.IndexOf('\0') >= 0 || value.Length > 4096)
                         throw new InvalidOperationException("Allowlisted token variable is malformed or too long: " + name);
                     if (IsPathEnvironmentName(name) && !IsLocalAbsolutePath(value))
                         throw new InvalidOperationException("Allowlisted token path variable is not an absolute local path: " + name);
@@ -481,7 +481,8 @@ namespace Sharnou
                         (value.Length != 2 || !Char.IsLetter(value[0]) || value[1] != ':'))
                         throw new InvalidOperationException("HOMEDRIVE is malformed.");
                     if (String.Equals(name, "HOMEPATH", StringComparison.OrdinalIgnoreCase) &&
-                        (!value.StartsWith("\\\\", StringComparison.Ordinal) || value.StartsWith("\\\\\\", StringComparison.Ordinal)))
+                        (value.Length == 0 || value[0] != '\\\\' ||
+                         (value.Length > 1 && value[1] == '\\\\')))
                         throw new InvalidOperationException("HOMEPATH is malformed.");
                     entries.Add(entry);
                 }
@@ -555,7 +556,7 @@ namespace Sharnou
                 string name = entry.Substring(0, equals);
                 if (!names.Add(name))
                     throw new InvalidOperationException("Explicit child environment contains duplicate name: " + name);
-                if (entry.IndexOf('\\0') >= 0)
+                if (entry.IndexOf('\0') >= 0)
                     throw new InvalidOperationException("Explicit child environment contains an embedded NUL.");
                 block.Append(entry);
                 block.Append('\\0');
