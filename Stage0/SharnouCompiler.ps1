@@ -1627,10 +1627,27 @@ function Emit-DevBrokerRecoverAclJournal {
     Emit-JumpConditional -ConditionCode 0x84 -Label $done
     Emit-Bytes -Bytes ([byte[]]@(0x3D, 0x03, 0x00, 0x00, 0x00))
     Emit-JumpConditional -ConditionCode 0x84 -Label $done
-    # Preserve unexpected CreateFileA Win32 error in the diagnostic result:
-    # returned status is -1400 minus GetLastError().
-    Emit-Bytes -Bytes ([byte[]]@(0x05))
+    # Preserve the CreateFile error, then probe the same path without data access.
+    # The diagnostic code distinguishes a bad path from an access-mask/handle failure.
+    Emit-StoreEaxFrame -SlotPosition $expectedSizeSlot
+    Emit-LeaRaxFrame -SlotPosition $JournalPathSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1))
+    Emit-Win64CallIat -TargetRva ([UInt32]0x31C8) -StackArguments @() # GetFileAttributesA
+    Emit-Bytes -Bytes ([byte[]]@(0x3D, 0xFF, 0xFF, 0xFF, 0xFF))
+    $attributeProbeFailed = New-UniqueLabel -Prefix 'dev_acl_recovery_attribute_probe_failed'
+    Emit-JumpConditional -ConditionCode 0x84 -Label $attributeProbeFailed
+    Emit-StoreEaxFrame -SlotPosition ($scratch + 0xD58)
+    Emit-LoadEaxFrame -SlotPosition ($scratch + 0xD58)
+    Emit-Bytes -Bytes ([byte[]]@(0xC1, 0xE0, 0x08)) # attributes << 8
+    Emit-LoadEdxFrame -SlotPosition $expectedSizeSlot # original CreateFile error
+    Emit-Bytes -Bytes ([byte[]]@(0x01, 0xD0, 0x05))
     Emit-I32 -Value 1000
+    Emit-StoreEaxFrame -SlotPosition $recoveryStageSlot
+    Emit-Jump -Label $FailureLabel
+    Mark-CodeLabel -Label $attributeProbeFailed
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3268) -StackArguments @() # GetLastError for path probe
+    Emit-Bytes -Bytes ([byte[]]@(0x05))
+    Emit-I32 -Value 2000
     Emit-StoreEaxFrame -SlotPosition $recoveryStageSlot
     Emit-Jump -Label $FailureLabel
 
