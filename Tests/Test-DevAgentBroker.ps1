@@ -669,7 +669,8 @@ try {
     # previously this output was captured by PowerShell but hidden from Actions.
     foreach ($recoveryDiagnostic in $recoveryLines) {
         $diagnosticText = [string]$recoveryDiagnostic
-        if ($diagnosticText.StartsWith('ACL_RECOVERY_NATIVE_PATH|', [StringComparison]::Ordinal)) {
+        if ($diagnosticText.StartsWith('ACL_RECOVERY_NATIVE_PATH|', [StringComparison]::Ordinal) -or
+            $diagnosticText.StartsWith('ACL_RECOVERY_GETATTR|', [StringComparison]::Ordinal)) {
             Write-Host ('DEVAGENT_RECOVERY_DIAGNOSTIC|' + $diagnosticText)
         }
     }
