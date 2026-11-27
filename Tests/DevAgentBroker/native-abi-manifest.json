@@ -9,11 +9,23 @@
   },
   "evidence": {
     "level": "Windows SDK header declaration and field-order verification plus deterministic x64 layout computation",
-    "notProven": "No native compiler invocation, production PE import/emitter changes, production restricted-token/AppContainer broker integration, clean explicit environment, production cancellation/audit/restart integration, or general-purpose autonomous execution. Phase 2B.5 Windows execution has not yet occurred; no passing result is recorded.",
+    "notProven": "No native compiler invocation, production PE import/emitter changes, production restricted-token/AppContainer broker integration, clean explicit environment, production cancellation/audit/restart integration, or general-purpose autonomous execution. Phase 2B.5 passed only as a caller-token/inherited-environment test fixture; production restricted-token/AppContainer/workspace ACL broker integration, clean explicit environment, production cancellation/audit/restart integration and general-purpose autonomous execution remain unproven.",
     "note": "SDK field order and the arithmetic x64 ABI model are statically cross-checked. This is not an executed compiler sizeof/offsetof probe, and must not be used alone to ship native structure offsets.",
     "next": "Phase 2B.5 adds a fixed-image test-only STARTUPINFOEX handle-list fixture with bounded concurrent stdout/stderr draining, a 64 KiB combined output limit, Job Object termination/reap, and adversarial inheritance/timeout/descendant tests. This does not integrate the production compiler emitter, does not enable model-facing execution, and does not resolve the explicit-environment blocker.",
-    "windowsCiStatus": "PENDING",
-    "sourceValidation": "The candidate PowerShell scripts and JSON have been reviewed statically for source policy and manifest consistency; Windows PowerShell execution has not yet occurred."
+    "windowsCiStatus": "PASS_TEST_FIXTURE_ONLY",
+    "sourceValidation": "The candidate PowerShell scripts and JSON have been reviewed statically for source policy and manifest consistency; Windows PowerShell execution has not yet occurred.",
+    "windowsCiRunId": 45984424420,
+    "windowsCiCommit": "d6ddfa0e272520982e537790e9ec45ffe49bbcee",
+    "windowsCiAssertions": "121 passed; 0 failed",
+    "sameHeadRegressionRuns": {
+      "sdkAbiContract": 45984424400,
+      "nativeInteropAppContainer": 45984424549,
+      "workspaceAcl": 45984424486,
+      "appContainerJobObjectLaunch": 45984424406,
+      "milestone6Baseline": 45984424397,
+      "workspaceSecurity": 45984424858,
+      "stage7a": 45984424433
+    }
   },
   "currentImportTable": {
     "descriptorBase": "0xA00",
@@ -1474,9 +1486,11 @@
       "productionRequirement": "The independently required clean, explicit, bounded environment remains unverified. Phase 2B.5 does not resolve or waive the Windows Server 2025 ERROR_ENVVAR_NOT_FOUND (203) failure."
     },
     "testSource": "Tests/Test-DevAgentBoundedPipeCapture.ps1",
-    "testSourceStatus": "CANDIDATE_NOT_YET_WINDOWS_CI_VALIDATED",
+    "testSourceStatus": "WINDOWS_CI_PASS_TEST_FIXTURE_ONLY",
     "readerFailureTest": "The test invalidates the stdout ReadFile handle after at least one valid chunk has been captured; PeekNamedPipe remains valid so the next bounded ReadFile call must fail.",
     "sentinelTest": "The child attempts to read a 32-byte fixed marker through the numeric sentinel handle value; only byte-exact equality reports INHERITED. The expected marker is not supplied by a file path.",
-    "createPipeFailureHandling": "Do not inspect or close output pointers when CreatePipe returns FALSE because the API documents those outputs as indeterminate on failure. If CreatePipe returns TRUE but an endpoint is invalid, close any valid partial endpoint and fail."
+    "createPipeFailureHandling": "Do not inspect or close output pointers when CreatePipe returns FALSE because the API documents those outputs as indeterminate on failure. If CreatePipe returns TRUE but an endpoint is invalid, close any valid partial endpoint and fail.",
+    "windowsCiRunId": 45984424420,
+    "windowsCiCommit": "d6ddfa0e272520982e537790e9ec45ffe49bbcee"
   }
 }

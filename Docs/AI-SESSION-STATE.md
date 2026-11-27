@@ -1165,3 +1165,20 @@ Expected adversarial checks:
 **Fixture limitations, not waived:** this test uses the caller token, does not attach the child to the real per-execution AppContainer SID/ACL transaction, and sets lpEnvironment=NULL (inherits the CI environment). The documented clean explicit environment failure (ERROR_ENVVAR_NOT_FOUND=203) remains an independent production blocker. This is not native compiler/PE-emitter integration and accepts no model-controlled command or path. Production DLL-search policy, network denial, cancellation, durable evidence journaling, crash/restart recovery, final-path/ADS/UNC/device validation, and cross-version Windows adversarial coverage remain open.
 
 No Windows pass, build, production import, model-execution permission, merge or release is claimed at this checkpoint. **Model-facing process execution and autonomous process execution remain DISABLED.** Phase 2B.5 must pass on the exact commit before being closed; a later production integration and explicit approval are separately required before a limited model-facing canary.
+
+
+## Phase 2B.5 — final Windows verification update — 2026-11-27
+
+**Accepted scope: test-only fixture PASS.** Tested source commit: d6ddfa0e272520982e537790e9ec45ffe49bbcee. Dedicated Windows Server 2025 workflow run 45984424420 passed **121/121 assertions**. Captured SHA-256 from the CI log:
+- Harness: 7ABDCE355A1811C75AB98188E7BDBDEA7DF2A7940DDBA76079E4574912F780DB
+- Manifest: C284977638A126D906E422A9F7A11825D807B57B33BD0F275B70C1BC30813633
+- NativeInterop: 0DFD437AE263658E9CD8BB176BAE9FFCA56673C10F651C522512BD5AC209E3DB
+- Fixed child: D2FF866D377DA80C690E753DC69078416443A1FE1A42A127568E9A61CAE45C49
+
+The fixture verified explicit two-handle inheritance, distinct byte-exact stdout/stderr, exact 65,536-byte acceptance, overflow truncation, timeout, injected ReadFile failure after partial output, Job Object descendant membership and termination, and handle cleanup (parent count 652 before / 640 after).
+
+Same-commit regressions PASS: ABI contract (45984424400), native interop/AppContainer (45984424549), workspace ACL (45984424486), AppContainer Job Object launch (45984424406), workspace security (45984424858), M6 baseline 83/83 (45984424397), and Stage 7A (45984424433: control-flow 24/24; stack/unwind 6/6; Runtime ABI PASS; combined PASS).
+
+The first two fixture runs failed on two test-harness defects; both were repaired, then the final exact source commit passed. Do not count the earlier failed runs as final status.
+
+**Production blockers are unchanged:** Phase 2B.5 is not integrated with the real AppContainer token + per-execution workspace ACL transaction or the compiler-emitted process broker; it uses the caller token and lpEnvironment=NULL. The Windows Server 2025 explicit environment failure ERROR_ENVVAR_NOT_FOUND (203) remains unresolved. Loader/DLL-search policy, production cancellation, durable audit/restart recovery and production integration remain open. **Model-facing execution and autonomous execution remain DISABLED.**
