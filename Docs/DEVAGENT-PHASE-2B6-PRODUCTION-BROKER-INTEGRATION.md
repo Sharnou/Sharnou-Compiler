@@ -12,7 +12,7 @@ Phase 2B.6 is the production-integration tranche. It must turn the isolated AppC
 
 This milestone does not enable model-facing process execution. It does not enable autonomous execution. The public typed tool API remains build-opt-in and unavailable to model-generated plans until all gates below pass and an owner explicitly approves a limited allowlisted canary.
 
-The PR #24 native broker candidate already contains substantial production emitter code, but its Windows crash-recovery test is failing. The implementation must be treated as an unaccepted candidate, not as a completed secure broker.
+The initial PR #24 native broker candidate failed its Windows crash-recovery test. The journal-recovery defect described below is now corrected and has passed the dedicated post-crash replay plus same-head Windows regression. Phase 2B.6 remains in progress and is not a production security acceptance.
 
 ## 2. Evidence at the start of Phase 2B.6
 
@@ -29,28 +29,32 @@ The failed native recovery status is -2685. The emitter encodes an open failure 
 
 Therefore -2685 decodes to readWin32=5 and metadataWin32=5 (ERROR_ACCESS_DENIED for both the GENERIC_READ CreateFileA attempt and its metadata-only fallback). A separate PowerShell P/Invoke control successfully opened the same journal using the expected access/share/disposition/flags. This narrows the fault to a difference in the native broker's effective path or open call context; it does not prove that the DACL is the root cause.
 
-The diagnostic native path was being captured by the test harness but not forwarded into the GitHub Actions log. The Phase 2B.6 diagnostic patch now forwards ACL_RECOVERY_NATIVE_PATH and emits the decoded Win32 fields. The next Windows run must establish the exact path and native call result before any security-policy change is made.
+The diagnostic patch now forwards ACL_RECOVERY_NATIVE_PATH, emits the decoded Win32 fields, and records read-only native token/integrity information. The observed native path was the expected workspace-root journal path; the issue was not a malformed journal pathname or a missing DACL grant.
 
-## 2A. Native integrity diagnosis and recovery-host relocation candidate - 2026-11-27
+## 2A. Native integrity root cause and validated recovery-host relocation - 2026-11-27
 
 A follow-up native diagnostic established that the broker process launched for recovery was running at Low Integrity:
 
 - The failed Stage 7A run 45999117333 reported `appcontainer=0`, `restricted=0`, `elevation=1`, and `integrityRid=4096` from the broker's own primary token.
 - The same process received `ERROR_ACCESS_DENIED (5)` from native `GetFileAttributesA` for the exact journal path, before the `CreateFileA` recovery open. The PowerShell control in the test runner could still read the journal.
 - The image path used by that candidate was `Build\DevAgentBroker\DevAgentBroker.exe`. The same transaction applies an inheritable Low-IL mandatory label to both `Build` and `Build\DevAgentBroker`. A parent crash leaves those directory labels committed; relaunching the broker from an image in that tree can therefore start the recovery host at Low IL.
-- This is a confirmed host-image placement/integrity defect and a credible contributor to the recovery failure. It is not treated as proof that Low IL alone explains the journal open error; the security descriptor and process access checks still require Windows runtime proof.
+- The failure was caused by the recovery host image residing below an inheritable Low-IL label. Mandatory Integrity Control is evaluated before the DACL; the broker process therefore ran at Low IL and could not read the Medium-IL workspace-root journal, despite the journal DACL granting Administrators full access. The path and journal contents were valid. This is consistent with Windows MIC semantics: the executable image's integrity level constrains the process integrity level, and MIC is evaluated before the DACL. citeturn211718search0
 
-The candidate now moves the broker host image to `\.sharnou-devagent-host\DevAgentBroker.exe`, under the checked workspace root and outside both Low-IL writable staging directories. The root receives only the AppContainer's existing read-only inherited grant; the AppContainer must not be able to create or replace files in the host directory. Writable child staging remains limited to `Build` and `Build\DevAgentBroker`; neither their DACLs nor their Low-IL labels are weakened.
+The fix moves the recovery host image to `\.sharnou-devagent-host\DevAgentBroker.exe`, under the workspace root and outside both Low-IL writable staging directories. The workspace-root AppContainer grant remains read/execute only; a sandbox probe must fail when trying to create a file in the trusted host directory. Writable child staging remains limited to `Build` and `Build\DevAgentBroker`. The workspace DACLs were not broadened, the Low-IL labels were not removed, and no caller-token or unrestricted-process fallback was introduced.
 
-The Windows test now checks that the host directory and image do not carry a Low-IL label, that the live broker process is at least Medium IL, and that the launched child remains an AppContainer at Low IL. The host directory is included in the ACL baseline/rollback comparison, and the sandbox probe attempts a write there and must receive access denied. This remains a **candidate fix** until the crash-recovery replay passes on the exact current commit.
+The Windows test checks that the host directory and image do not carry a Low-IL label, that the live broker process is at least Medium IL, and that the launched child remains an AppContainer at Low IL. It includes the host directory in the exact SDDL baseline/rollback comparison and proves the AppContainer cannot write to the host directory.
 
-Same-head evidence after the relocation candidate:
-- M6 baseline run 46000385100: PASS, 83/83 on commit 091a264b8e6f65b8848cbda16a2afd9cde4a13b4.
-- Stage 7A run 46000385150: in progress at the time this record was written; do not mark recovery fixed until its full log confirms replay and exact descriptor restoration.
+**Validated on the same exact commit `0c77eeba222a1c34175d5e49b6f279e056642cbf`:**
+- Stage 7A run [46000983816](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/46000983816): PASS. `Runtime ABI result: PASS`; PE verifier reports AMD64 PE32+, six sections, seven DLLs and 72 APIs; DevAgent broker tests report PASS.
+- M6 baseline run [46000983846](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/46000983846): PASS, frozen baseline 83/83.
+- The crash test killed the broker parent, confirmed Job Object termination of the AppContainer child, then successfully launched a fresh trusted broker. It restored exact DACL and mandatory-label SDDL for workspace root, trusted host, Build, and Build\\DevAgentBroker, and removed the committed journal. The trusted host process integrity was `0x3000` (High); the sandbox child remained AppContainer Low IL (`0x1000`).
+- The intermediate `-126` test result was the dedicated post-recovery fixed-directory reparse rejection code, not a recovery error. The regression assertion was updated to expect this fail-closed status; the subsequent same-head Stage 7A run passed.
+
+This closes the reproduced journal-read/replay failure for the tested Windows crash scenario. It does **not** complete all of Workstream A or Phase 2B.6.
 
 ## 3. Workstream A - crash-safe ACL recovery
 
-A.1. Validate the host-image relocation candidate against the post-crash native failure and require successful journal replay plus exact DACL/mandatory-label restoration. Do not weaken workspace DACLs, add broad Users/Everyone ACEs, increase child privileges, discard the journal, or treat a Medium-IL host token alone as proof of recovery.
+A.1. **PASS for the reproduced crash-recovery scenario** on `0c77eeba222a1c34175d5e49b6f279e056642cbf`: host-image relocation preserved a High-IL recovery broker, journal replay restored exact DACL/mandatory-label SDDL, and the journal was retired only after restoration. Do not weaken workspace DACLs, add broad Users/Everyone ACEs, increase child privileges, or discard the journal.
 
 A.2. Validate the journal as a regular, single-link, non-reparse file opened by handle. Verify the final path and file identity are within the canonical workspace root before consuming the contents. Retain the journal on every malformed, inaccessible, truncated, version-mismatched, or restore-failure path.
 
