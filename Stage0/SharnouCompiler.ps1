@@ -3904,7 +3904,7 @@ function Emit-BuiltinCall {
             # SERVICE_MAIN_FUNCTIONW: RCX=argc (DWORD), RDX=argv-vector pointer (LPWSTR*).
             Emit-Bytes -Bytes ([byte[]]@(0xB9, 0xDF, 0x9B, 0x57, 0x13))
             Emit-Bytes -Bytes ([byte[]]@(0x48, 0xB8))
-            $script:Code.AddRange([BitConverter]::GetBytes([UInt64]0x1122334455667788))
+            $script:Code.AddRange([BitConverter]::GetBytes([UInt64]::Parse('1122334455667788', [System.Globalization.NumberStyles]::HexNumber)))
             Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC2, 0x48, 0x83, 0xEC, 0x20))
             Emit-CallDataPointer -DataItem $serviceMainPointer
             Emit-Bytes -Bytes ([byte[]]@(0x48, 0x83, 0xC4, 0x20, 0x3D, 0xDE, 0xC0, 0xA7, 0x51))
@@ -3913,9 +3913,9 @@ function Emit-BuiltinCall {
             # HandlerEx: four ABI registers, including both full-width pointer arguments.
             Emit-Bytes -Bytes ([byte[]]@(0xB9, 0x78, 0x56, 0x34, 0x12, 0xBA, 0x21, 0x43, 0x65, 0x87))
             Emit-Bytes -Bytes ([byte[]]@(0x48, 0xB8))
-            $script:Code.AddRange([BitConverter]::GetBytes([UInt64]0x1122334455667788))
+            $script:Code.AddRange([BitConverter]::GetBytes([UInt64]::Parse('1122334455667788', [System.Globalization.NumberStyles]::HexNumber)))
             Emit-Bytes -Bytes ([byte[]]@(0x49, 0x89, 0xC0, 0x48, 0xB8))
-            $script:Code.AddRange([BitConverter]::GetBytes([UInt64]0x8877665544332211))
+            $script:Code.AddRange([BitConverter]::GetBytes([UInt64]::Parse('8877665544332211', [System.Globalization.NumberStyles]::HexNumber)))
             Emit-Bytes -Bytes ([byte[]]@(0x49, 0x89, 0xC1, 0x48, 0x83, 0xEC, 0x20))
             Emit-CallDataPointer -DataItem $handlerExPointer
             Emit-Bytes -Bytes ([byte[]]@(0x48, 0x83, 0xC4, 0x20, 0x3D, 0xDE, 0xC0, 0xA7, 0x51))
@@ -4818,7 +4818,7 @@ if ($script:DataPointerFixups.Count -gt 0) {
     Emit-Bytes -Bytes ([byte[]]@(0x81, 0xF9, 0xDF, 0x9B, 0x57, 0x13)) # cmp ecx,13579BDFh
     Emit-JumpConditional -ConditionCode 0x85 -Label $serviceMainFail
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0xB8))
-    $script:Code.AddRange([BitConverter]::GetBytes([UInt64]0x1122334455667788))
+    $script:Code.AddRange([BitConverter]::GetBytes([UInt64]::Parse('1122334455667788', [System.Globalization.NumberStyles]::HexNumber)))
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x39, 0xC2)) # cmp rdx,rax (full-width LPWSTR*).
     Emit-JumpConditional -ConditionCode 0x85 -Label $serviceMainFail
     Emit-Bytes -Bytes ([byte[]]@(0xB8)); $script:Code.AddRange($callbackMarker); Emit-Bytes -Bytes ([byte[]]@(0xC3))
@@ -4832,11 +4832,11 @@ if ($script:DataPointerFixups.Count -gt 0) {
     Emit-Bytes -Bytes ([byte[]]@(0x81, 0xFA, 0x21, 0x43, 0x65, 0x87)) # cmp edx,87654321h
     Emit-JumpConditional -ConditionCode 0x85 -Label $handlerExFail
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0xB8))
-    $script:Code.AddRange([BitConverter]::GetBytes([UInt64]0x1122334455667788))
+    $script:Code.AddRange([BitConverter]::GetBytes([UInt64]::Parse('1122334455667788', [System.Globalization.NumberStyles]::HexNumber)))
     Emit-Bytes -Bytes ([byte[]]@(0x49, 0x39, 0xC0)) # cmp r8,rax (full-width LPVOID).
     Emit-JumpConditional -ConditionCode 0x85 -Label $handlerExFail
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0xB8))
-    $script:Code.AddRange([BitConverter]::GetBytes([UInt64]0x8877665544332211))
+    $script:Code.AddRange([BitConverter]::GetBytes([UInt64]::Parse('8877665544332211', [System.Globalization.NumberStyles]::HexNumber)))
     Emit-Bytes -Bytes ([byte[]]@(0x49, 0x39, 0xC1)) # cmp r9,rax (full-width LPVOID).
     Emit-JumpConditional -ConditionCode 0x85 -Label $handlerExFail
     Emit-Bytes -Bytes ([byte[]]@(0xB8)); $script:Code.AddRange($callbackMarker); Emit-Bytes -Bytes ([byte[]]@(0xC3))
