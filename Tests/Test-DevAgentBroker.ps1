@@ -246,6 +246,75 @@ try {
     if (-not $compilerSource.Contains('GetFileAttributesA') -or -not $compilerSource.Contains('GetFileInformationByHandle') -or -not $compilerSource.Contains('GetModuleFileNameA') -or -not $compilerSource.Contains('SetCurrentDirectoryA') -or -not $compilerSource.Contains('0x400') -or -not $compilerSource.Contains('0x00200080')) {
         throw 'Image-relative workspace and opened-handle reparse-point checks are missing.'
     }
+    $legacyHelperStart = $compilerSource.IndexOf('function Emit-DevBrokerRevokeLegacyAppContainerSid', [StringComparison]::Ordinal)
+    $legacyHelperEnd = $compilerSource.IndexOf('function Emit-DevBrokerEnsureAppContainerSid', $legacyHelperStart, [StringComparison]::Ordinal)
+    if ($legacyHelperStart -lt 0 -or $legacyHelperEnd -le $legacyHelperStart) {
+        throw 'One-time legacy shared-profile ACL migration helper is missing.'
+    }
+    $legacyHelperSource = $compilerSource.Substring($legacyHelperStart, $legacyHelperEnd - $legacyHelperStart)
+    if (-not $legacyHelperSource.Contains('Sharnou.DevAgent.ProcessBroker.v1') -or
+        -not $legacyHelperSource.Contains('DeriveAppContainerSidFromAppContainerName')) {
+        throw 'Legacy package identity may be resolved only by the bounded ACL-migration helper.'
+    }
+    if (-not $compilerSource.Contains('BCRYPT_USE_SYSTEM_PREFERRED_RNG') -and
+        -not $compilerSource.Contains('BCryptGenRandom(BCRYPT_USE_SYSTEM_PREFERRED_RNG)')) {
+        throw 'Per-execution identity must use the system-preferred CNG random generator.'
+    }
+    if (-not $compilerSource.Contains('Sharnou.DevAgent.') -or
+        -not $compilerSource.Contains('0x3330') -or
+        -not $compilerSource.Contains('DeleteAppContainerProfile') -or
+        -not $compilerSource.Contains('TOKEN_APPCONTAINER_INFORMATION') -or
+        -not $compilerSource.Contains('0x1F, 0x00, 0x00, 0x00') -or
+        -not $compilerSource.Contains('EqualSid')) {
+        throw 'Native per-execution AppContainer profile creation, child SID binding, or deletion is incomplete.'
+    }
+    $legacyRevokeCall = $brokerEmitterSource.IndexOf('Emit-DevBrokerRevokeLegacyAppContainerSid', [StringComparison]::Ordinal)
+    $uniqueProfileCall = $brokerEmitterSource.IndexOf('Emit-DevBrokerEnsureAppContainerSid', [StringComparison]::Ordinal)
+    $journalCommit = $brokerEmitterSource.IndexOf('Emit-DevBrokerWriteAclJournal', [StringComparison]::Ordinal)
+    $legacyRevokeLines = @($brokerEmitterSource -split '\r?\n' | Where-Object {
+        $_.Contains('Emit-DevBrokerUpdateAcl') -and
+        $_.Contains('-SidSlot $legacyAppContainerSidSlot') -and
+        $_.Contains('-AccessMode 4')
+    })
+    if ($legacyRevokeCall -lt 0 -or $uniqueProfileCall -le $legacyRevokeCall -or
+        $journalCommit -le $uniqueProfileCall -or $legacyRevokeLines.Count -ne 3) {
+        throw 'Legacy shared-profile DACL revocation must narrow root/Build/broker ACLs before the fresh identity and write-ahead snapshot.'
+    }
+    $tokenSidCheckOffset = $brokerEmitterSource.IndexOf('TOKEN_APPCONTAINER_INFORMATION', [StringComparison]::Ordinal)
+    $resumeChildOffset = $brokerEmitterSource.IndexOf('TargetRva ([UInt32]0x31A8)', [StringComparison]::Ordinal)
+    if ($tokenSidCheckOffset -lt 0 -or $resumeChildOffset -le $tokenSidCheckOffset) {
+        throw 'The primary token package SID must match the created profile SID before ResumeThread.'
+    }
+    $tokenInformationOffset = $brokerEmitterSource.IndexOf('GetTokenInformation(TOKEN_APPCONTAINER_INFORMATION)', [StringComparison]::Ordinal)
+    $tokenSidPointerLoadOffset = $brokerEmitterSource.IndexOf('Emit-LoadRaxFrame -SlotPosition $tokenInformationSlot', $tokenInformationOffset, [StringComparison]::Ordinal)
+    $tokenRestrictionOffset = $brokerEmitterSource.IndexOf('# TokenHasRestrictions must be TRUE', $tokenSidPointerLoadOffset, [StringComparison]::Ordinal)
+    if ($tokenInformationOffset -lt 0 -or $tokenSidPointerLoadOffset -le $tokenInformationOffset -or
+        $tokenRestrictionOffset -le $tokenSidPointerLoadOffset) {
+        throw 'Primary-token AppContainer SID retrieval must expose the TOKEN_APPCONTAINER_INFORMATION pointer load.'
+    }
+    $tokenSidPointerSource = $brokerEmitterSource.Substring($tokenSidPointerLoadOffset, $tokenRestrictionOffset - $tokenSidPointerLoadOffset)
+    if (-not $tokenSidPointerSource.Contains('0x48, 0x89, 0xC1') -or
+        $tokenSidPointerSource.Contains('0x48, 0x8B, 0x08')) {
+        throw 'EqualSid must receive the PSID value from TOKEN_APPCONTAINER_INFORMATION, not a dereferenced SID data word.'
+    }
+
+    $restoreHelperStart = $compilerSource.IndexOf('function Emit-DevBrokerRestoreSecurityDescriptor', [StringComparison]::Ordinal)
+    $restoreHelperEnd = $compilerSource.IndexOf('function Emit-DevBrokerWriteAclJournal', $restoreHelperStart, [StringComparison]::Ordinal)
+    $restoreHelperSource = $compilerSource.Substring($restoreHelperStart, $restoreHelperEnd - $restoreHelperStart)
+    if (-not $restoreHelperSource.Contains('GetSecurityInfo(DACL + LABEL)') -or
+        -not $restoreHelperSource.Contains('REPE CMPSB') -or
+        -not $restoreHelperSource.Contains('$actualDescriptorSlot')) {
+        throw 'ACL rollback must independently read back and byte-compare the restored DACL and mandatory-label SACL.'
+    }
+    $profileCleanupStart = $compilerSource.IndexOf('function Emit-DevBrokerDeleteOwnedAppContainerProfile', [StringComparison]::Ordinal)
+    $profileCleanupEnd = $compilerSource.IndexOf('function Emit-DevBrokerUpdateAcl', $profileCleanupStart, [StringComparison]::Ordinal)
+    $profileCleanupSource = $compilerSource.Substring($profileCleanupStart, $profileCleanupEnd - $profileCleanupStart)
+    if (-not $profileCleanupSource.Contains('$ChildActiveSlot') -or
+        -not $profileCleanupSource.Contains('$TransactionActiveSlot') -or
+        -not $profileCleanupSource.Contains('TargetRva ([UInt32]0x3340)')) {
+        throw 'Profile deletion must be gated on Job Object emptiness and completed ACL transaction rollback.'
+    }
+
     if (-not $brokerEmitterSource.Contains('$imageSuffix = ''\.sharnou-devagent-host\DevAgentBroker.exe''')) {
         throw 'Recovery broker image must be outside Low-IL writable Build staging.'
     }
@@ -278,7 +347,10 @@ try {
         'SetEntriesInAclA',
         'TRUSTEE_IS_SID',
         'PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES',
-        'HANDLE_LIST'
+        'HANDLE_LIST',
+        'BCryptGenRandom',
+        'DeleteAppContainerProfile',
+        'EqualSid'
     )) {
         if (-not $compilerSource.Contains($required)) {
             throw "Native sandbox security component is missing: $required"
@@ -287,7 +359,7 @@ try {
     $importArrayMatch = [regex]::Match($compilerSource, '\$importSets\s*=\s*@\(([\s\S]*?)\r?\n\)')
     if (-not $importArrayMatch.Success) { throw 'Native import-set declarations could not be parsed.' }
     $importRecords = [regex]::Matches($importArrayMatch.Groups[1].Value, "Descriptor = (0x[0-9A-Fa-f]+); Lookup = (0x[0-9A-Fa-f]+); Iat = (0x[0-9A-Fa-f]+); Dll = '([^']+)'; Names = @\(([^)]*)\)")
-    if ($importRecords.Count -ne 16) { throw "Expected 16 import descriptors, found $($importRecords.Count)." }
+    if ($importRecords.Count -ne 19) { throw "Expected 19 import descriptors, found $($importRecords.Count)." }
     $iatRanges = @()
     $lookupRanges = @()
     foreach ($record in $importRecords) {
@@ -308,9 +380,9 @@ try {
             }
         }
     }
-    $iatEnd = ($iatRanges | Measure-Object -Property End -Maximum).Maximum
-    if ($iatEnd -ne 0x330 -or -not $compilerSource.Contains('Value 0x2C0')) {
-        throw "Import Address Table extent must include the final zero thunk through offset 0x330; actual end=$('{0:X}' -f $iatEnd)."
+    $iatEnd = [int](($iatRanges | Measure-Object -Property End -Maximum).Maximum)
+    if ($iatEnd -ne 0x360 -or -not $compilerSource.Contains('Value 0x2F0')) {
+        throw ("Import Address Table extent must include every final zero thunk through 0x360; expected=0x360 actual=0x{0:X}." -f $iatEnd)
     }
     Write-Host 'PASS: import lookup and IAT arrays are disjoint, including each module terminator' -ForegroundColor Green
 
@@ -325,7 +397,10 @@ try {
         'TargetRva ([UInt32]0x32F0)', # GetSecurityDescriptorLength
         'TargetRva ([UInt32]0x32F8)', # IsValidSecurityDescriptor
         'TargetRva ([UInt32]0x3318)', # MoveFileExA
-        'TargetRva ([UInt32]0x3320)'  # FlushFileBuffers
+        'TargetRva ([UInt32]0x3320)', # FlushFileBuffers
+        'TargetRva ([UInt32]0x3330)', # BCryptGenRandom
+        'TargetRva ([UInt32]0x3340)', # DeleteAppContainerProfile
+        'TargetRva ([UInt32]0x3350)'  # EqualSid
     )
     foreach ($expectedCall in $expectedHelperIatCalls) {
         if (-not $compilerSource.Contains($expectedCall)) {
@@ -536,8 +611,26 @@ try {
         # Child console diagnostics may be visible; compare only broker numeric return records.
         $numericLines = @(Get-BrokerNumericLines -Lines $lines)
         $actual = ($numericLines -join $nl).TrimEnd([char[]]@([char]13, [char]10))
-        if ($exitCode -ne 0) { throw "Broker fixture process exited with code $exitCode. Output=[$actual]." }
+        if ($exitCode -ne 0) {
+            $rawDiagnostic = ($lines -join [string][char]10)
+            if ($rawDiagnostic.Length -gt 65536) { $rawDiagnostic = $rawDiagnostic.Substring(0, 65536) }
+            Write-Host ("DEVAGENT_BROKER_RAW_OUTPUT_BEGIN|exit={0}" -f $exitCode)
+            Write-Host $rawDiagnostic
+            Write-Host 'DEVAGENT_BROKER_RAW_OUTPUT_END'
+            if (Test-Path -LiteralPath $capturedOutputPath -PathType Leaf) {
+                $diagnosticBytes = [IO.File]::ReadAllBytes($capturedOutputPath)
+                $diagnosticLength = [Math]::Min(4096, $diagnosticBytes.Length)
+                $diagnosticText = [Text.Encoding]::UTF8.GetString($diagnosticBytes, 0, $diagnosticLength)
+                Write-Host ("DEVAGENT_CAPTURE_DIAGNOSTIC|length={0}|sample={1}" -f $diagnosticBytes.Length, $diagnosticText)
+            }
+            throw "Broker fixture process exited with code $exitCode. Output=[$actual]."
+        }
         if (-not [string]::Equals($actual, $expected, [StringComparison]::Ordinal)) {
+            $rawDiagnostic = ($lines -join [string][char]10)
+            if ($rawDiagnostic.Length -gt 65536) { $rawDiagnostic = $rawDiagnostic.Substring(0, 65536) }
+            Write-Host 'DEVAGENT_BROKER_RAW_OUTPUT_BEGIN|numeric-mismatch'
+            Write-Host $rawDiagnostic
+            Write-Host 'DEVAGENT_BROKER_RAW_OUTPUT_END'
             if (Test-Path -LiteralPath $dpapiStatusPath -PathType Leaf) {
                 $sandboxDpapiStatus = [IO.File]::ReadAllText($dpapiStatusPath, [Text.Encoding]::ASCII).Trim()
                 Write-Host ("DEVAGENT_SANDBOX_DPAPI_STATUS|{0}" -f $sandboxDpapiStatus)

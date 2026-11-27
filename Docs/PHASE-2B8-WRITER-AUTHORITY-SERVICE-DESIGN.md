@@ -1,10 +1,22 @@
 # Phase 2B.8 - Trusted Writer and Execution Authority Architecture
 
-**Status:** RECOMMENDED SECURITY ARCHITECTURE - NOT IMPLEMENTED  
+**Status:** OWNER-APPROVED ARCHITECTURE - IMPLEMENTATION PENDING  
 **Date:** 2026-11-27  
 **Scope:** durable ACL journal, AppContainer profile lifecycle and crash recovery.
 
-## 1. Decision required
+## 1. Owner decision recorded - 2026-11-27
+
+The owner approved the recommended dedicated Windows service authority architecture and its deployment/security boundary for implementation planning:
+
+- Dedicated service identity with an explicit service SID.
+- Non-exportable machine-scope CNG signing key whose private operation ACL is restricted to that service SID (plus separately approved maintenance/recovery principals).
+- Service-owned durable journal, workspace ACL transaction, AppContainer profile creation/deletion, Job Object ownership and crash recovery.
+- Typed, bounded IPC in which the service validates transaction semantics itself; no generic signing, arbitrary descriptor restore, or arbitrary profile-delete oracle.
+- Explicit installation, upgrade, key rotation/loss, uninstall and operator recovery lifecycle.
+
+This approval selects the architecture; it does not assert that a Windows service, key, installer, IPC endpoint, or production authenticated journal has been implemented. The service design and all acceptance gates below remain binding. Crash-time profile recovery stays disabled until those gates are implemented and independently verified.
+
+## Owner approval and implementation boundary
 
 The test evidence proves two important facts:
 

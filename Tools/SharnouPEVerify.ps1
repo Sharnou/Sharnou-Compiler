@@ -277,7 +277,7 @@ $foundDlls = [System.Collections.Generic.HashSet[string]]::new([System.StringCom
 $foundImports = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
 $descriptorIndex = 0
 while ($true) {
-    if ($descriptorIndex -gt 16) { Fail-PE 'Import descriptor array has no null terminator.' }
+    if ($descriptorIndex -gt 19) { Fail-PE 'Import descriptor array has no null terminator.' }
     $d = $importOffset + ($descriptorIndex * 20)
     if (($d + 20) -gt ($importOffset + $importSize)) { Fail-PE 'Import descriptor array is truncated.' }
     $oft = [UInt64](Read-U32 -Bytes $bytes -Offset $d)
@@ -304,7 +304,7 @@ while ($true) {
         if ($thunkValue -gt [UInt32]::MaxValue) { Fail-PE 'Ordinal or invalid import entry is unsupported.' }
         $hintOffset = Convert-RvaToOffset -Rva ([UInt64]$thunkValue) -Size 3 -Sections $sections.ToArray() -FileSize $bytes.Length
         $importName = Read-AsciiZAtRva -Rva ($thunkValue + 2) -Sections $sections.ToArray() -Bytes $bytes
-        if ([string]::IsNullOrWhiteSpace($importName)) { Fail-PE 'Import-by-name record has an empty API name.' }
+        if ([string]::IsNullOrWhiteSpace($importName)) { Fail-PE ("Import-by-name record has an empty API name: descriptor={0}, DLL={1}, thunk={2}, lookupRva=0x{3:X8}, hintOffset=0x{4:X8}, thunkValue=0x{5:X8}." -f $descriptorIndex, $dllName, $thunkIndex, $thunkRva, $hintOffset, $thunkValue) }
         $null = $foundImports.Add($importName)
         $iatEntryRva = $firstThunk + ([UInt64]$thunkIndex * 8)
         $null = Convert-RvaToOffset -Rva $iatEntryRva -Size 8 -Sections $sections.ToArray() -FileSize $bytes.Length
@@ -314,7 +314,7 @@ while ($true) {
 }
 if ($foundDlls.Count -lt 5) { Fail-PE 'Expected five Windows system DLL import descriptors.' }
 foreach ($dll in @('KERNEL32.dll', 'USER32.dll', 'D3D11.dll', 'DXGI.dll', 'BCRYPT.dll', 'USERENV.dll', 'ADVAPI32.dll')) { if (-not $foundDlls.Contains($dll)) { Fail-PE "Missing required DLL '$dll'." } }
-foreach ($api in @('GetStdHandle', 'WriteFile', 'ExitProcess', 'wsprintfA', 'CreateFileA', 'GetFileSizeEx', 'ReadFile', 'CloseHandle', 'GetModuleHandleA', 'CreateThread', 'WaitForSingleObject', 'CreateMutexA', 'ReleaseMutex', 'CreateWindowExA', 'ShowWindow', 'UpdateWindow', 'PeekMessageA', 'TranslateMessage', 'DispatchMessageA', 'DestroyWindow', 'D3D11CreateDeviceAndSwapChain', 'CreateDXGIFactory', 'QueryPerformanceCounter', 'QueryPerformanceFrequency', 'IsWindow', 'GetSystemDirectoryA', 'GetCurrentDirectoryA', 'CreateProcessA', 'CreateJobObjectA', 'SetInformationJobObject', 'AssignProcessToJobObject', 'ResumeThread', 'TerminateJobObject', 'GetExitCodeProcess', 'TerminateProcess', 'GetFileAttributesA', 'VirtualAlloc', 'VirtualFree', 'BCryptOpenAlgorithmProvider', 'BCryptHash', 'BCryptCloseAlgorithmProvider', 'GetFileInformationByHandle', 'GetModuleFileNameA', 'SetCurrentDirectoryA', 'CreatePipe', 'SetHandleInformation', 'PeekNamedPipe', 'InitializeProcThreadAttributeList', 'UpdateProcThreadAttribute', 'DeleteProcThreadAttributeList', 'GetLastError', 'CreateAppContainerProfile', 'DeriveAppContainerSidFromAppContainerName', 'GetNamedSecurityInfoA', 'SetEntriesInAclA', 'SetNamedSecurityInfoA', 'FreeSid', 'OpenProcessToken', 'CreateRestrictedToken', 'CreateProcessAsUserA', 'GetSecurityInfo', 'SetSecurityInfo', 'GetTokenInformation', 'GetFullPathNameA', 'DeleteFileA')) {
+foreach ($api in @('GetStdHandle', 'WriteFile', 'ExitProcess', 'wsprintfA', 'CreateFileA', 'GetFileSizeEx', 'ReadFile', 'CloseHandle', 'GetModuleHandleA', 'CreateThread', 'WaitForSingleObject', 'CreateMutexA', 'ReleaseMutex', 'CreateWindowExA', 'ShowWindow', 'UpdateWindow', 'PeekMessageA', 'TranslateMessage', 'DispatchMessageA', 'DestroyWindow', 'D3D11CreateDeviceAndSwapChain', 'CreateDXGIFactory', 'QueryPerformanceCounter', 'QueryPerformanceFrequency', 'IsWindow', 'GetSystemDirectoryA', 'GetCurrentDirectoryA', 'CreateProcessA', 'CreateJobObjectA', 'SetInformationJobObject', 'AssignProcessToJobObject', 'ResumeThread', 'TerminateJobObject', 'GetExitCodeProcess', 'TerminateProcess', 'GetFileAttributesA', 'VirtualAlloc', 'VirtualFree', 'BCryptOpenAlgorithmProvider', 'BCryptHash', 'BCryptCloseAlgorithmProvider', 'GetFileInformationByHandle', 'GetModuleFileNameA', 'SetCurrentDirectoryA', 'CreatePipe', 'SetHandleInformation', 'PeekNamedPipe', 'InitializeProcThreadAttributeList', 'UpdateProcThreadAttribute', 'DeleteProcThreadAttributeList', 'GetLastError', 'CreateAppContainerProfile', 'DeriveAppContainerSidFromAppContainerName', 'GetNamedSecurityInfoA', 'SetEntriesInAclA', 'SetNamedSecurityInfoA', 'FreeSid', 'OpenProcessToken', 'CreateRestrictedToken', 'CreateProcessAsUserA', 'GetSecurityInfo', 'SetSecurityInfo', 'GetTokenInformation', 'GetFullPathNameA', 'DeleteFileA', 'BCryptGenRandom', 'DeleteAppContainerProfile', 'EqualSid')) {
     if (-not $foundImports.Contains($api)) { Fail-PE "Missing required imported API '$api'." }
 }
 $relocOffset = Convert-RvaToOffset -Rva $relocRva -Size $relocSize -Sections $sections.ToArray() -FileSize $bytes.Length
