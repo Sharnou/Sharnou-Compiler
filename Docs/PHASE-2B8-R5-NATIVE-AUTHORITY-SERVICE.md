@@ -41,7 +41,7 @@ The format is byte-oriented, little-endian, fixed-header, length-bounded and exa
 |---:|---:|---|---|
 | 0 | 8 | Magic | ASCII SHARIPC1 |
 | 8 | 2 | Protocol version | 1 |
-| 10 | 2 | Operation | One of the opcodes in §3.2 |
+| 10 | 2 | Operation | One of the opcodes in section 3.2 |
 | 12 | 4 | Flags | 0; all other bits reserved |
 | 16 | 16 | Request ID | Non-empty opaque 128-bit identifier |
 | 32 | 4 | Payload length | Exact byte count, 0..16,384 |
