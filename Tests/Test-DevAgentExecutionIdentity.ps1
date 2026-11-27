@@ -310,6 +310,15 @@ namespace Sharnou
         [return: MarshalAs(UnmanagedType.Bool)]
         private static extern bool DestroyEnvironmentBlock(IntPtr environmentBlock);
 
+        [DllImport("kernel32.dll", EntryPoint = "GetEnvironmentStringsW",
+            CharSet = CharSet.Unicode, ExactSpelling = true)]
+        private static extern IntPtr GetEnvironmentStringsW();
+
+        [DllImport("kernel32.dll", EntryPoint = "FreeEnvironmentStringsW",
+            CharSet = CharSet.Unicode, ExactSpelling = true, SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool FreeEnvironmentStringsW(IntPtr environmentBlock);
+
         [DllImport("kernel32.dll", EntryPoint = "InitializeProcThreadAttributeList",
             ExactSpelling = true, SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]
@@ -483,24 +492,50 @@ namespace Sharnou
                         throw new Win32Exception(Marshal.GetLastWin32Error(), "DestroyEnvironmentBlock failed.");
                 }
 
-                string systemDrive = System.IO.Path.GetPathRoot(systemDirectory).TrimEnd('\\');
-                string currentDirectory = Environment.CurrentDirectory;
-                string currentDrive = System.IO.Path.GetPathRoot(currentDirectory).TrimEnd('\\');
-                if (String.IsNullOrEmpty(systemDrive) || String.IsNullOrEmpty(currentDrive) ||
-                    systemDrive.Length != 2 || currentDrive.Length != 2 ||
-                    !System.IO.Path.IsPathRooted(currentDirectory))
-                    throw new InvalidOperationException("Could not derive bounded drive-relative environment entries.");
-
-                // Windows preserves hidden per-drive current-directory entries
-                // (for example, =D:=D:\workspace). Omitting them can make
-                // CreateProcessW fail with ERROR_ENVVAR_NOT_FOUND (203) on a
-                // cross-drive runner even when ordinary allowlisted variables exist.
-                // Reconstruct only the system drive and current validated drive;
-                // do not copy arbitrary inherited environment variables.
+                // Preserve only Windows' special per-drive current-directory
+                // entries from the parent environment. They are not ordinary
+                // variables; dropping them can cause CreateProcessW error 203
+                // on cross-drive hosts. All other parent values are discarded.
+                IntPtr parentEnvironment = GetEnvironmentStringsW();
+                if (parentEnvironment == IntPtr.Zero)
+                    throw new Win32Exception(Marshal.GetLastWin32Error(), "GetEnvironmentStringsW failed.");
                 var allowedEnvironmentList = new List<string>();
-                allowedEnvironmentList.Add("=" + systemDrive + "=" + systemDirectory);
-                if (!String.Equals(systemDrive, currentDrive, StringComparison.OrdinalIgnoreCase))
-                    allowedEnvironmentList.Add("=" + currentDrive + "=" + currentDirectory);
+                var driveEntryNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                try
+                {
+                    bool parentTerminated = false;
+                    int parentOffset = 0;
+                    for (int entryIndex = 0; entryIndex < 32768; entryIndex++)
+                    {
+                        string entry = Marshal.PtrToStringUni(IntPtr.Add(parentEnvironment, checked(parentOffset * 2)));
+                        if (String.IsNullOrEmpty(entry))
+                        {
+                            parentTerminated = true;
+                            break;
+                        }
+                        parentOffset = checked(parentOffset + entry.Length + 1);
+                        if (entry.Length < 4 || entry[0] != '=' ||
+                            !Char.IsLetter(entry[1]) || entry[2] != ':' || entry[3] != '=')
+                            continue;
+
+                        string driveName = entry.Substring(0, 3);
+                        string drivePath = entry.Substring(4);
+                        string expectedRoot = driveName.Substring(1, 2) + "\\";
+                        if (!System.IO.Path.IsPathRooted(drivePath) ||
+                            !String.Equals(System.IO.Path.GetPathRoot(drivePath), expectedRoot, StringComparison.OrdinalIgnoreCase))
+                            throw new InvalidOperationException("Malformed hidden per-drive current-directory entry.");
+                        if (!driveEntryNames.Add(driveName))
+                            throw new InvalidOperationException("Duplicate hidden per-drive environment entry.");
+                        allowedEnvironmentList.Add(entry);
+                    }
+                    if (!parentTerminated)
+                        throw new InvalidOperationException("Parent environment block lacked a bounded double-NUL terminator.");
+                }
+                finally
+                {
+                    if (!FreeEnvironmentStringsW(parentEnvironment))
+                        throw new Win32Exception(Marshal.GetLastWin32Error(), "FreeEnvironmentStringsW failed.");
+                }
                 allowedEnvironmentList.Add("ComSpec=" + application);
                 allowedEnvironmentList.Add("PATH=" + systemDirectory);
                 allowedEnvironmentList.Add("SystemDrive=" + systemDrive);
