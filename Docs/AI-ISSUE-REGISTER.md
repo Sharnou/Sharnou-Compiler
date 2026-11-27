@@ -438,3 +438,36 @@ PR #5 remains OPEN / UNMERGED at 0b8dee87b699eabcaaac37f111686231fb29a82c, 2 ahe
 Static review found a short-circuit constant-evaluation gap: when the left operand of a logical node is dynamic, Get-ConstantValue still traverses the right subtree. This is compile-time constant-arithmetic validation, not runtime RHS execution, but it can reject an expression whose RHS should be skipped at runtime (for example a dynamic Boolean left operand and a constant divide-by-zero RHS). The positive tests only use literal left operands for the short-circuit skip/evaluate cases. The four machine-code checks test opcode presence and do not decode rel32 destinations.
 
 Proposal-only test expansion: four dynamic-variable-left AND/OR skip/evaluate cases; two explicit Boolean function argument/return ABI rejection cases while function ABI remains integer-only; one three-level nested-loop target case; and rel32 destination decoding for the four existing machine checks. This yields a 39-case Stage 7B suite (20 positive, 15 negative, 4 instruction checks) and a 145-case same-commit gate (83 baseline + 23 Stage 7A + 39 Stage 7B). Preserve the original 83 cases unchanged. Milestone 7B remains unaccepted and unimplemented; use a fresh isolated branch only after explicit scope approval and baseline/provenance prerequisites.
+
+## Scheduled audit - 2026-11-27
+
+### User-approved scope change
+
+The user explicitly approved the required implementation scope for compiler milestones 7B-7E and Engine/Honour War milestones 8-13, plus the autonomous Sharnou AI development agent and advanced Internet/OpenAI/Perplexity bug-research escalation. This supersedes earlier historical entries that described 7B as unaccepted scope. It is scope approval only: no existing PR is approved for merge and no implementation is accepted by this scope statement. The master plan records the exact acceptance criteria in section 12.
+
+### Current compiler and DevAgent candidate state
+
+- Default branch before this run's status writes: HEAD d71855e... (re-fetched at run start). A status-only plan commit was created: 0d72e58940d2fe295da4539eea2cf4f98a77ec48. The default Stage 7A Windows workflow [45963690266](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45963690266) passed 23/23 on that exact documentation-only commit.
+- PR #24 remains OPEN / DRAFT / UNMERGED, branch devagent-acl-transaction-recovery-20261126, latest head 21d00a80f51f3df7ebde4a16c18702d601402a25, base 8893ef5156b271132a4104300beb55cac5a74923, GitHub mergeable=false. Do not merge or rebase automatically.
+- PR #24 changes this run: Stage0/SharnouCompiler.ps1 (journal validation diagnostics and metadata-only path probe) and Tests/Test-DevAgentBroker.ps1 (unsigned diagnostic constant conversion and expected first-signature rejection code). These are isolated branch changes; no compiler source was written to default.
+- M1-M6 baseline workflow [45963617323](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45963617323) passed 83/83 on candidate head 21d00a80f51f3df7ebde4a16c18702d601402a25: Stage 2 25/25, Stage 4 20/20, PE verifier 4/4, Stage 5 25/25, Stage 6 9/9.
+- Candidate Stage 7A workflow [45963617259](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45963617259) was IN_PROGRESS at the latest check. Do not infer a conclusion from an unfinished job.
+- Prior exact-head run [45963052813](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45963052813) failed crash recovery with status -2405. The test's PowerShell CreateFile probes and direct journal read succeeded; journal magic/version and descriptor lengths were valid. The native GetFileAttributesA call on the broker-constructed journal path returned Win32 ERROR_ACCESS_DENIED (5). Workspace root, Build and broker directory SDDL remained transient after failure, so rollback was not proven.
+- Earlier diagnostic-only candidate runs: [45961851035](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45961851035) failed because PowerShell could not convert the signed 0x80000000 literal to UInt32; [45962179131](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45962179131) exposed a more precise first-signature status (-450), requiring the corresponding malformed-input expectation to be updated. These were test/diagnostic failures, not successful crash-recovery evidence.
+- The latest commit adds a native metadata-only CreateFile probe after the generic-read open fails. Run 45963617259 is expected to reveal whether the native process can open the same path with zero desired access. Its result is pending. No root cause is claimed yet.
+
+### Security and autonomous-agent disposition
+
+- PR #18 Phase 2B.4 remains a test-only AppContainer/Job Object fixture, not production broker integration. The explicit custom environment block failure (Win32 203) remains an independent production blocker.
+- PR #24 crash-safe ACL recovery is not accepted until the exact DACL/mandatory-label rollback is demonstrated after forced parent death and the journal is safely retired.
+- Bounded concurrent output/handle isolation and clean environment are still required before model-facing process execution. Model-generated process execution remains DISABLED.
+- PR #7 is a historical native test orchestrator, not an autonomous AI source-generating agent. No persistent SharnouDevAgent, provider adapter, durable autonomous worker, self-hosted compiler, or deployment proof exists.
+- OpenAI and Perplexity API credentials and a persistent Windows host remain external prerequisites for live provider/worker deployment. Credential-free mocks and local/offline work must remain possible.
+
+### Next dependency-ordered work
+
+1. Inspect the final Windows log for run 45963617259 and decode the metadata-only probe result.
+2. Fix the actual native journal path/open defect; do not weaken ACL policy to make the test pass.
+3. Re-run crash recovery, malformed-journal, Job Object termination, exact rollback, journal-retirement and reparse-point adversarial tests on the same candidate head.
+4. Reconcile the candidate with current default through a new isolated branch if necessary; PR #24 is stale and must remain draft/unmerged.
+5. Return to the accepted compiler dependency sequence: frozen baseline provenance and ABI acceptance, 7B-7E implementation and tests, native runtime/security prerequisites, then the Sharnou-compiled autonomous agent. Engine 8-13 follow the approved dependency order.
