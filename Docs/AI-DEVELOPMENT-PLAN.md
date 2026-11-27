@@ -297,3 +297,12 @@ Current PR #24 head `6344632746cd0666025a0beb0d31f4752d6480f6` has targeted Wind
 Draft PR #28 starts Phase 2B.8 on an isolated branch stacked on that exact PR #24 head. Its first code increment adds a Windows CNG/AppContainer identity primitive test to the combined test suite. It is **NOT YET WINDOWS-CI-VERIFIED** and does not change the production broker or its stable profile behavior.
 
 Next dependencies: verify the identity fixture on Windows; implement actual unique identity creation in the emitted broker; design authenticated journal metadata before recording profile names for restart cleanup; integrate idempotent profile deletion with normal and crash recovery; then implement clean environment, separate bounded streams, DLL hardening and exhaustive lifecycle qualification. Model-generated execution remains disabled until all same-commit security gates and human review pass.
+
+
+## Phase 2B.8 engineering status - 2026-11-27
+
+The first Windows identity and journal-schema primitives are independently tested. On code-bearing commit `907281187ffdf9223d4b345a2847c2a1feb883cf`, Windows run [46021589016](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/46021589016) passed: eight fresh CNG/AppContainer identities, exact child package-SID checks on suspended children, Low IL and zero capabilities, normal profile delete/recreate/delete, DPAPI user-scope envelope protection/tamper checks, and strict v2 fixture schema rejection tests. M1-M6 83/83 passed in [46021589107](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/46021589107). Stage 7A combined test run 46021589123 was still in progress at the last status check.
+
+The DPAPI result is deliberately classified as a user-scope protection primitive, not process-writer authentication. A same-user process can use the same DPAPI context and optional entropy to produce a different valid blob. The writer-authentication trust boundary must be decided and reviewed before native v2 journal integration or privileged profile cleanup. See `Docs/PHASE-2B8-JOURNAL-TRUST-BOUNDARY.md`.
+
+No code in the compiler-emitted broker or its v1 journal has yet been changed. Unique per-execution profile creation, persisted authenticated identity, restart-time profile cleanup, explicit Unicode environment, separate streams, child DLL loader policy, cancellation/concurrency and crash-cut qualification remain pending. Model-facing/autonomous execution remains disabled.
