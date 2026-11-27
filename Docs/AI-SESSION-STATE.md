@@ -1063,7 +1063,7 @@ Phase 2B.3 is **WINDOWS CI PASS as a test-only security fixture**:
 - Frozen M1-M6 baseline [45914499087](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45914499087): PASS 83/83 on the exact same head.
 - Existing crash-safe workspace security [45914498984](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45914498984): PASS.
 - Native SDK/API ABI contract [45914498917](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45914498917): PASS.
-- Stage 7A run [45914498926](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45914498926) was still running when this record was prepared; do not mark it complete until its final status is fetched.
+- Stage 7A integrated workflow [45914498926](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45914498926): PASS; Stage 7A 24/24, Stage 5 collection imports 2/2, stack probe/unwind 6/6, Runtime ABI PASS, frozen M1-M6 83/83, and Combined result PASS.
 
 Phase 2B.3 fixture behavior:
 - Creates two independent real AppContainer profiles using `CreateAppContainerProfile`, validates the OS-returned SIDs, and binds each exact package SID to its own execution workspace.
@@ -1087,3 +1087,8 @@ Two test-only PowerShell defects were corrected during the run: signed literal c
 Evidence boundary: the real AppContainer child is never resumed. The test uses a duplicated token to impersonate the AppContainer identity on the supervisor thread and tests filesystem ACL enforcement with actual Windows access checks via CreateFileW. This proves the selected filesystem DACL behavior for the fixture paths, not arbitrary code execution inside the AppContainer. It does not establish production broker integration, Job Object binding, clean environment, explicit DLL-search policy, output handle isolation, bounded output, cancellation, network denial, or full Windows 10/11 adversarial coverage. Existing crash recovery was tested on the Windows Server 2025 runner only.
 
 **Next dependency: Phase 2B.4 - production-design review and test-only integration of suspended AppContainer process creation with Job Object assignment and token verification before any resume.** The AppContainer workspace ACL fixture must remain test-only until 2B.4/2B.5/2B.6 and production integration gates are separately accepted. Model-facing/autonomous process execution remains **DISABLED**.
+
+
+### Phase 2B.3 exact-head regression closeout
+
+After the Phase 2B.3 evidence entry above, the integrated Stage 7A workflow [45914498926](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45914498926) completed successfully on code/test head `6761c7ab6f251d487a09f592c96071782622b3ab`: Stage 7A 24/24; collection imports 2/2; stack probe/unwind 6/6; Runtime ABI PASS; M1-M6 83/83; Combined result PASS. The documentation-only head `5655c9c831d698c2a40fa321dcdab2ac73c8b839` independently reran the Phase 2B.3 ACL fixture [45914740334](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45914740334), integrated ABI/AppContainer fixture [45914740286](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45914740286), workspace security [45914740289](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45914740289), and M1-M6 [45914740282](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45914740282); all completed SUCCESS. Stage 7A rerun [45914740232](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45914740232) was still in progress at the time of this follow-up; the completed exact code/test head run above remains the recorded Stage 7A evidence.
