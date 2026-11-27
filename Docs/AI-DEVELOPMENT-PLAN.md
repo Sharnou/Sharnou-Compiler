@@ -311,3 +311,14 @@ No code in the compiler-emitted broker or its v1 journal has yet been changed. U
 ### Latest Phase 2B.8 identity/journal evidence - 2026-11-27
 
 The latest dedicated Windows test [46022134602](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/46022134602) passed on `a64b81def96b22315b8ab8034bb60c4af1870e32`, including 8 real suspended child-token inspections, distinct AppContainer identities/SIDs, Low IL and zero capabilities, verified normal profile deletion, strict v2 schema negatives, DPAPI tamper/wrong-context checks and an explicit same-user re-protection proof. That last test demonstrates why DPAPI alone does not authenticate the writer process. The production trust anchor remains unresolved; native broker integration must not consume profile cleanup authority from DPAPI-only metadata until this decision is reviewed.
+
+
+## Phase 2B.8 R5 - Native Windows Execution Authority Service
+
+The dedicated Windows service / service-SID / non-exportable machine CNG key architecture is owner-approved for implementation planning. It remains a separate acceptance and deployment boundary, not authorization to enable process execution.
+
+Dependency-ordered R5 implementation: R5.0 typed bounded IPC protocol; R5.1 native Sharnou-generated SCM service host and service lifecycle tests; R5.2 service SID and protected non-exportable key; R5.3 local named-pipe transport/client authentication; R5.4 service-owned signed durable journal; R5.5 workspace, AppContainer, ACL and Job Object ownership; R5.6 crash/concurrency/restart/operator recovery; R5.7 independent PE-import/evidence verifier and security review.
+
+Current candidate: draft PR #31, branch `phase-2b8-r5-authority-service-protocol-20261127`, stacked on R4 tested source head `b0d3ff96deadd04072d7f63ccb4b2c85b42a5c15`. R5.0 defines the 40-byte IPC v1 request header and five typed operations, provides a test-only strict schema/parser fixture, adds it to Test.ps1, and adds an exact-head Windows Server 2025 CI gate. This protocol tranche is not itself a Windows service.
+
+R5.1 must implement a real Windows SCM host using the Sharnou native code-generation/PE path, validate the actual generated executable import table, and pass service start/stop/control/shutdown tests. Do not use Add-Type as production service code or introduce external compiler/linker dependencies. Keep model-facing and autonomous execution disabled until separate later authorization milestones and complete Phase 2B.8 security acceptance.

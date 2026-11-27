@@ -590,3 +590,13 @@ Acceptance requires: repair and adversarially validate journal recovery; unique 
 - Recommended journal writer-authority architecture recorded in Docs/PHASE-2B8-WRITER-AUTHORITY-SERVICE-DESIGN.md: service SID owns key and durable transaction; no generic signing oracle. Service installation/key recovery is a deployment approval gate; no service is implemented.
 - Explicit Unicode environment primitive passed Windows run 46025925905: bounded allowlist, hidden drive entries validated/preserved, SystemRoot/windir/SystemDrive/PATH correct, parent secret absent. This is ordinary CreateProcessW proof only, not AppContainer CreateProcessAsUserW integration.
 - Stage 7A run 46025926233 includes an AppContainer-child CurrentUser DPAPI test using ConvertFrom-SecureString (Add-Type is unavailable in the restricted sandbox command surface). Await its final output before classifying whether Low-IL AppContainer can mint an envelope decryptable by the trusted same-user broker.
+
+
+## R5 Native Windows Execution Authority Service - 2026-11-27
+
+- R4 exact-head run [46056315237](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/46056315237) is WINDOWS CI PASS on exact source head `b0d3ff96deadd04072d7f63ccb4b2c85b42a5c15`: primitive suite PASS; combined Stage 7A 24/24, collection imports 2/2, unwind/stack probe 6/6, Runtime ABI PASS, broker PASS; frozen M1-M6 83/83. Evidence artifact 15226688794, ZIP SHA-256 `409dd4e1a2921d8a76bf8b58f8f7df3db8979f79d167edf61be51a923a80ca63`. R4 remains primitive/regression scope only.
+- R5.0 branch `phase-2b8-r5-authority-service-protocol-20261127`; draft PR #31 stacked on R4. Files: R5 service architecture/protocol contract; test-only 40-byte IPC v1 framing/schema parser; root Test.ps1 integration; exact-head Windows gate.
+- Current run [46058301150](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/46058301150) was IN PROGRESS at the time of this note. Do not claim R5.0 Windows PASS until the test and full regression workflow finish and its artifact is inspected.
+- Prior wording that the service architecture decision was unresolved is superseded: the owner-approved architecture permits implementation planning. It does not authorize installation, production key provisioning, rollout or process-execution enablement.
+- R5.0 does not implement SCM service host, named pipe, service SID, machine CNG key, journal, recovery or child launch. R5.1 is the next native code-bearing increment: Sharnou-generated SCM service-host bootstrap, actual PE import-table verification and Windows service lifecycle tests.
+- Model-facing and autonomous execution remain DISABLED; Phase 2B.8 remains NOT SECURITY ACCEPTED.
