@@ -270,6 +270,10 @@ namespace Sharnou
         [return: MarshalAs(UnmanagedType.Bool)]
         private static extern bool TerminateJobObject(IntPtr job, uint exitCode);
 
+        [DllImport("kernel32.dll", EntryPoint = "TerminateProcess", ExactSpelling = true, SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool TerminateProcess(IntPtr process, uint exitCode);
+
         [DllImport("kernel32.dll", EntryPoint = "WaitForSingleObject", ExactSpelling = true, SetLastError = true)]
         private static extern uint WaitForSingleObject(IntPtr handle, uint milliseconds);
 
