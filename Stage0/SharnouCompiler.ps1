@@ -578,6 +578,16 @@ function Emit-DataAddress {
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x8D, 0x05)); $dispOffset = $script:Code.Count; Emit-I32 -Value 0
     $script:CodeFixups.Add([pscustomobject]@{ Kind = 'Data'; DispOffset = $dispOffset; Target = $DataItem })
 }
+function Emit-CallDataPointer {
+    param([object] $DataItem)
+    if ($null -eq $DataItem -or $DataItem.Bytes.Length -ne 8) {
+        throw 'Typed callback pointer call requires an eight-byte data pointer item.'
+    }
+    Emit-Bytes -Bytes ([byte[]]@(0xFF, 0x15))
+    $dispOffset = $script:Code.Count
+    Emit-I32 -Value 0
+    $script:CodeFixups.Add([pscustomobject]@{ Kind = 'Data'; DispOffset = $dispOffset; Target = $DataItem })
+}
 function Emit-JumpConditional {
     param([byte] $ConditionCode, [string] $Label)
     Emit-Bytes -Bytes ([byte[]]@(0x0F, $ConditionCode)); $dispOffset = $script:Code.Count; Emit-I32 -Value 0
@@ -719,6 +729,56 @@ function Register-ByteDataConstant {
     if ($Bytes.Length -gt 0) { [System.Buffer]::BlockCopy($Bytes, 0, $itemBytes, 0, $Bytes.Length) }
     $item = [pscustomobject]@{ Value = $Key; Offset = $script:DataLength; Bytes = $itemBytes }
     $script:DataItems.Add($item); $script:DataMap.Add($Key, $item); $script:DataLength += $itemBytes.Length
+    return $item
+}
+function Register-CodeCallbackPointer {
+    param(
+        [Parameter(Mandatory = $true)][string] $Key,
+        [Parameter(Mandatory = $true)][string] $Label,
+        [Parameter(Mandatory = $true)][ValidateSet('SERVICE_MAIN_FUNCTIONW', 'HANDLER_FUNCTION_EX')][string] $Signature
+    )
+
+    $existing = @($script:DataPointerFixups | Where-Object { $_.Key -ceq $Key })
+    if ($existing.Count -gt 0) {
+        if ($existing.Count -ne 1 -or $existing[0].Label -cne $Label -or $existing[0].Signature -cne $Signature) {
+            throw "Callback pointer key '$Key' was registered with conflicting target metadata."
+        }
+        return $existing[0].DataItem
+    }
+    if ($script:DataMap.ContainsKey($Key)) { throw "Callback pointer data key collides with an existing constant: $Key" }
+    if (-not $Label.StartsWith('__', [StringComparison]::Ordinal)) {
+        throw 'Typed callback targets must use a compiler-owned internal code label.'
+    }
+
+    $signatureContract = switch ($Signature) {
+        'SERVICE_MAIN_FUNCTIONW' { 'VOID WINAPI (DWORD, LPWSTR*)' }
+        'HANDLER_FUNCTION_EX' { 'DWORD WINAPI (DWORD, DWORD, LPVOID, LPVOID)' }
+        default { throw "Unsupported Windows callback signature: $Signature" }
+    }
+    $padding = (8 - ($script:DataLength % 8)) % 8
+    if ($padding -gt 0) {
+        if (($script:DataLength + $padding + 8) -gt 0x1000) { throw 'Callback pointer table exceeds .rdata capacity.' }
+        $paddingBytes = [byte[]]::new($padding)
+        $paddingItem = [pscustomobject]@{ Value = $Key + ':ALIGN'; Offset = $script:DataLength; Bytes = $paddingBytes }
+        $script:DataItems.Add($paddingItem)
+        $script:DataMap.Add($paddingItem.Value, $paddingItem)
+        $script:DataLength += $padding
+    }
+
+    if (($script:DataLength + 8) -gt 0x1000) { throw 'Callback pointer table exceeds .rdata capacity.' }
+    $pointerBytes = [byte[]]::new(8)
+    $item = [pscustomobject]@{ Value = $Key; Offset = $script:DataLength; Bytes = $pointerBytes }
+    $script:DataItems.Add($item)
+    $script:DataMap.Add($Key, $item)
+    $script:DataLength += 8
+    $script:DataPointerFixups.Add([pscustomobject]@{
+        Key = $Key
+        Label = $Label
+        Signature = $Signature
+        Contract = $signatureContract
+        DataItem = $item
+        TargetRva = [UInt32]0
+    })
     return $item
 }
 function Get-TempSlotPosition {
@@ -3835,6 +3895,39 @@ function Emit-BuiltinCall {
     $baseDepth = [int]$script:TempDepth
     $argSlots = [System.Collections.Generic.List[int]]::new()
     switch ($Node.Builtin) {
+        'Win64CallbackProbe' {
+            $serviceMainPointer = Register-CodeCallbackPointer -Key 'CALLBACK:SERVICE_MAIN_FUNCTIONW' -Label '__r51_service_main_abi_probe' -Signature 'SERVICE_MAIN_FUNCTIONW'
+            $handlerExPointer = Register-CodeCallbackPointer -Key 'CALLBACK:HANDLER_FUNCTION_EX' -Label '__r51_handler_ex_abi_probe' -Signature 'HANDLER_FUNCTION_EX'
+            $failLabel = New-UniqueLabel -Prefix 'win64_callback_probe_fail'
+            $doneLabel = New-UniqueLabel -Prefix 'win64_callback_probe_done'
+
+            # SERVICE_MAIN_FUNCTIONW: RCX=argc (DWORD), RDX=argv-vector pointer (LPWSTR*).
+            Emit-Bytes -Bytes ([byte[]]@(0xB9, 0xDF, 0x9B, 0x57, 0x13))
+            Emit-Bytes -Bytes ([byte[]]@(0x48, 0xB8))
+            $script:Code.AddRange([BitConverter]::GetBytes([UInt64]0x1122334455667788))
+            Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC2, 0x48, 0x83, 0xEC, 0x20))
+            Emit-CallDataPointer -DataItem $serviceMainPointer
+            Emit-Bytes -Bytes ([byte[]]@(0x48, 0x83, 0xC4, 0x20, 0x3D, 0xDE, 0xC0, 0xA7, 0x51))
+            Emit-JumpConditional -ConditionCode 0x85 -Label $failLabel
+
+            # HandlerEx: four ABI registers, including both full-width pointer arguments.
+            Emit-Bytes -Bytes ([byte[]]@(0xB9, 0x78, 0x56, 0x34, 0x12, 0xBA, 0x21, 0x43, 0x65, 0x87))
+            Emit-Bytes -Bytes ([byte[]]@(0x48, 0xB8))
+            $script:Code.AddRange([BitConverter]::GetBytes([UInt64]0x1122334455667788))
+            Emit-Bytes -Bytes ([byte[]]@(0x49, 0x89, 0xC0, 0x48, 0xB8))
+            $script:Code.AddRange([BitConverter]::GetBytes([UInt64]0x8877665544332211))
+            Emit-Bytes -Bytes ([byte[]]@(0x49, 0x89, 0xC1, 0x48, 0x83, 0xEC, 0x20))
+            Emit-CallDataPointer -DataItem $handlerExPointer
+            Emit-Bytes -Bytes ([byte[]]@(0x48, 0x83, 0xC4, 0x20, 0x3D, 0xDE, 0xC0, 0xA7, 0x51))
+            Emit-JumpConditional -ConditionCode 0x85 -Label $failLabel
+            Emit-Bytes -Bytes ([byte[]]@(0xB8, 0x01, 0x00, 0x00, 0x00))
+            Emit-Jump -Label $doneLabel
+            Mark-CodeLabel -Label $failLabel
+            Emit-Jump -Label '__runtime_fail'
+            Mark-CodeLabel -Label $doneLabel
+            $script:TempDepth = $baseDepth
+            return
+        }
         'AbiNonvolatileProbe' {
             Emit-NonvolatileRegisterProbe -Node $Node -BaseDepth $baseDepth
             $script:TempDepth = $baseDepth
@@ -4632,7 +4725,8 @@ $builtinDefinitions = @(
     [pscustomobject]@{ Name = 'sh_window_probe'; Builtin = 'WindowProbe'; ParameterTypes = @('String'); ReturnType = 'Integer' },
     [pscustomobject]@{ Name = 'sh_window_pump_once'; Builtin = 'WindowPump'; ParameterTypes = @(); ReturnType = 'Integer' },
     [pscustomobject]@{ Name = 'sh_thread_sync_probe'; Builtin = 'ThreadSyncProbe'; ParameterTypes = @(); ReturnType = 'Integer' },
-    [pscustomobject]@{ Name = 'sh_d3d11_render_demo'; Builtin = 'D3D11RenderDemo'; ParameterTypes = @('String', 'Integer'); ReturnType = 'Integer' }
+    [pscustomobject]@{ Name = 'sh_d3d11_render_demo'; Builtin = 'D3D11RenderDemo'; ParameterTypes = @('String', 'Integer'); ReturnType = 'Integer' },
+    [pscustomobject]@{ Name = 'sh_win64_callback_abi_probe'; Builtin = 'Win64CallbackProbe'; ParameterTypes = @(); ReturnType = 'Integer' }
 )
 if ($EnableDevAgentTools) {
     $builtinDefinitions += [pscustomobject]@{ Name = 'sh_dev_run_tool'; Builtin = 'DevRunTool'; ParameterTypes = @('Integer', 'Integer'); ReturnType = 'Integer' }
@@ -4662,6 +4756,7 @@ $script:CodeFixups = [System.Collections.Generic.List[object]]::new()
 $script:CodeLabels = [System.Collections.Generic.Dictionary[string, int]]::new([System.StringComparer]::Ordinal)
 $script:DataItems = [System.Collections.Generic.List[object]]::new()
 $script:DataMap = [System.Collections.Generic.Dictionary[string, object]]::new([System.StringComparer]::Ordinal)
+$script:DataPointerFixups = [System.Collections.Generic.List[object]]::new()
 $script:DataLength = 8 # reserved absolute entry-point anchor, patched by the base-relocation directory
 $script:UniqueLabel = 0
 
