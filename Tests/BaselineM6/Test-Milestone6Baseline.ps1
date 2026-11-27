@@ -131,8 +131,9 @@ try {
 
     $compilerSource = Join-Path $repoRoot 'Stage0\SharnouCompiler.ps1'
     $verifierSource = Join-Path $repoRoot 'Tools\SharnouPEVerify.ps1'
+    $relocationSource = Join-Path $repoRoot 'Tools\SharnouPERelocations.ps1'
     $graphicsSource = Join-Path $repoRoot 'StdLib\Graphics.sharnou'
-    foreach ($required in @($compilerSource, $verifierSource, $graphicsSource)) {
+    foreach ($required in @($compilerSource, $verifierSource, $relocationSource, $graphicsSource)) {
         if (-not (Test-Path -LiteralPath $required -PathType Leaf)) {
             throw "Current repository tool is missing: $required"
         }
@@ -144,8 +145,12 @@ try {
     $null = New-Item -ItemType Directory -Path $verifierDirectory -Force
     $compilerPath = Join-Path $compilerDirectory 'SharnouCompiler.ps1'
     $verifierPath = Join-Path $verifierDirectory 'SharnouPEVerify.ps1'
+    $relocationPath = Join-Path $verifierDirectory 'SharnouPERelocations.ps1'
     Copy-Item -LiteralPath $compilerSource -Destination $compilerPath -Force
     Copy-Item -LiteralPath $verifierSource -Destination $verifierPath -Force
+    # Keep the hash-pinned historical payload unchanged, but colocate current compiler dependencies
+    # beside its copied verifier/compiler so the archived regression exercises the current PE path.
+    Copy-Item -LiteralPath $relocationSource -Destination $relocationPath -Force
     $stdLibDirectory = Join-Path $workRoot 'StdLib'
     $null = New-Item -ItemType Directory -Path $stdLibDirectory -Force
     Copy-Item -LiteralPath $graphicsSource -Destination (Join-Path $stdLibDirectory 'Graphics.sharnou') -Force
