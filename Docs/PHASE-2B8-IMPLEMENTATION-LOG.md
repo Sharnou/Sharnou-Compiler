@@ -194,3 +194,17 @@ Dedicated Windows Server 2025 run [46025925905](https://github.com/Sharnou/Sharn
 Frozen M1-M6 baseline run [46025925771](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/46025925771) passed **83/83** on the same candidate.
 
 This qualifies the explicit environment construction and ordinary Windows `CreateProcessW` path on the Windows runner. It does **not** yet verify the same environment with `CreateProcessAsUserW` + `SECURITY_CAPABILITIES` for the AppContainer child, and it does not change the compiler-emitted broker. The production emitter still passes `lpEnvironment=NULL`; Win32 error 203 remains unclosed for the production API path until the exact AppContainer/restricted-token process creation path is tested and integrated.
+
+## 2026-11-27 writer-authority architecture decision gate
+
+Added Docs/PHASE-2B8-WRITER-AUTHORITY-SERVICE-DESIGN.md. The recommended production architecture is a dedicated Windows service SID that owns the signing key and the entire durable ACL transaction lifecycle. This is deliberately not a generic signing oracle: the service must itself validate registered workspace roots, fixed tool IDs/hashes, descriptors, profile ownership and state transitions, and must write/recover its own journal.
+
+The service model introduces installation, maintenance, key rotation/loss and operator recovery requirements. These are product/deployment decisions and remain an explicit owner-approval gate before native service code is introduced. No service binary, key, service registration, IPC endpoint or production journal migration has been implemented.
+
+Current completed test increments:
+- Unique AppContainer profile/token create/derive/delete fixture: Windows PASS.
+- User-scope DPAPI envelope + strict v2 schema + separate same-user process re-protection fixture: Windows PASS.
+- Explicit Unicode environment builder using a non-NULL CreateProcessW environment block: Windows PASS on 9 variables / 354 UTF-16 code units, with required values present and a unique parent secret absent. This is a builder/process-creation primitive only; not yet the production CreateProcessAsUserW + AppContainer launch path.
+- Existing production broker sandbox DPAPI characterization was changed to use PowerShell's built-in ConvertFrom-SecureString because Add-Type is not available in the restricted child command surface. The parent uses ConvertTo-SecureString to verify whether the child-minted CurrentUser DPAPI envelope is decryptable. Exact combined Stage 7A run 46025926233 was in progress at the last check; do not claim that probe's result until its log is reviewed.
+
+Model-facing/autonomous execution remains disabled. The emitted broker still uses a stable shared AppContainer profile, v1 ACL journal, inherited environment and merged stdout/stderr. The latest tests do not change these production boundaries.
