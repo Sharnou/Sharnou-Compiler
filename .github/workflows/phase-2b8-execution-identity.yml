@@ -5,6 +5,7 @@ on:
     branches:
       - phase-2b8-identity-profile-qualification-20261127
       - phase-2b8-r3-native-per-execution-profile-20261127
+      - phase-2b8-r4-signed-journal-qualification-20261127
   workflow_dispatch:
 
 permissions:
@@ -21,6 +22,41 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Initialize exact-head evidence manifest
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $evidence = Join-Path $env:RUNNER_TEMP 'phase-2b8-evidence'
+          New-Item -ItemType Directory -Path $evidence -Force | Out-Null
+          $actualHead = (& git rev-parse HEAD).Trim()
+          if ($LASTEXITCODE -ne 0 -or $actualHead -ne $env:GITHUB_SHA) {
+            throw "Checkout head mismatch: expected=$env:GITHUB_SHA actual=$actualHead"
+          }
+          $metadata = @(
+            "repository=$env:GITHUB_REPOSITORY",
+            "commit=$actualHead",
+            "workflow=$env:GITHUB_WORKFLOW",
+            "run_id=$env:GITHUB_RUN_ID",
+            "run_attempt=$env:GITHUB_RUN_ATTEMPT",
+            "runner_os=$env:RUNNER_OS",
+            "runner_arch=$env:RUNNER_ARCH",
+            "windows=$([Environment]::OSVersion.VersionString)",
+            "powershell=$($PSVersionTable.PSVersion.ToString())"
+          )
+          [IO.File]::WriteAllLines((Join-Path $evidence 'metadata.txt'), $metadata, [Text.Encoding]::ASCII)
+          $tracked = @(& git ls-files)
+          if ($LASTEXITCODE -ne 0 -or $tracked.Count -eq 0) {
+            throw 'Could not enumerate tracked repository files for evidence hashing.'
+          }
+          $hashLines = foreach ($relativePath in $tracked) {
+            if (-not (Test-Path -LiteralPath $relativePath -PathType Leaf)) {
+              throw "Tracked source disappeared before evidence hashing: $relativePath"
+            }
+            $item = Get-FileHash -LiteralPath $relativePath -Algorithm SHA256
+            "{0}  {1}" -f $item.Hash.ToLowerInvariant(), $relativePath
+          }
+          [IO.File]::WriteAllLines((Join-Path $evidence 'tracked-files.sha256'), [string[]]$hashLines, [Text.Encoding]::ASCII)
 
       - name: Verify source encoding
         shell: powershell
@@ -41,20 +77,49 @@ jobs:
 
       - name: Run native AppContainer execution-identity qualification
         shell: powershell
-        run: .\Tests\Test-DevAgentExecutionIdentity.ps1
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $log = Join-Path (Join-Path $env:RUNNER_TEMP 'phase-2b8-evidence') 'execution-identity.log'
+          Start-Transcript -LiteralPath $log -Force
+          try { .\Tests\Test-DevAgentExecutionIdentity.ps1 } finally { Stop-Transcript }
 
       - name: Run DPAPI authenticated-journal primitive qualification
         shell: powershell
-        run: .\Tests\Test-DevAgentAuthenticatedJournal.ps1
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $log = Join-Path (Join-Path $env:RUNNER_TEMP 'phase-2b8-evidence') 'authenticated-journal.log'
+          Start-Transcript -LiteralPath $log -Force
+          try { .\Tests\Test-DevAgentAuthenticatedJournal.ps1 } finally { Stop-Transcript }
 
       - name: Run bounded explicit Unicode environment qualification
         shell: powershell
-        run: .\Tests\Test-DevAgentEnvironmentBlock.ps1
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $log = Join-Path (Join-Path $env:RUNNER_TEMP 'phase-2b8-evidence') 'environment-block.log'
+          Start-Transcript -LiteralPath $log -Force
+          try { .\Tests\Test-DevAgentEnvironmentBlock.ps1 } finally { Stop-Transcript }
 
       - name: Run restricted-token AppContainer CreateProcessAsUserW launch qualification
         shell: powershell
-        run: .\Tests\Test-DevAgentAppContainerLaunch.ps1
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $log = Join-Path (Join-Path $env:RUNNER_TEMP 'phase-2b8-evidence') 'appcontainer-launch.log'
+          Start-Transcript -LiteralPath $log -Force
+          try { .\Tests\Test-DevAgentAppContainerLaunch.ps1 } finally { Stop-Transcript }
 
       - name: Run separate bounded stdout and stderr qualification
         shell: powershell
-        run: .\Tests\Test-DevAgentOutputStreams.ps1
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $log = Join-Path (Join-Path $env:RUNNER_TEMP 'phase-2b8-evidence') 'output-streams.log'
+          Start-Transcript -LiteralPath $log -Force
+          try { .\Tests\Test-DevAgentOutputStreams.ps1 } finally { Stop-Transcript }
+
+      - name: Upload exact-head Phase 2B.8 evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase-2b8-evidence-${{ github.sha }}
+          path: ${{ runner.temp }}/phase-2b8-evidence/
+          if-no-files-found: error
+          retention-days: 14

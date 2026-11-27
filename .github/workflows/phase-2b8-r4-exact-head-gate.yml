@@ -1,0 +1,172 @@
+name: Phase 2B.8 R4 Exact-Head Acceptance Gate
+
+on:
+  push:
+    branches:
+      - phase-2b8-r4-signed-journal-qualification-20261127
+  pull_request:
+    branches:
+      - phase-2b8-r3-native-per-execution-profile-20261127
+    types:
+      - opened
+      - synchronize
+      - reopened
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: phase-2b8-r4-exact-head
+  cancel-in-progress: false
+
+jobs:
+  r4-exact-head-qualification:
+    name: Exact-head Windows security and regression gate
+    runs-on: windows-2025
+    timeout-minutes: 90
+    env:
+      EXPECTED_TESTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - name: Checkout exact PR source head
+        uses: actions/checkout@v4
+        with:
+          # pull_request workflows default to a synthetic merge commit.
+          # Pin checkout to the PR head so qualification tests the proposed
+          # source commit itself, not the unreviewed merge result.
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Initialize exact-head evidence manifest
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $evidence = Join-Path $env:GITHUB_WORKSPACE 'r4-evidence'
+          New-Item -ItemType Directory -Path $evidence -Force | Out-Null
+          $actualHead = (& git rev-parse HEAD).Trim()
+          if ($LASTEXITCODE -ne 0 -or $actualHead -ne $env:EXPECTED_TESTED_SHA) {
+            throw "Checkout head mismatch: expected=$env:EXPECTED_TESTED_SHA actual=$actualHead"
+          }
+          $metadata = @(
+            "repository=$env:GITHUB_REPOSITORY",
+            "event=$env:GITHUB_EVENT_NAME",
+            "event_sha=$env:GITHUB_SHA",
+            "tested_commit=$actualHead",
+            "workflow=$env:GITHUB_WORKFLOW",
+            "run_id=$env:GITHUB_RUN_ID",
+            "run_attempt=$env:GITHUB_RUN_ATTEMPT",
+            "runner_os=$env:RUNNER_OS",
+            "runner_arch=$env:RUNNER_ARCH",
+            "windows=$([Environment]::OSVersion.VersionString)",
+            "powershell=$($PSVersionTable.PSVersion.ToString())"
+          )
+          [IO.File]::WriteAllLines((Join-Path $evidence 'metadata.txt'), $metadata, [Text.Encoding]::ASCII)
+          $tracked = @(& git ls-files)
+          if ($LASTEXITCODE -ne 0 -or $tracked.Count -eq 0) {
+            throw 'Could not enumerate tracked repository files.'
+          }
+          $hashLines = foreach ($relativePath in $tracked) {
+            if (-not (Test-Path -LiteralPath $relativePath -PathType Leaf)) {
+              throw "Tracked file is missing: $relativePath"
+            }
+            $item = Get-FileHash -LiteralPath $relativePath -Algorithm SHA256
+            "{0}  {1}" -f $item.Hash.ToLowerInvariant(), $relativePath
+          }
+          [IO.File]::WriteAllLines((Join-Path $evidence 'tracked-files.sha256'), [string[]]$hashLines, [Text.Encoding]::ASCII)
+
+      - name: Verify repository source encoding
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $files = Get-ChildItem -Recurse -File | Where-Object {
+            $_.Extension -in @('.ps1', '.sharnou', '.md', '.yml', '.json', '.b64')
+          }
+          foreach ($file in $files) {
+            $bytes = [IO.File]::ReadAllBytes($file.FullName)
+            if ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF) {
+              throw "UTF-8 BOM is not allowed: $($file.FullName)"
+            }
+            foreach ($byte in $bytes) {
+              if ($byte -gt 127) { throw "Non-ASCII byte found: $($file.FullName)" }
+            }
+          }
+          Write-Host 'PASS: source encoding gate.'
+
+      - name: Run identity and signed-journal primitive qualifications
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $log = Join-Path (Join-Path $env:GITHUB_WORKSPACE 'r4-evidence') 'phase-2b8-primitives.log'
+          Start-Transcript -LiteralPath $log -Force
+          try {
+            & .\Tests\Test-DevAgentExecutionIdentity.ps1
+            & .\Tests\Test-DevAgentAuthenticatedJournal.ps1
+            & .\Tests\Test-DevAgentEnvironmentBlock.ps1
+            & .\Tests\Test-DevAgentAppContainerLaunch.ps1
+            & .\Tests\Test-DevAgentOutputStreams.ps1
+          } finally {
+            Stop-Transcript
+          }
+
+      - name: Run combined Stage 7A and ABI regression suite
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $log = Join-Path (Join-Path $env:GITHUB_WORKSPACE 'r4-evidence') 'combined-Test.ps1.log'
+          Start-Transcript -LiteralPath $log -Force
+          try {
+            & .\Test.ps1
+          } finally {
+            Stop-Transcript
+          }
+
+      - name: Run frozen M1-M6 baseline (83 cases)
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $log = Join-Path (Join-Path $env:GITHUB_WORKSPACE 'r4-evidence') 'frozen-M1-M6-83.log'
+          Start-Transcript -LiteralPath $log -Force
+          try {
+            & .\Tests\BaselineM6\Test-Milestone6Baseline.ps1
+          } finally {
+            Stop-Transcript
+          }
+
+      - name: Write exact-head PASS manifest
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $actualHead = (& git rev-parse HEAD).Trim()
+          if ($LASTEXITCODE -ne 0 -or $actualHead -ne $env:EXPECTED_TESTED_SHA) {
+            throw 'Checkout head changed during exact-head qualification.'
+          }
+          $result = [ordered]@{
+            acceptance = 'PASS'
+            repository = $env:GITHUB_REPOSITORY
+            event = $env:GITHUB_EVENT_NAME
+            event_sha = $env:GITHUB_SHA
+            tested_commit = $actualHead
+            workflow_run = $env:GITHUB_RUN_ID
+            runner = $env:RUNNER_OS
+            windows = [Environment]::OSVersion.VersionString
+            suites = @(
+              'AppContainer identity and child-token SID',
+              'signed journal envelope and strict journal schema',
+              'explicit Unicode environment',
+              'restricted AppContainer launch',
+              'separate bounded stdout/stderr',
+              'Stage 7A, collection, stack-probe/unwind, Runtime ABI and broker combined suite',
+              'frozen M1-M6 83-case regression'
+            )
+          }
+          $result | ConvertTo-Json -Depth 5 |
+            Set-Content -LiteralPath (Join-Path $env:GITHUB_WORKSPACE 'r4-evidence\exact-head-acceptance.json') -Encoding ASCII
+          Write-Host 'R4 exact-head acceptance: PASS' -ForegroundColor Green
+
+      - name: Upload exact-head evidence bundle
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: r4-exact-head-evidence
+          path: r4-evidence/
+          if-no-files-found: warn
+          retention-days: 14

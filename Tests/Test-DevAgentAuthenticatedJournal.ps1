@@ -479,6 +479,295 @@ finally {
     Remove-Item -LiteralPath $forgeRoot -Recurse -Force -ErrorAction SilentlyContinue
 }
 
+
+if (-not ('Sharnou.DevAgentJournalSigningKey' -as [type])) {
+    Add-Type -TypeDefinition @'
+using System;
+using System.IO;
+using System.Security.Cryptography;
+using System.Text;
+
+namespace Sharnou
+{
+    // Test-only ephemeral signer. It intentionally exports only the public
+    // CNG blob; this fixture does not model service key persistence or ACLs.
+    public sealed class DevAgentJournalSigningKey : IDisposable
+    {
+        private const int RsaBits = 3072;
+        private const int SignatureBytes = 384;
+        private readonly RSACng _key;
+
+        public DevAgentJournalSigningKey()
+        {
+            _key = new RSACng(RsaBits);
+        }
+
+        public byte[] ExportPublicKeyBlob()
+        {
+            return _key.Key.Export(CngKeyBlobFormat.GenericPublicBlob);
+        }
+
+        public byte[] Sign(byte[] payload)
+        {
+            if (payload == null || payload.Length < 80 || payload.Length > 16384)
+                throw new ArgumentOutOfRangeException("payload", "Signed journal payload must be 80..16384 bytes.");
+
+            byte[] publicBlob = ExportPublicKeyBlob();
+            byte[] keyId;
+            using (SHA256 sha = SHA256.Create())
+                keyId = sha.ComputeHash(publicBlob);
+
+            byte[] prefix;
+            using (MemoryStream stream = new MemoryStream())
+            using (BinaryWriter writer = new BinaryWriter(stream, Encoding.ASCII, true))
+            {
+                writer.Write(Encoding.ASCII.GetBytes("SHASIG1!"));
+                writer.Write((uint)1);
+                writer.Write((uint)1);
+                writer.Write(keyId);
+                writer.Write((uint)payload.Length);
+                writer.Write((uint)SignatureBytes);
+                writer.Write(payload);
+                writer.Flush();
+                prefix = stream.ToArray();
+            }
+
+            byte[] signingInput = DevAgentSignedJournalVerifier.CreateSigningInput(prefix);
+            byte[] signature = _key.SignData(
+                signingInput,
+                HashAlgorithmName.SHA256,
+                RSASignaturePadding.Pss);
+            if (signature == null || signature.Length != SignatureBytes)
+                throw new CryptographicException("CNG returned a noncanonical RSA-3072 signature length.");
+
+            byte[] envelope = new byte[prefix.Length + signature.Length];
+            Buffer.BlockCopy(prefix, 0, envelope, 0, prefix.Length);
+            Buffer.BlockCopy(signature, 0, envelope, prefix.Length, signature.Length);
+            return envelope;
+        }
+
+        public void Dispose()
+        {
+            _key.Dispose();
+        }
+    }
+
+    public static class DevAgentSignedJournalVerifier
+    {
+        private const int HeaderBytes = 56;
+        private const int SignatureBytes = 384;
+        private const int MinimumPayloadBytes = 80;
+        private const int MaximumPayloadBytes = 16384;
+        private const int MaximumEnvelopeBytes = HeaderBytes + MaximumPayloadBytes + SignatureBytes;
+        private static readonly byte[] Magic = Encoding.ASCII.GetBytes("SHASIG1!");
+        private static readonly byte[] Domain = Encoding.ASCII.GetBytes(
+            "Sharnou.DevAgent.AuthenticatedJournal.Signature.v1\0");
+
+        internal static byte[] CreateSigningInput(byte[] signedPrefix)
+        {
+            byte[] input = new byte[Domain.Length + signedPrefix.Length];
+            Buffer.BlockCopy(Domain, 0, input, 0, Domain.Length);
+            Buffer.BlockCopy(signedPrefix, 0, input, Domain.Length, signedPrefix.Length);
+            return input;
+        }
+
+        private static bool FixedTimeEquals(byte[] left, byte[] right)
+        {
+            if (left == null || right == null || left.Length != right.Length)
+                return false;
+            int difference = 0;
+            for (int i = 0; i < left.Length; i++)
+                difference |= left[i] ^ right[i];
+            return difference == 0;
+        }
+
+        public static byte[] VerifySignatureAndGetPayload(byte[] envelope, byte[] pinnedPublicKeyBlob)
+        {
+            if (envelope == null ||
+                envelope.Length < HeaderBytes + MinimumPayloadBytes + SignatureBytes ||
+                envelope.Length > MaximumEnvelopeBytes)
+                throw new InvalidDataException("Signed journal envelope length is outside policy bounds.");
+
+            if (pinnedPublicKeyBlob == null || pinnedPublicKeyBlob.Length < 32 || pinnedPublicKeyBlob.Length > 4096)
+                throw new InvalidDataException("Pinned CNG public key blob is outside policy bounds.");
+
+            for (int i = 0; i < Magic.Length; i++)
+                if (envelope[i] != Magic[i])
+                    throw new InvalidDataException("Signed journal magic is invalid.");
+
+            uint version = BitConverter.ToUInt32(envelope, 8);
+            uint algorithm = BitConverter.ToUInt32(envelope, 12);
+            if (version != 1)
+                throw new InvalidDataException("Unsupported signed journal envelope version.");
+            if (algorithm != 1)
+                throw new InvalidDataException("Unsupported signed journal signature algorithm.");
+
+            uint payloadLength = BitConverter.ToUInt32(envelope, 48);
+            uint signatureLength = BitConverter.ToUInt32(envelope, 52);
+            if (payloadLength < MinimumPayloadBytes || payloadLength > MaximumPayloadBytes)
+                throw new InvalidDataException("Signed journal payload length is outside policy bounds.");
+            if (signatureLength != SignatureBytes)
+                throw new InvalidDataException("RSA-3072 signature length is not canonical.");
+
+            long expectedLength = (long)HeaderBytes + payloadLength + signatureLength;
+            if (expectedLength != envelope.Length)
+                throw new InvalidDataException("Signed journal envelope is truncated or has trailing bytes.");
+
+            byte[] claimedKeyId = new byte[32];
+            Buffer.BlockCopy(envelope, 16, claimedKeyId, 0, claimedKeyId.Length);
+            byte[] pinnedKeyId;
+            using (SHA256 sha = SHA256.Create())
+                pinnedKeyId = sha.ComputeHash(pinnedPublicKeyBlob);
+
+            if (!FixedTimeEquals(claimedKeyId, pinnedKeyId))
+                throw new CryptographicException("Journal key identifier does not match the pinned authority public key.");
+
+            int prefixLength = checked(HeaderBytes + (int)payloadLength);
+            byte[] signedPrefix = new byte[prefixLength];
+            Buffer.BlockCopy(envelope, 0, signedPrefix, 0, prefixLength);
+            byte[] signingInput = CreateSigningInput(signedPrefix);
+            byte[] signature = new byte[SignatureBytes];
+            Buffer.BlockCopy(envelope, prefixLength, signature, 0, signature.Length);
+
+            using (CngKey publicCngKey = CngKey.Import(
+                pinnedPublicKeyBlob,
+                CngKeyBlobFormat.GenericPublicBlob))
+            using (RSACng publicKey = new RSACng(publicCngKey))
+            {
+                if (publicKey.KeySize != 3072)
+                    throw new CryptographicException("Pinned authority key is not RSA-3072.");
+                if (!publicKey.VerifyData(
+                    signingInput,
+                    signature,
+                    HashAlgorithmName.SHA256,
+                    RSASignaturePadding.Pss))
+                    throw new CryptographicException("Signed journal signature verification failed.");
+            }
+
+            byte[] payload = new byte[(int)payloadLength];
+            Buffer.BlockCopy(envelope, HeaderBytes, payload, 0, payload.Length);
+            // The PowerShell orchestration layer applies the strict canonical parser only after this method verifies the signature.
+            return payload;
+        }
+    }
+}
+'@
+}
+
+function Get-VerifiedCanonicalJournalPayload {
+    param(
+        [Parameter(Mandatory = $true)][byte[]] $Envelope,
+        [Parameter(Mandatory = $true)][byte[]] $PinnedPublicKeyBlob
+    )
+
+    # The CNG verifier returns payload bytes only after bounds, pinned-key
+    # identity and RSA-PSS signature checks pass. The separately compiled
+    # native parser is then invoked in PowerShell, avoiding a cross-Add-Type
+    # assembly reference while preserving the verify-before-parse ordering.
+    [byte[]]$verified = [Sharnou.DevAgentSignedJournalVerifier]::VerifySignatureAndGetPayload(
+        $Envelope,
+        $PinnedPublicKeyBlob)
+    [Sharnou.DevAgentDpapiJournalNative]::ValidateCanonicalJournalV2($verified)
+    return ,$verified
+}
+
+function Assert-SignedJournalRejected {
+    param(
+        [Parameter(Mandatory = $true)][string] $Name,
+        [Parameter(Mandatory = $true)][byte[]] $Envelope,
+        [Parameter(Mandatory = $true)][byte[]] $PinnedPublicKeyBlob,
+        [Parameter(Mandatory = $true)][ValidateSet('InvalidData', 'Cryptographic')][string] $ExpectedKind
+    )
+
+    $rejected = $false
+    try {
+        Get-VerifiedCanonicalJournalPayload -Envelope ([byte[]]$Envelope) -PinnedPublicKeyBlob ([byte[]]$PinnedPublicKeyBlob) | Out-Null
+    }
+    catch {
+        $exception = $_.Exception
+        while ($null -ne $exception.InnerException) { $exception = $exception.InnerException }
+        if ($ExpectedKind -eq 'InvalidData' -and
+            (($exception -is [IO.InvalidDataException]) -or ($exception -is [IO.EndOfStreamException]))) {
+            $rejected = $true
+        }
+        elseif ($ExpectedKind -eq 'Cryptographic' -and
+            ($exception -is [Security.Cryptography.CryptographicException])) {
+            $rejected = $true
+        }
+        else {
+            throw ("Signed-journal case '{0}' failed with an unexpected exception: {1}" -f $Name, $exception.GetType().FullName)
+        }
+    }
+    if (-not $rejected) {
+        throw "Signed-journal verifier accepted invalid case: $Name"
+    }
+    Write-Host ("PASS: signed-journal verifier rejected {0}" -f $Name) -ForegroundColor Green
+}
+
+$trustedSigner = [Sharnou.DevAgentJournalSigningKey]::new()
+$attackerSigner = [Sharnou.DevAgentJournalSigningKey]::new()
+try {
+    [byte[]]$trustedPublicKey = $trustedSigner.ExportPublicKeyBlob()
+    [byte[]]$signedEnvelope = $trustedSigner.Sign($plaintext)
+    [byte[]]$verifiedPayload = Get-VerifiedCanonicalJournalPayload -Envelope $signedEnvelope -PinnedPublicKeyBlob $trustedPublicKey
+    if (-not [Convert]::ToBase64String($verifiedPayload).Equals(
+        [Convert]::ToBase64String($plaintext),
+        [StringComparison]::Ordinal)) {
+        throw 'Signed journal verification did not return the exact canonical v2 payload.'
+    }
+    Write-Host 'PASS: pinned RSA-3072 CNG public key verified the domain-separated RSA-PSS/SHA-256 journal envelope' -ForegroundColor Green
+    Write-Host 'PASS: inner journal metadata was parsed only after the outer signature verified' -ForegroundColor Green
+
+    $badEnvelopeVersion = [byte[]]$signedEnvelope.Clone()
+    [BitConverter]::GetBytes([uint32]2).CopyTo($badEnvelopeVersion, 8)
+    Assert-SignedJournalRejected -Name 'unsupported envelope version' -Envelope $badEnvelopeVersion -PinnedPublicKeyBlob $trustedPublicKey -ExpectedKind InvalidData
+
+    $badAlgorithm = [byte[]]$signedEnvelope.Clone()
+    [BitConverter]::GetBytes([uint32]99).CopyTo($badAlgorithm, 12)
+    Assert-SignedJournalRejected -Name 'unsupported signature algorithm' -Envelope $badAlgorithm -PinnedPublicKeyBlob $trustedPublicKey -ExpectedKind InvalidData
+
+    $badPayloadLength = [byte[]]$signedEnvelope.Clone()
+    [BitConverter]::GetBytes([uint32]16385).CopyTo($badPayloadLength, 48)
+    Assert-SignedJournalRejected -Name 'payload length above policy maximum' -Envelope $badPayloadLength -PinnedPublicKeyBlob $trustedPublicKey -ExpectedKind InvalidData
+
+    $badSignatureLength = [byte[]]$signedEnvelope.Clone()
+    [BitConverter]::GetBytes([uint32]383).CopyTo($badSignatureLength, 52)
+    Assert-SignedJournalRejected -Name 'noncanonical RSA signature length' -Envelope $badSignatureLength -PinnedPublicKeyBlob $trustedPublicKey -ExpectedKind InvalidData
+
+    $badKeyId = [byte[]]$signedEnvelope.Clone()
+    $badKeyId[16] = [byte]($badKeyId[16] -bxor 0x01)
+    Assert-SignedJournalRejected -Name 'pinned key identifier mismatch' -Envelope $badKeyId -PinnedPublicKeyBlob $trustedPublicKey -ExpectedKind Cryptographic
+
+    $truncatedSigned = New-Object byte[] ($signedEnvelope.Length - 1)
+    [Array]::Copy($signedEnvelope, $truncatedSigned, $truncatedSigned.Length)
+    Assert-SignedJournalRejected -Name 'truncated signed envelope' -Envelope $truncatedSigned -PinnedPublicKeyBlob $trustedPublicKey -ExpectedKind InvalidData
+
+    $trailingSigned = New-Object byte[] ($signedEnvelope.Length + 1)
+    [Array]::Copy($signedEnvelope, $trailingSigned, $signedEnvelope.Length)
+    Assert-SignedJournalRejected -Name 'trailing signed-envelope byte' -Envelope $trailingSigned -PinnedPublicKeyBlob $trustedPublicKey -ExpectedKind InvalidData
+
+    $tamperedSignedPayload = [byte[]]$signedEnvelope.Clone()
+    $tamperedSignedPayload[56 + 8] = [byte]($tamperedSignedPayload[56 + 8] -bxor 0x01)
+    Assert-SignedJournalRejected -Name 'modified inner journal version without a new signature' -Envelope $tamperedSignedPayload -PinnedPublicKeyBlob $trustedPublicKey -ExpectedKind Cryptographic
+
+    $tamperedSignature = [byte[]]$signedEnvelope.Clone()
+    $tamperedSignature[$tamperedSignature.Length - 1] = [byte]($tamperedSignature[$tamperedSignature.Length - 1] -bxor 0x01)
+    Assert-SignedJournalRejected -Name 'modified RSA signature byte' -Envelope $tamperedSignature -PinnedPublicKeyBlob $trustedPublicKey -ExpectedKind Cryptographic
+
+    [byte[]]$attackerEnvelope = $attackerSigner.Sign($plaintext)
+    Assert-SignedJournalRejected -Name 'same-user attacker key not present in trusted key pin set' -Envelope $attackerEnvelope -PinnedPublicKeyBlob $trustedPublicKey -ExpectedKind Cryptographic
+
+    $signedMalformedPayload = [byte[]]$plaintext.Clone()
+    [BitConverter]::GetBytes([uint32]99).CopyTo($signedMalformedPayload, 8)
+    [byte[]]$signedMalformedEnvelope = $trustedSigner.Sign($signedMalformedPayload)
+    Assert-SignedJournalRejected -Name 'trusted signature over malformed inner journal schema' -Envelope $signedMalformedEnvelope -PinnedPublicKeyBlob $trustedPublicKey -ExpectedKind InvalidData
+}
+finally {
+    $trustedSigner.Dispose()
+    $attackerSigner.Dispose()
+}
+
+
 $plainHash = [BitConverter]::ToString([Security.Cryptography.SHA256]::Create().ComputeHash($plaintext)).Replace('-', '')
 $envelopeHash = [BitConverter]::ToString([Security.Cryptography.SHA256]::Create().ComputeHash($protected)).Replace('-', '')
 Write-Host ("PASS: DPAPI current-user envelope round-tripped exact canonical v2 journal payload ({0} bytes)" -f $plaintext.Length) -ForegroundColor Green

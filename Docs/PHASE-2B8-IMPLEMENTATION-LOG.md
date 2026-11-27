@@ -272,3 +272,59 @@ The emitted helper also preserves the caller's nonvolatile RSI and RDI registers
 Crash-time profile recovery remains disabled. The v1 workspace journal does not persist an authenticated execution/profile identity, and DPAPI CurrentUser is not a separate writer identity. The owner-approved service design is architecture approval only; the Windows authority service, protected CNG key, typed IPC, installation lifecycle and authenticated journal v2 remain unimplemented.
 
 **Disposition:** R3 normal execution identity and cleanup are implemented in the emitted native broker, but Phase 2B.8 remains **IMPLEMENTATION / NOT SECURITY ACCEPTED**. PR #29 remains draft and unmerged. Model-facing and autonomous process execution remain **DISABLED**.
+
+## R4 addendum - signed journal envelope qualification (2026-11-27)
+
+Starting point: Phase 2B.8 R3 PR #29 exact head `5be8faf1af2440accdb432862ee38a0a1b17ad5c`.
+
+Isolated branch: `phase-2b8-r4-signed-journal-qualification-20261127`.
+
+Code-bearing scope:
+- Adds a test-only RSA-3072 CNG signing fixture using RSA-PSS/SHA-256 and a domain-separated signed envelope.
+- Pins the verifier to an independently supplied CNG public-key blob; the key identifier is SHA-256 of that public blob.
+- Verifies bounded framing, exact envelope length, pinned key identity and signature before invoking the inner strict journal parser.
+- Adds negative cases for malformed envelope version/algorithm/lengths, truncation, trailing bytes, key substitution, payload/signature tampering and a trusted signature over a malformed inner record.
+- Does not add production service code, key provisioning, journal persistence, native broker journal migration, profile recovery or any model-facing process-execution capability.
+- The test key is ephemeral. This fixture does not prove non-exportability or service-SID key ACL enforcement.
+
+The existing v2 payload fixture is explicitly still incomplete as a production service record: canonical path, fixed tool identity/hash, transaction state and monotonic sequence, actual descriptor validation and opened-handle identity checks remain required before service-owned recovery can be implemented.
+
+Windows validation is pending on the final exact branch head. The Phase 2B.8 primitive, Stage 7A combined suite and frozen M1-M6 baseline must all pass on the same head before this test increment is called requalified.
+
+**Security disposition:** test-only envelope qualification; production authenticated journal and restart-time profile recovery remain BLOCKED. Model-facing/autonomous process execution remains DISABLED.
+
+## R4 CI evidence hardening (2026-11-27)
+
+Updated all three required Windows workflows on the R4 branch:
+- Pin Stage 7A to the same `windows-2025` runner family as the Phase 2B.8 primitive and frozen M1-M6 suites.
+- Assert that `git rev-parse HEAD` equals `GITHUB_SHA` before testing.
+- Record repository, exact commit, workflow/run attempt, runner OS/architecture and PowerShell version.
+- SHA-256 hash every tracked file in the checkout.
+- Capture test output into per-suite transcripts and upload evidence artifacts even when a test step fails.
+- Keep the three workflows independent so the same commit must pass all three, with evidence separately retrievable.
+
+This is evidence-pipeline hardening, not test completion. R4 remains unqualified until the three final-head artifacts are downloaded and inspected, the signed-journal fixture passes on Windows, Stage 7A ends in `Combined result: PASS`, and M1-M6 reports 83/83 on the identical commit SHA.
+
+The Stage 7A and M1-M6 workflows initialize their evidence directory and source-hash manifest once, before source-encoding validation, then capture the complete suite transcript in the test step. This avoids duplicate manifest generation while retaining an artifact on early gate failure.
+
+## R4 consolidated exact-head gate (2026-11-27)
+
+Added `.github/workflows/phase-2b8-r4-exact-head-gate.yml`.
+
+This is the authoritative R4 aggregate gate. It executes the complete qualification sequence in one Windows Server 2025 job against the single checkout SHA:
+1. AppContainer identity and actual child-token SID.
+2. Signed journal envelope, strict v2 parser and DPAPI boundary fixture.
+3. Bounded explicit Unicode environment.
+4. Restricted-token AppContainer process-launch fixture.
+5. Separate bounded stdout/stderr fixture.
+6. Root `Test.ps1` combined Stage 7A, collection-import, unwind/stack-probe, Runtime ABI and broker suites.
+7. Frozen M1-M6 83-case baseline.
+
+The job verifies `git rev-parse HEAD == GITHUB_SHA`, records OS/runner/PowerShell metadata, hashes every tracked file, captures suite transcripts, and uploads one evidence bundle. It writes an explicit exact-head PASS manifest only after every suite completes successfully. A failing earlier step leaves the workflow failed and still attempts to upload the available evidence.
+
+This removes ambiguity from independently timed workflows: the authoritative aggregate result is one job, one runner, one immutable checkout SHA, and one artifact bundle.
+
+**Current R4 head before this log update:** `607657dea5a94f1d7dff3f40561515511b6b06c5`.
+
+The consolidated workflow has not yet been observed completing. The next acceptable evidence is a successful run of this workflow on the final commit, followed by inspection of the uploaded transcript and SHA-256 manifest. This CI addition does not implement the authority service or change the production broker.
+
