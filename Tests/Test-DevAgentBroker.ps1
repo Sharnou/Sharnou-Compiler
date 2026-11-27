@@ -244,6 +244,9 @@ try {
     if (-not $compilerSource.Contains('GetFileAttributesA') -or -not $compilerSource.Contains('GetFileInformationByHandle') -or -not $compilerSource.Contains('GetModuleFileNameA') -or -not $compilerSource.Contains('SetCurrentDirectoryA') -or -not $compilerSource.Contains('0x400') -or -not $compilerSource.Contains('0x00200080')) {
         throw 'Image-relative workspace and opened-handle reparse-point checks are missing.'
     }
+    if (-not $brokerEmitterSource.Contains('$imageSuffix = ''\.sharnou-devagent-host\DevAgentBroker.exe''')) {
+        throw 'Recovery broker image must be outside Low-IL writable Build staging.'
+    }
     if ($brokerEmitterSource.Contains('GetCurrentDirectoryA')) {
         throw 'Broker must not trust the inherited current directory as its workspace root.'
     }
@@ -473,6 +476,7 @@ try {
     Remove-Item -LiteralPath $outputPath -Force -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $sandboxMarkerPath -Force -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $deniedMarkerPath -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath (Join-Path $brokerHostRoot 'sandbox-host-write-probe.tmp') -Force -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $capturedOutputPath -Force -ErrorAction SilentlyContinue
 
     Remove-Item -LiteralPath $disabledOutputPath -Force -ErrorAction SilentlyContinue
