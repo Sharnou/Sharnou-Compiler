@@ -1624,6 +1624,20 @@ function Emit-DevBrokerWriteRecoveryAttributeDiagnostic {
     $formatted = New-UniqueLabel -Prefix 'dev_acl_recovery_getattr_formatted'
     $formatItem = Register-DataConstant -Value "ACL_RECOVERY_GETATTR|attrs=0x%08X|error=%u`r`n"
 
+    # Emit a fixed marker first using the same GetStdHandle/WriteFile path
+    # already proven by the native path diagnostic. This isolates formatting/API
+    # diagnostics from whether this emitted helper is actually entered.
+    $markerItem = Register-DataConstant -Value 'ACL_RECOVERY_GETATTR|begin'
+    Emit-Bytes -Bytes ([byte[]]@(0xB9, 0xF5, 0xFF, 0xFF, 0xFF)) # STD_OUTPUT_HANDLE
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3070) -StackArguments @()
+    Emit-StoreRaxFrame -SlotPosition $stdoutHandleSlot
+    Emit-LoadRcxFrame -SlotPosition $stdoutHandleSlot
+    Emit-DataAddress -DataItem $markerItem
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC2, 0x41, 0xB8))
+    Emit-I32 -Value ($markerItem.Bytes.Length - 1)
+    Emit-LeaR9Frame -SlotPosition $bytesWrittenSlot
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3078) -StackArguments @(@{ Kind = 'Immediate'; Value = 0 }) # WriteFile
+
     # Read-only path/metadata probe. This does not alter ACLs or open the journal.
     Emit-LeaRaxFrame -SlotPosition $JournalPathSlot
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1))
