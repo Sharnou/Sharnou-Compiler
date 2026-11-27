@@ -12,8 +12,10 @@ if (-not ('Sharnou.DevAgentDpapiJournalNative' -as [type])) {
     Add-Type -TypeDefinition @'
 using System;
 using System.ComponentModel;
+using System.IO;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
+using System.Text.RegularExpressions;
 
 namespace Sharnou
 {
@@ -152,6 +154,74 @@ namespace Sharnou
                 FreeInput(ref input);
             }
         }
+
+        public static void ValidateCanonicalJournalV2(byte[] record)
+        {
+            if (record == null || record.Length < 80 || record.Length > 16384)
+                throw new InvalidDataException("Journal payload length is outside 80..16384 bytes.");
+
+            using (MemoryStream stream = new MemoryStream(record, false))
+            using (BinaryReader reader = new BinaryReader(stream, System.Text.Encoding.ASCII, true))
+            {
+                byte[] magic = reader.ReadBytes(8);
+                if (magic.Length != 8 || System.Text.Encoding.ASCII.GetString(magic) != "SHARJNL2")
+                    throw new InvalidDataException("Journal magic is invalid.");
+
+                uint version = reader.ReadUInt32();
+                if (version != 2)
+                    throw new InvalidDataException("Unsupported journal version.");
+
+                byte[] executionBytes = reader.ReadBytes(16);
+                if (executionBytes.Length != 16 || new Guid(executionBytes) == Guid.Empty)
+                    throw new InvalidDataException("Execution identifier is invalid.");
+
+                uint profileLength = reader.ReadUInt32();
+                if (profileLength != 48)
+                    throw new InvalidDataException("AppContainer profile name length is invalid.");
+                byte[] profileBytes = reader.ReadBytes(checked((int)profileLength));
+                if (profileBytes.Length != profileLength)
+                    throw new InvalidDataException("AppContainer profile name is truncated.");
+                string profileName = System.Text.Encoding.ASCII.GetString(profileBytes);
+                if (!Regex.IsMatch(profileName, @"^Sharnou\.DevAgent\.[0-9a-f]{32}$", RegexOptions.CultureInvariant))
+                    throw new InvalidDataException("AppContainer profile name is not canonical.");
+
+                uint sidLength = reader.ReadUInt32();
+                if (sidLength < 11 || sidLength > 256)
+                    throw new InvalidDataException("AppContainer SID length is outside policy bounds.");
+                byte[] sidBytes = reader.ReadBytes(checked((int)sidLength));
+                if (sidBytes.Length != sidLength)
+                    throw new InvalidDataException("AppContainer SID is truncated.");
+                string packageSid = System.Text.Encoding.ASCII.GetString(sidBytes);
+                if (!Regex.IsMatch(packageSid, @"^S-1-15-2-(0|[1-9][0-9]*)-(0|[1-9][0-9]*)-(0|[1-9][0-9]*)-(0|[1-9][0-9]*)-(0|[1-9][0-9]*)-(0|[1-9][0-9]*)-(0|[1-9][0-9]*)$", RegexOptions.CultureInvariant))
+                    throw new InvalidDataException("AppContainer package SID is not canonical.");
+
+                uint volumeSerial = reader.ReadUInt32();
+                ulong workspaceFileId = reader.ReadUInt64();
+                if (volumeSerial == 0 || workspaceFileId == 0)
+                    throw new InvalidDataException("Canonical workspace file identity is missing.");
+
+                uint descriptorCount = reader.ReadUInt32();
+                if (descriptorCount != 3)
+                    throw new InvalidDataException("Journal must contain exactly three protected directory descriptors.");
+
+                for (int i = 0; i < 3; i++)
+                {
+                    uint descriptorLength = reader.ReadUInt32();
+                    if (descriptorLength < 20 || descriptorLength > 4096)
+                        throw new InvalidDataException("Security descriptor length is outside policy bounds.");
+                    byte[] descriptor = reader.ReadBytes(checked((int)descriptorLength));
+                    if (descriptor.Length != descriptorLength)
+                        throw new InvalidDataException("Security descriptor is truncated.");
+                }
+
+                uint policyVersion = reader.ReadUInt32();
+                if (policyVersion != 2)
+                    throw new InvalidDataException("Unsupported security policy version.");
+
+                if (stream.Position != stream.Length)
+                    throw new InvalidDataException("Journal contains trailing bytes.");
+            }
+        }
     }
 }
 '@
@@ -174,6 +244,8 @@ function New-JournalFixturePayload {
         $sidBytes = [Text.Encoding]::ASCII.GetBytes($PackageSid)
         $writer.Write([uint32]$sidBytes.Length)
         $writer.Write($sidBytes)
+        $writer.Write([uint32]12345) # synthetic volume serial for parser qualification
+        $writer.Write([uint64]0x123456789ABCDEF0) # synthetic file ID for parser qualification
         $writer.Write([uint32]3) # three protected directory descriptors
         foreach ($descriptor in @(
             [Text.Encoding]::ASCII.GetBytes('ROOT-DESCRIPTOR-FIXTURE'),
@@ -214,6 +286,47 @@ $wrongEntropy = [Text.Encoding]::UTF8.GetBytes('Sharnou.DevAgent.AuthenticatedJo
 
 if ($plaintext.Length -gt 16384) {
     throw "Canonical test journal exceeds the 16 KiB plaintext limit: $($plaintext.Length)"
+}
+
+[Sharnou.DevAgentDpapiJournalNative]::ValidateCanonicalJournalV2($plaintext)
+Write-Host 'PASS: strict v2 journal parser accepted canonical execution/profile/workspace/descriptor record' -ForegroundColor Green
+
+$parserRejectCases = New-Object 'System.Collections.Generic.List[object]'
+$badVersion = [byte[]]$plaintext.Clone()
+[BitConverter]::GetBytes([uint32]99).CopyTo($badVersion, 8)
+$parserRejectCases.Add(@{ Name = 'unsupported version'; Bytes = $badVersion })
+$truncated = New-Object byte[] ($plaintext.Length - 1)
+[Array]::Copy($plaintext, $truncated, $truncated.Length)
+$parserRejectCases.Add(@{ Name = 'truncated record'; Bytes = $truncated })
+$trailing = New-Object byte[] ($plaintext.Length + 1)
+[Array]::Copy($plaintext, $trailing, $plaintext.Length)
+$trailing[$trailing.Length - 1] = 0
+$parserRejectCases.Add(@{ Name = 'trailing byte'; Bytes = $trailing })
+$badProfileLength = [byte[]]$plaintext.Clone()
+[BitConverter]::GetBytes([uint32]65).CopyTo($badProfileLength, 28)
+$parserRejectCases.Add(@{ Name = 'profile-name length overflow'; Bytes = $badProfileLength })
+$badWorkspaceIdentity = [byte[]]$plaintext.Clone()
+# Workspace volume serial follows the fixed 32-byte header, profile name,
+# SID length and SID bytes. Locate it from the canonical lengths, not a magic offset.
+$profileLength = [BitConverter]::ToUInt32($plaintext, 28)
+$sidLengthOffset = 32 + [int]$profileLength
+$sidLength = [BitConverter]::ToUInt32($plaintext, $sidLengthOffset)
+$workspaceVolumeOffset = $sidLengthOffset + 4 + [int]$sidLength
+[BitConverter]::GetBytes([uint32]0).CopyTo($badWorkspaceIdentity, $workspaceVolumeOffset)
+$parserRejectCases.Add(@{ Name = 'missing workspace volume identity'; Bytes = $badWorkspaceIdentity })
+
+foreach ($case in $parserRejectCases) {
+    $rejected = $false
+    try {
+        [Sharnou.DevAgentDpapiJournalNative]::ValidateCanonicalJournalV2([byte[]]$case.Bytes)
+    }
+    catch [IO.InvalidDataException] {
+        $rejected = $true
+    }
+    if (-not $rejected) {
+        throw "Strict journal parser accepted invalid case: $($case.Name)"
+    }
+    Write-Host ("PASS: strict v2 journal parser rejected {0}" -f $case.Name) -ForegroundColor Green
 }
 
 [byte[]]$protected = [Sharnou.DevAgentDpapiJournalNative]::Protect($plaintext, $entropy)
