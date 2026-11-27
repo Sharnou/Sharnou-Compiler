@@ -80,7 +80,7 @@ The service constructs the canonical v2 record itself. Minimum fields:
 - Fixed tool ID, exact pinned tool digest, service key identifier and transaction state.
 - Monotonic state/cut-point sequence number.
 
-Serialize with strict field ordering, exact length fields, size ceilings and no trailing data. Authenticate the exact canonical byte sequence using the service-owned signing key. A verifier must pin the public-key identity and validate the signature before parsing or acting on privileged metadata. Signature verification alone does not make a maliciously signed record safe; the service must also validate workspace identity, descriptor semantics and allowed state transitions.
+Serialize with strict field ordering, exact length fields, size ceilings and no trailing data. The recommended outer envelope is defined in `Docs/PHASE-2B8-AUTHENTICATED-JOURNAL-ENVELOPE.md`: RSA-3072 with RSA-PSS/SHA-256, a key identifier derived from the pinned CNG public-key blob, and a domain-separated signature over the complete fixed header plus the exact canonical payload. The verifier checks only bounded outer framing and the pinned key identifier before verifying the signature; it must not parse profile, SID, path or descriptor fields until signature verification succeeds. Signature verification alone does not make a maliciously signed record safe; the service must also validate workspace identity, descriptor semantics and allowed state transitions. The test fixture uses an ephemeral test key and does not qualify the production service key's non-exportability, service-SID ACL or key lifecycle.
 
 The journal resides in a service-owned protected transaction directory, not in a user-writable workspace. The workspace root may contain only a non-authoritative transaction reference. The service journal is written to an exclusive temporary file, fully written, flushed, closed, atomically committed with write-through semantics, and only then may ACL grants be expanded.
 
@@ -109,7 +109,7 @@ A Windows service changes deployment and operational requirements:
 - Must be qualified on Windows 10 and the supported Windows Server runner, including service shutdown during active work.
 - Must not enable any model-facing execution merely because the service is installed.
 
-Before implementation, the owner must accept that the DevAgent security authority is an installed Windows service and approve the installer/service maintenance model. This is a product/deployment decision, not a code-level default to apply silently.
+The owner decision recorded in Section 1 accepts the dedicated-service architecture and its deployment/security boundary for implementation planning. This is not production-rollout approval. The concrete installer, upgrade/rollback, key-rotation/loss and operator-recovery procedures must be implemented and reviewed before deployment; no second architecture-selection decision is implied by this design.
 
 ## 8. Acceptance gates
 
