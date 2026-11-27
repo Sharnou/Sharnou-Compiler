@@ -3,7 +3,7 @@ name: Sharnou DevAgent Phase 2B.8 Execution Identity Qualification
 on:
   push:
     branches:
-      - phase-2b8-identity-qualification-20261127
+      - phase-2b8-identity-profile-qualification-20261127
   workflow_dispatch:
 
 permissions:
