@@ -28,6 +28,9 @@ try {
     $environmentTest = Join-Path $PSScriptRoot 'Tests\Test-DevAgentEnvironmentBlock.ps1'
     if (-not (Test-Path -LiteralPath $environmentTest -PathType Leaf)) { throw "DevAgent explicit environment test is missing: $environmentTest" }
     & $environmentTest
+    $appContainerLaunchTest = Join-Path $PSScriptRoot 'Tests\Test-DevAgentAppContainerLaunch.ps1'
+    if (-not (Test-Path -LiteralPath $appContainerLaunchTest -PathType Leaf)) { throw "DevAgent AppContainer launch test is missing: $appContainerLaunchTest" }
+    & $appContainerLaunchTest
     $outputStreamsTest = Join-Path $PSScriptRoot 'Tests\Test-DevAgentOutputStreams.ps1'
     if (-not (Test-Path -LiteralPath $outputStreamsTest -PathType Leaf)) { throw "DevAgent split-stream test is missing: $outputStreamsTest" }
     & $outputStreamsTest
