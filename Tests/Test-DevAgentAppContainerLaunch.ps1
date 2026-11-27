@@ -425,7 +425,7 @@ namespace Sharnou
                 int remainingStream = PerStreamLimit - streamBytes;
                 int remainingCombined = CombinedOutputLimit - combinedBytes;
                 uint request = Math.Min(available, (uint)Math.Min(1024, Math.Min(remainingStream, remainingCombined)));
-                byte[] buffer = new byte[request];
+                byte[] buffer = new byte[checked((int)request)];
                 uint bytesRead = 0;
                 if (!ReadFile(pipe, buffer, request, out bytesRead, IntPtr.Zero))
                 {
@@ -504,7 +504,11 @@ namespace Sharnou
             bool profileCreated = false;
             bool attributeListInitialized = false;
             bool processCreated = false;
+            bool processAssigned = false;
             bool childResumed = false;
+            string priorSecretCanary = Environment.GetEnvironmentVariable("SHARNOU_2B8_SECRET_CANARY");
+            if (priorSecretCanary != null)
+                throw new InvalidOperationException("The secret-canary environment variable was already defined in the test host.");
             StringBuilder stdout = new StringBuilder();
             StringBuilder stderr = new StringBuilder();
             int stdoutBytes = 0, stderrBytes = 0, combinedBytes = 0;
@@ -528,6 +532,10 @@ namespace Sharnou
                 Check(CreateRestrictedToken(sourceToken, DisableMaxPrivilege,
                     0, IntPtr.Zero, 0, IntPtr.Zero, 0, IntPtr.Zero, out restrictedToken),
                     "CreateRestrictedToken(DISABLE_MAX_PRIVILEGE)");
+
+                Environment.SetEnvironmentVariable("SHARNOU_2B8_SECRET_CANARY", "must-not-inherit-2b8-canary");
+                if (Environment.GetEnvironmentVariable("SHARNOU_2B8_SECRET_CANARY") != "must-not-inherit-2b8-canary")
+                    throw new InvalidOperationException("The parent secret-canary setup failed.");
 
                 SECURITY_ATTRIBUTES pipeAttributes = new SECURITY_ATTRIBUTES();
                 pipeAttributes.Length = Marshal.SizeOf(typeof(SECURITY_ATTRIBUTES));
@@ -569,7 +577,7 @@ namespace Sharnou
                 attributeListInitialized = true;
 
                 Check(UpdateProcThreadAttribute(attributeList, 0,
-                    new IntPtr(ProcThreadAttributeSecurityCapabilities),
+                    new IntPtr(unchecked((int)ProcThreadAttributeSecurityCapabilities)),
                     securityCapabilitiesBuffer,
                     new UIntPtr((uint)Marshal.SizeOf(typeof(SECURITY_CAPABILITIES))),
                     IntPtr.Zero, IntPtr.Zero), "UpdateProcThreadAttribute(SECURITY_CAPABILITIES)");
@@ -579,7 +587,7 @@ namespace Sharnou
                 for (int i = 0; i < inheritedHandles.Length; i++)
                     Marshal.WriteIntPtr(handleListBuffer, checked(i * IntPtr.Size), inheritedHandles[i]);
                 Check(UpdateProcThreadAttribute(attributeList, 0,
-                    new IntPtr(ProcThreadAttributeHandleList), handleListBuffer,
+                    new IntPtr(unchecked((int)ProcThreadAttributeHandleList)), handleListBuffer,
                     new UIntPtr((uint)(inheritedHandles.Length * IntPtr.Size)),
                     IntPtr.Zero, IntPtr.Zero), "UpdateProcThreadAttribute(HANDLE_LIST)");
 
@@ -632,6 +640,7 @@ namespace Sharnou
 
                 processCreated = true;
                 Check(AssignProcessToJobObject(job, process.hProcess), "AssignProcessToJobObject");
+                processAssigned = true;
 
                 // Parent drops inheritable copies immediately after successful creation.
                 CloseHandle(stdoutWrite); stdoutWrite = IntPtr.Zero;
@@ -700,7 +709,9 @@ namespace Sharnou
             {
                 if (processCreated && process.hProcess != IntPtr.Zero && !childResumed)
                 {
-                    if (job != IntPtr.Zero) TerminateJobObject(job, 0x2BAD);
+                    // A failed Job Object assignment means the suspended child is
+                    // not owned by the job; terminate the process handle directly.
+                    if (processAssigned && job != IntPtr.Zero) TerminateJobObject(job, 0x2BAD);
                     else TerminateProcess(process.hProcess, 0x2BAD);
                     WaitForSingleObject(process.hProcess, 10000);
                 }
@@ -733,6 +744,7 @@ namespace Sharnou
                 if (restrictedToken != IntPtr.Zero) CloseHandle(restrictedToken);
                 if (sourceToken != IntPtr.Zero) CloseHandle(sourceToken);
                 if (packageSid != IntPtr.Zero) FreeSid(packageSid);
+                Environment.SetEnvironmentVariable("SHARNOU_2B8_SECRET_CANARY", priorSecretCanary);
                 if (profileCreated)
                 {
                     int deleteHr = DeleteAppContainerProfile(profileName);
