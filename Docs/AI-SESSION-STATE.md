@@ -2230,3 +2230,8 @@ Code-bearing commit: `907281187ffdf9223d4b345a2847c2a1feb883cf`.
 ### Latest exact-head journal threat-boundary test - 2026-11-27
 
 Dedicated Windows run [46022134602](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/46022134602) passed on code commit `a64b81def96b22315b8ab8034bb60c4af1870e32`. The v2 parser now also rejects empty execution ID, malformed SID, descriptor count/length mismatch and unsupported security policy version. A same-user re-protection demonstration passes and confirms that the same-user process can create a different valid DPAPI envelope with the same public optional entropy. This confirms DPAPI is not writer-process authentication. The trust-boundary design gate remains unresolved until a separate service/key identity is approved.
+
+
+### Phase 2B.8 schema precision update
+
+The journal-v2 test schema was corrected to use Windows `FILE_ID_INFO`: 64-bit volume serial plus the complete 128-bit `FILE_ID_128`. The DPAPI writer-boundary negative/positive characterization now uses a separate PowerShell process running as the same Windows user, rather than protecting the forged record inside the same process. Awaiting exact-head Windows CI before claiming these two latest refinements pass.
