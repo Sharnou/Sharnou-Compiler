@@ -28,6 +28,9 @@ try {
     $environmentTest = Join-Path $PSScriptRoot 'Tests\Test-DevAgentEnvironmentBlock.ps1'
     if (-not (Test-Path -LiteralPath $environmentTest -PathType Leaf)) { throw "DevAgent explicit environment test is missing: $environmentTest" }
     & $environmentTest
+    $outputStreamsTest = Join-Path $PSScriptRoot 'Tests\Test-DevAgentOutputStreams.ps1'
+    if (-not (Test-Path -LiteralPath $outputStreamsTest -PathType Leaf)) { throw "DevAgent split-stream test is missing: $outputStreamsTest" }
+    & $outputStreamsTest
     $baselineTest = Join-Path $PSScriptRoot 'Tests\BaselineM6\Test-Milestone6Baseline.ps1'
     if (-not (Test-Path -LiteralPath $baselineTest -PathType Leaf)) { throw "Frozen M1-M6 baseline regression is missing: $baselineTest" }
     & $baselineTest
