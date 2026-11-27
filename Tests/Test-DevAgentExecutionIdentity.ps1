@@ -7,7 +7,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-if (-not [Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT) {
+if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) {
     throw 'The DevAgent execution-identity qualification requires Windows.'
 }
 
@@ -281,11 +281,20 @@ try {
     Write-Host ("PASS: {0} AppContainer SID derivations match their exact profile names" -f $ProfileCount) -ForegroundColor Green
 }
 finally {
-    # Each profile is owned by this test invocation. Never adopt an already-existing
-    # name, and never silently ignore profile deletion failures.
+    # Attempt every cleanup even when one profile deletion fails. Report all
+    # failures together so one stuck profile does not strand the remaining set.
+    $cleanupFailures = New-Object 'System.Collections.Generic.List[string]'
     foreach ($name in $names) {
-        [Sharnou.DevAgentExecutionIdentityNative]::DeleteAndProveProfileCanBeRecreated($name)
-        Write-Host 'PASS: AppContainer profile deletion was verified by successful fresh recreation' -ForegroundColor Green
+        try {
+            [Sharnou.DevAgentExecutionIdentityNative]::DeleteAndProveProfileCanBeRecreated($name)
+            Write-Host 'PASS: AppContainer profile deletion was verified by successful fresh recreation' -ForegroundColor Green
+        }
+        catch {
+            $cleanupFailures.Add(('{0}: {1}' -f $name, $_.Exception.Message))
+        }
+    }
+    if ($cleanupFailures.Count -gt 0) {
+        throw ('One or more execution profiles could not be proven removed: ' + ($cleanupFailures -join ' | '))
     }
 }
 
