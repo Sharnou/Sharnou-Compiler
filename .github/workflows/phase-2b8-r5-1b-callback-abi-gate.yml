@@ -70,8 +70,16 @@ jobs:
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
-          $files = Get-ChildItem -Recurse -File | Where-Object {
-            $_.Extension -in @('.ps1', '.sharnou', '.md', '.yml', '.json', '.b64')
+          # Enforce ASCII on executable/compiler inputs and workflow/configuration files.
+          # Markdown documentation is UTF-8 content, not compiler source; it is intentionally
+          # excluded so typographic punctuation cannot block a native-code qualification run.
+          $tracked = @(& git ls-files)
+          if ($LASTEXITCODE -ne 0) { throw 'Could not enumerate tracked source files.' }
+          $files = foreach ($relativePath in $tracked) {
+            $extension = [IO.Path]::GetExtension($relativePath)
+            if ($extension -in @('.ps1', '.sharnou', '.yml', '.json', '.b64')) {
+              Get-Item -LiteralPath $relativePath -ErrorAction Stop
+            }
           }
           foreach ($file in $files) {
             $bytes = [IO.File]::ReadAllBytes($file.FullName)
