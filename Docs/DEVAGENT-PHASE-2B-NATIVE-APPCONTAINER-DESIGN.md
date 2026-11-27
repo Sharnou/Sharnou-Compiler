@@ -213,3 +213,35 @@ Fixture-only limitations and remaining gates:
 - Model-facing execution remains DISABLED. PR #18 remains draft/open/unmerged.
 
 Phase 2B.3 must next bind the genuine profile SID to a per-execution workspace DACL using least-privilege rights, then prove exact ACL restoration and crash recovery. It must not yet enable model-facing execution.
+
+
+## 12. Phase 2B.3 - genuine AppContainer SID binding to crash-safe workspace ACLs
+
+Status: **WINDOWS CI PASS - TEST-ONLY FIXTURE** on candidate head `6761c7ab6f251d487a09f592c96071782622b3ab`. Dedicated workflow: [run 45914498923](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45914498923), 30/30 assertions, Windows Server 2025 / OS 10.0.26100.0 / x64 Windows PowerShell 5.1.26100.33822. Integrated Phase 2B workflow: [run 45914499001](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45914499001). Exact-head M1-M6 regression: [run 45914499087](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45914499087), 83/83 PASS.
+
+### Implemented test boundary
+
+`Tests/Test-DevAgentAppContainerWorkspaceAcl.ps1` creates two independent profiles through `CreateAppContainerProfile`, validates the returned OS SIDs, and binds each package SID to a separate execution workspace through the existing durable workspace transaction. The package-specific DACL grants the reviewed scratch-only mask `0x0013019F`, not FullControl. The DACL is protected from inheritance. Supervisor and SYSTEM retain administrative rights; the shared workspace root and journal root are not modified by per-execution ACL application.
+
+The fixture creates only the fixed absolute System32 `whoami.exe` child, with the AppContainer security-capabilities process attribute and `CREATE_SUSPENDED`. It opens the actual process token, verifies the exact profile SID, duplicates a token for supervisor-thread impersonation, and calls `CreateFileW` under that identity. It proves:
+- Own execution workspace: read, write existing file, create new file are allowed.
+- Denied: private execution journal, shared workspace parent, another execution workspace, compiler-source sentinel, broker-image sentinel.
+- Denied: FILE_EXECUTE, WRITE_DAC and WRITE_OWNER requests on the execution's own file.
+- No inherited ACEs or package FullControl; exact package ACE rights and principal are checked.
+- Child process is terminated and waited before any rollback or profile deletion.
+- Normal rollback restores exact original owner/group/DACL SDDL for both concurrent execution workspaces.
+- Crash after durable ACL_PENDING intent and DACL mutation leaves a recoverable journal with the genuine package SID; recovery restores the exact saved descriptor and a second recovery pass safely finalizes deletion.
+- Shared workspace-root and journal-root descriptors remain unchanged; final journal/workspace residue checks pass.
+
+### Exact source and evidence hashes
+
+- Phase 2B.3 test fixture SHA-256: `787045DFC2BA2C1AB073141A5F25C7819E2888649642DDB46FE4438B48C8E139`.
+- Workspace transaction SHA-256: `B56FFA342C56AD5238F4809D774835029949DE2E97DBD83DE041295A17477586`.
+- Native interop helper SHA-256: `0B23042E5C6AB408D48D69A8E327F8130347720F8BCAC495879DC66BAC254949`.
+- Native ABI manifest SHA-256: `D0868CDB067CE04AA45D04214885134A7AC9D87CC607478BE1D7D3534BFBC478`.
+
+### Evidence limits and stop condition
+
+The AppContainer child is **never resumed**. Filesystem access is exercised by impersonating its actual token from the supervisor thread. This is genuine Windows access-control enforcement evidence for the tested paths, but not proof that arbitrary code executed inside the AppContainer. The fixture is PowerShell/.NET in-memory P/Invoke, not the Sharnou-generated PE or production process broker. No production PE import table, compiler source, or emitter changed. Job Object assignment for this launch, clean environment, DLL-search restrictions, explicit output handle list, bounded stdout/stderr, cancellation, network denial, and Windows 10/11 adversarial coverage remain separate gates. The workflow validates on Windows Server 2025 only.
+
+Phase 2B.3 is complete **only as this test-only Windows fixture**. It does not authorize model-facing process execution. Next: Phase 2B.4, fixed suspended AppContainer launch + Job Object assignment + token verification before resume, still in an isolated fixture. Keep autonomous/model-facing process execution DISABLED.

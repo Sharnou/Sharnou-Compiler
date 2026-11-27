@@ -1051,3 +1051,39 @@ Same candidate head retained the other regressions:
 Evidence boundary: the AppContainer test uses in-memory PowerShell/.NET P/Invoke, not the compiler-generated PE or production `Emit-DevRunTool`. Its test child inherits the CI environment through a NULL environment pointer, is never resumed, and is terminated before user-mode entry; the production clean-environment gate remains open. No production PE imports or compiler emitter were changed. Workspace ACL binding to the genuine package SID, restricted-primary-token composition, Job Object binding for the AppContainer launch, explicit handle-list inheritance, bounded output capture, and adversarial network/resource access attempts remain NOT IMPLEMENTED / NOT RUN. The fixture proves an actual suspended child token, not a production-ready sandbox.
 
 Model-facing process execution remains DISABLED. Next dependency: Phase 2B.3, genuine AppContainer SID to per-execution workspace ACL binding with least-privilege rights and exact crash-safe ACL rollback; only after that proceed to production suspended launch integration.
+
+
+## 2026-11-27 - DevAgent Phase 2B.3 AppContainer SID/workspace ACL binding
+
+Starting branch head: `d08bcc064cf802a7457c7b81b3eeba26bcb6916d`. Final code/test head: `6761c7ab6f251d487a09f592c96071782622b3ab`. Branch: `devagent-secure-process-broker-20261126`. PR #18 remains OPEN / DRAFT / UNMERGED.
+
+Phase 2B.3 is **WINDOWS CI PASS as a test-only security fixture**:
+- Dedicated AppContainer workspace ACL run [45914498923](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45914498923): PASS, 30/30 assertions on Windows Server 2025 / OS 10.0.26100.0 / x64 Windows PowerShell 5.1.26100.33822.
+- Integrated native ABI + AppContainer fixture [45914499001](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45914499001): PASS; includes runtime x64 layout checks, Phase 2B.2 token fixture, and Phase 2B.3 ACL fixture.
+- Frozen M1-M6 baseline [45914499087](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45914499087): PASS 83/83 on the exact same head.
+- Existing crash-safe workspace security [45914498984](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45914498984): PASS.
+- Native SDK/API ABI contract [45914498917](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45914498917): PASS.
+- Stage 7A run [45914498926](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45914498926) was still running when this record was prepared; do not mark it complete until its final status is fetched.
+
+Phase 2B.3 fixture behavior:
+- Creates two independent real AppContainer profiles using `CreateAppContainerProfile`, validates the OS-returned SIDs, and binds each exact package SID to its own execution workspace.
+- Applies a protected, explicit DACL: supervisor + SYSTEM administrative ACEs and package-specific scratch rights mask `0x0013019F`; no package FullControl, FILE_EXECUTE, DELETE_CHILD, WRITE_DAC or WRITE_OWNER.
+- Confirms DACL inheritance is disabled and the shared workspace root and separate journal root descriptors remain unchanged.
+- Uses the actual token of a fixed System32 `whoami.exe` child created suspended with the AppContainer security-capabilities attribute. It duplicates an impersonation token and exercises real Windows filesystem opens under impersonation.
+- Positive access: package can read/write an existing file and create a file inside its own execution workspace.
+- Negative access: package is denied its private journal, shared workspace parent, another execution workspace, compiler-source sentinel, broker-image sentinel, FILE_EXECUTE, WRITE_DAC and WRITE_OWNER.
+- Terminates and waits for the suspended child before any ACL rollback.
+- Normal completion and crash recovery both restore exact original owner/group/DACL SDDL; a second recovery replay finalizes cleanup idempotently.
+- Crash worker is killed after durable ACL-pending state and applied ACL; recovery verifies the journal contains the exact package SID and restores the exact saved descriptor.
+- Final workspace/journal residue assertions pass; profiles are deleted only when this execution owns them and cleanup is proven safe.
+
+Exact Phase 2B.3 source SHA-256: `787045DFC2BA2C1AB073141A5F25C7819E2888649642DDB46FE4438B48C8E139`.
+Workspace transaction SHA-256: `B56FFA342C56AD5238F4809D774835029949DE2E97DBD83DE041295A17477586`.
+Interop helper SHA-256: `0B23042E5C6AB408D48D69A8E327F8130347720F8BCAC495879DC66BAC254949`.
+Native ABI manifest SHA-256: `D0868CDB067CE04AA45D04214885134A7AC9D87CC607478BE1D7D3534BFBC478`.
+
+Two test-only PowerShell defects were corrected during the run: signed literal conversion for GENERIC_READ (`0x80000000`) and scalar `.Count` handling in the final residue check. The final 30-assertion run passed after both fixes. No production compiler source, PE imports, native process emitter, or broker code was changed by Phase 2B.3.
+
+Evidence boundary: the real AppContainer child is never resumed. The test uses a duplicated token to impersonate the AppContainer identity on the supervisor thread and tests filesystem ACL enforcement with actual Windows access checks via CreateFileW. This proves the selected filesystem DACL behavior for the fixture paths, not arbitrary code execution inside the AppContainer. It does not establish production broker integration, Job Object binding, clean environment, explicit DLL-search policy, output handle isolation, bounded output, cancellation, network denial, or full Windows 10/11 adversarial coverage. Existing crash recovery was tested on the Windows Server 2025 runner only.
+
+**Next dependency: Phase 2B.4 - production-design review and test-only integration of suspended AppContainer process creation with Job Object assignment and token verification before any resume.** The AppContainer workspace ACL fixture must remain test-only until 2B.4/2B.5/2B.6 and production integration gates are separately accepted. Model-facing/autonomous process execution remains **DISABLED**.
