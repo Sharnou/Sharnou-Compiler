@@ -3234,6 +3234,7 @@ function Emit-DevRunTool {
     ) # CreateProcessAsUserA
     Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
     Emit-JumpConditional -ConditionCode 0x84 -Label $createFail
+    Emit-DevBrokerDebugMarker -Marker 'CAPTURE:create-process-ok' -HandleSlot ($scratch + 0xFB0) -WrittenSlot ($scratch + 0xFB8)
 
     # Parent closes its inheritable copies immediately; only the child owns the pipe writer after this point.
     foreach ($slot in @($pipeWriteSlot, $nulHandleSlot)) {
@@ -3250,6 +3251,7 @@ function Emit-DevRunTool {
     Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
     Emit-JumpConditional -ConditionCode 0x84 -Label $assignFail
     Emit-StoreBits32Frame -SlotPosition $childActiveSlot -Value 1
+    Emit-DevBrokerDebugMarker -Marker 'CAPTURE:job-assigned' -HandleSlot ($scratch + 0xFB0) -WrittenSlot ($scratch + 0xFB8)
 
     # Verify the actual primary token before the first instruction can execute.
     Emit-LoadRaxFrame -SlotPosition $processSlot
@@ -3308,6 +3310,7 @@ function Emit-DevRunTool {
     ) # GetTokenInformation(TOKEN_APPCONTAINER_INFORMATION)
     Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
     Emit-JumpConditional -ConditionCode 0x84 -Label $tokenFail
+    Emit-DevBrokerDebugMarker -Marker 'CAPTURE:token-sid-query-ok' -HandleSlot ($scratch + 0xFB0) -WrittenSlot ($scratch + 0xFB8)
     Emit-LoadRaxFrame -SlotPosition $tokenInformationSlot
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x8B, 0x08)) # RCX = returned package SID
     Emit-LoadRaxFrame -SlotPosition $appContainerSidSlot
@@ -3315,6 +3318,7 @@ function Emit-DevRunTool {
     Emit-Win64CallIat -TargetRva ([UInt32]0x3350) -StackArguments @() # EqualSid
     Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
     Emit-JumpConditional -ConditionCode 0x84 -Label $tokenFail
+    Emit-DevBrokerDebugMarker -Marker 'CAPTURE:token-sid-equal' -HandleSlot ($scratch + 0xFB0) -WrittenSlot ($scratch + 0xFB8)
 
     # TokenHasRestrictions must be TRUE (the parent token's maximum privileges were disabled).
     for ($i = 0; $i -lt 8; $i++) { Emit-StoreZero64Frame -SlotPosition ($tokenInformationSlot + ($i * 8)) }
