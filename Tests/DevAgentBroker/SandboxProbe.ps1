@@ -104,7 +104,16 @@ try {
     exit 0
 }
 catch {
-    [Console]::Error.WriteLine(('SANDBOX_UNHANDLED|{0}' -f [string]$_))
+    $outerError = $_.Exception.GetBaseException()
+    $outerStatus = 'SANDBOX_OUTER_FAILURE|{0}|0x{1:X8}|{2}' -f
+        $outerError.GetType().FullName, $outerError.HResult, $outerError.Message
+    try {
+        [IO.File]::WriteAllText($dpapiStatusPath, $outerStatus, [Text.Encoding]::ASCII)
+    }
+    catch {
+        [Console]::Error.WriteLine(('SANDBOX_OUTER_STATUS_WRITE_FAILED|{0}' -f [string]$_))
+    }
+    [Console]::Error.WriteLine($outerStatus)
     $global:SHARNOU_TOOL_EXIT_CODE = 93
     exit 93
 }
