@@ -304,7 +304,7 @@ while ($true) {
         if ($thunkValue -gt [UInt32]::MaxValue) { Fail-PE 'Ordinal or invalid import entry is unsupported.' }
         $hintOffset = Convert-RvaToOffset -Rva ([UInt64]$thunkValue) -Size 3 -Sections $sections.ToArray() -FileSize $bytes.Length
         $importName = Read-AsciiZAtRva -Rva ($thunkValue + 2) -Sections $sections.ToArray() -Bytes $bytes
-        if ([string]::IsNullOrWhiteSpace($importName)) { Fail-PE 'Import-by-name record has an empty API name.' }
+        if ([string]::IsNullOrWhiteSpace($importName)) { Fail-PE ("Import-by-name record has an empty API name: descriptor={0}, DLL={1}, thunk={2}, lookupRva=0x{3:X8}, hintOffset=0x{4:X8}, thunkValue=0x{5:X8}." -f $descriptorIndex, $dllName, $thunkIndex, $thunkRva, $hintOffset, $thunkValue) }
         $null = $foundImports.Add($importName)
         $iatEntryRva = $firstThunk + ([UInt64]$thunkIndex * 8)
         $null = Convert-RvaToOffset -Rva $iatEntryRva -Size 8 -Sections $sections.ToArray() -FileSize $bytes.Length
