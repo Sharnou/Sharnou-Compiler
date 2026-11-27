@@ -443,7 +443,7 @@ namespace Sharnou
                     "windir=" + systemRoot
                 };
                 Array.Sort(allowedEnvironment, StringComparer.OrdinalIgnoreCase);
-                string environmentText = String.Join("\\0", allowedEnvironment) + "\\0\\0";
+                string environmentText = String.Join("\0", allowedEnvironment) + "\0\0";
                 char[] environmentChars = environmentText.ToCharArray();
                 environment = Marshal.AllocHGlobal(checked(environmentChars.Length * 2));
                 for (int environmentIndex = 0; environmentIndex < environmentChars.Length; environmentIndex++)
