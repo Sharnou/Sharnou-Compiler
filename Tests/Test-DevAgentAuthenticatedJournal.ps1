@@ -195,10 +195,18 @@ namespace Sharnou
                 if (!Regex.IsMatch(packageSid, @"^S-1-15-2-(0|[1-9][0-9]*)-(0|[1-9][0-9]*)-(0|[1-9][0-9]*)-(0|[1-9][0-9]*)-(0|[1-9][0-9]*)-(0|[1-9][0-9]*)-(0|[1-9][0-9]*)$", RegexOptions.CultureInvariant))
                     throw new InvalidDataException("AppContainer package SID is not canonical.");
 
-                uint volumeSerial = reader.ReadUInt32();
-                ulong workspaceFileId = reader.ReadUInt64();
-                if (volumeSerial == 0 || workspaceFileId == 0)
-                    throw new InvalidDataException("Canonical workspace file identity is missing.");
+                // FILE_ID_INFO contains a 64-bit volume serial plus a
+                // 128-bit FILE_ID_128. Do not reduce the workspace identity
+                // to the legacy 64-bit file-index pair.
+                ulong volumeSerial = reader.ReadUInt64();
+                byte[] workspaceFileId = reader.ReadBytes(16);
+                if (volumeSerial == 0 || workspaceFileId.Length != 16)
+                    throw new InvalidDataException("Canonical workspace volume/file identity is missing.");
+                bool fileIdHasNonZeroByte = false;
+                for (int fileIdIndex = 0; fileIdIndex < workspaceFileId.Length; fileIdIndex++)
+                    if (workspaceFileId[fileIdIndex] != 0) fileIdHasNonZeroByte = true;
+                if (!fileIdHasNonZeroByte)
+                    throw new InvalidDataException("Canonical 128-bit workspace file ID is empty.");
 
                 uint descriptorCount = reader.ReadUInt32();
                 if (descriptorCount != 3)
@@ -244,8 +252,9 @@ function New-JournalFixturePayload {
         $sidBytes = [Text.Encoding]::ASCII.GetBytes($PackageSid)
         $writer.Write([uint32]$sidBytes.Length)
         $writer.Write($sidBytes)
-        $writer.Write([uint32]12345) # synthetic volume serial for parser qualification
-        $writer.Write([uint64]0x123456789ABCDEF0) # synthetic file ID for parser qualification
+        $writer.Write([uint64]0x0123456789ABCDEF) # synthetic FILE_ID_INFO volume serial
+        [byte[]]$workspaceFileId = 1..16 | ForEach-Object { [byte]$_ }
+        $writer.Write($workspaceFileId) # full 128-bit FILE_ID_128
         $writer.Write([uint32]3) # three protected directory descriptors
         foreach ($descriptor in @(
             [Text.Encoding]::ASCII.GetBytes('ROOT-DESCRIPTOR-FIXTURE'),
@@ -312,8 +321,11 @@ $profileLength = [BitConverter]::ToUInt32($plaintext, 28)
 $sidLengthOffset = 32 + [int]$profileLength
 $sidLength = [BitConverter]::ToUInt32($plaintext, $sidLengthOffset)
 $workspaceVolumeOffset = $sidLengthOffset + 4 + [int]$sidLength
-[BitConverter]::GetBytes([uint32]0).CopyTo($badWorkspaceIdentity, $workspaceVolumeOffset)
+[BitConverter]::GetBytes([uint64]0).CopyTo($badWorkspaceIdentity, $workspaceVolumeOffset)
 $parserRejectCases.Add(@{ Name = 'missing workspace volume identity'; Bytes = $badWorkspaceIdentity })
+$badWorkspaceFileId = [byte[]]$plaintext.Clone()
+[Array]::Clear($badWorkspaceFileId, ($workspaceVolumeOffset + 8), 16)
+$parserRejectCases.Add(@{ Name = 'empty 128-bit workspace file identity'; Bytes = $badWorkspaceFileId })
 $emptyExecutionId = [byte[]]$plaintext.Clone()
 for ($i = 12; $i -lt 28; $i++) { $emptyExecutionId[$i] = 0 }
 $parserRejectCases.Add(@{ Name = 'empty execution identifier'; Bytes = $emptyExecutionId })
@@ -321,7 +333,7 @@ $badPackageSid = [byte[]]$plaintext.Clone()
 $sidStart = $sidLengthOffset + 4
 $badPackageSid[$sidStart] = [byte][char]'X'
 $parserRejectCases.Add(@{ Name = 'malformed package SID'; Bytes = $badPackageSid })
-$descriptorCountOffset = $workspaceVolumeOffset + 12
+$descriptorCountOffset = $workspaceVolumeOffset + 24
 $badDescriptorCount = [byte[]]$plaintext.Clone()
 [BitConverter]::GetBytes([uint32]2).CopyTo($badDescriptorCount, $descriptorCountOffset)
 $parserRejectCases.Add(@{ Name = 'descriptor count mismatch'; Bytes = $badDescriptorCount })
@@ -395,22 +407,77 @@ if ((Test-ByteSequence -Haystack $protected -Needle ([Text.Encoding]::ASCII.GetB
     throw 'Protected test envelope contains cleartext journal markers or identity metadata.'
 }
 
-# DPAPI user-scope protection does not prove which same-user process created
-# the record. This fixture deliberately demonstrates that another process in
-# the same user context can protect a different valid payload using public entropy.
+# Prove that a genuinely separate process running as the same Windows user
+# can mint a different valid envelope using the public optional entropy. DPAPI
+# binds to the user profile, not to this particular broker process.
 [byte[]]$sameUserForgedPayload = $plaintext.Clone()
 $sameUserForgedPayload[12] = [byte]($sameUserForgedPayload[12] -bxor 0x01)
 [Sharnou.DevAgentDpapiJournalNative]::ValidateCanonicalJournalV2($sameUserForgedPayload)
-[byte[]]$sameUserForgedEnvelope = [Sharnou.DevAgentDpapiJournalNative]::Protect($sameUserForgedPayload, $entropy)
-[byte[]]$sameUserForgedRoundTrip = $null
-$sameUserForgedError = 0
-if (-not [Sharnou.DevAgentDpapiJournalNative]::TryUnprotect($sameUserForgedEnvelope, $entropy, [ref]$sameUserForgedRoundTrip, [ref]$sameUserForgedError)) {
-    throw "Same-user DPAPI writer-boundary demonstration could not decrypt the forged envelope: $sameUserForgedError"
+
+$forgeRoot = Join-Path ([IO.Path]::GetTempPath()) ('Sharnou-DPAPI-Writer-Probe-' + [Guid]::NewGuid().ToString('N'))
+[void][IO.Directory]::CreateDirectory($forgeRoot)
+$forgePayloadPath = Join-Path $forgeRoot 'payload.bin'
+$forgeEntropyPath = Join-Path $forgeRoot 'entropy.bin'
+$forgeEnvelopePath = Join-Path $forgeRoot 'envelope.bin'
+$forgeScriptPath = Join-Path $forgeRoot 'forge.ps1'
+$forgeChildScript = @'
+param([string] $PayloadPath, [string] $EntropyPath, [string] $EnvelopePath)
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+Add-Type -AssemblyName System.Security -ErrorAction Stop
+[byte[]]$payload = [IO.File]::ReadAllBytes($PayloadPath)
+[byte[]]$entropy = [IO.File]::ReadAllBytes($EntropyPath)
+[byte[]]$envelope = [System.Security.Cryptography.ProtectedData]::Protect(
+    $payload, $entropy, [System.Security.Cryptography.DataProtectionScope]::CurrentUser)
+[IO.File]::WriteAllBytes($EnvelopePath, $envelope)
+Write-Output ('CHILD_DPAPI_PROTECT_SUCCESS|bytes={0}' -f $envelope.Length)
+'@
+try {
+    [IO.File]::WriteAllBytes($forgePayloadPath, $sameUserForgedPayload)
+    [IO.File]::WriteAllBytes($forgeEntropyPath, $entropy)
+    [IO.File]::WriteAllText($forgeScriptPath, $forgeChildScript, [Text.Encoding]::ASCII)
+
+    $forgeProcessInfo = New-Object Diagnostics.ProcessStartInfo
+    $forgeProcessInfo.FileName = Join-Path $PSHOME 'powershell.exe'
+    $forgeProcessInfo.Arguments = '-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "' +
+        $forgeScriptPath + '" "' + $forgePayloadPath + '" "' + $forgeEntropyPath + '" "' + $forgeEnvelopePath + '"'
+    $forgeProcessInfo.UseShellExecute = $false
+    $forgeProcessInfo.CreateNoWindow = $true
+    $forgeProcessInfo.RedirectStandardOutput = $true
+    $forgeProcessInfo.RedirectStandardError = $true
+
+    $forgeProcess = [Diagnostics.Process]::Start($forgeProcessInfo)
+    if (-not $forgeProcess.WaitForExit(15000)) {
+        $forgeProcess.Kill()
+        throw 'Separate same-user DPAPI writer process exceeded the 15-second timeout.'
+    }
+    $forgeStdout = $forgeProcess.StandardOutput.ReadToEnd()
+    $forgeStderr = $forgeProcess.StandardError.ReadToEnd()
+    if ($forgeProcess.ExitCode -ne 0) {
+        throw ("Separate same-user DPAPI writer failed (exit={0}): {1} {2}" -f
+            $forgeProcess.ExitCode, $forgeStdout, $forgeStderr)
+    }
+    if (-not (Test-Path -LiteralPath $forgeEnvelopePath -PathType Leaf)) {
+        throw 'Separate same-user DPAPI writer exited successfully without producing an envelope.'
+    }
+    [byte[]]$sameUserForgedEnvelope = [IO.File]::ReadAllBytes($forgeEnvelopePath)
+    if ($sameUserForgedEnvelope.Length -lt 32 -or $sameUserForgedEnvelope.Length -gt 65536) {
+        throw "Separate same-user DPAPI envelope length is outside policy bounds: $($sameUserForgedEnvelope.Length)"
+    }
+
+    [byte[]]$sameUserForgedRoundTrip = $null
+    $sameUserForgedError = 0
+    if (-not [Sharnou.DevAgentDpapiJournalNative]::TryUnprotect($sameUserForgedEnvelope, $entropy, [ref]$sameUserForgedRoundTrip, [ref]$sameUserForgedError)) {
+        throw "Trusted test process could not decrypt the separate same-user writer envelope: $sameUserForgedError"
+    }
+    if (-not [Convert]::ToBase64String($sameUserForgedRoundTrip).Equals([Convert]::ToBase64String($sameUserForgedPayload), [StringComparison]::Ordinal)) {
+        throw 'Separate same-user DPAPI writer envelope did not reproduce the exact forged payload.'
+    }
+    Write-Host 'PASS: separate process under the same user can mint a different valid DPAPI envelope with public entropy; DPAPI is not writer-process authentication' -ForegroundColor Green
 }
-if (-not [Convert]::ToBase64String($sameUserForgedRoundTrip).Equals([Convert]::ToBase64String($sameUserForgedPayload), [StringComparison]::Ordinal)) {
-    throw 'Same-user DPAPI writer-boundary demonstration failed exact payload verification.'
+finally {
+    Remove-Item -LiteralPath $forgeRoot -Recurse -Force -ErrorAction SilentlyContinue
 }
-Write-Host 'PASS: same-user process can mint a different valid DPAPI envelope with the public entropy; DPAPI is not writer-process authentication' -ForegroundColor Green
 
 $plainHash = [BitConverter]::ToString([Security.Cryptography.SHA256]::Create().ComputeHash($plaintext)).Replace('-', '')
 $envelopeHash = [BitConverter]::ToString([Security.Cryptography.SHA256]::Create().ComputeHash($protected)).Replace('-', '')
