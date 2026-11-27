@@ -1095,7 +1095,15 @@ function Emit-DevBrokerEnsureAppContainerSid {
     $randomNonzero = New-UniqueLabel -Prefix 'dev_appcontainer_random_nonzero'
     $derivedSidFailure = New-UniqueLabel -Prefix 'dev_appcontainer_derived_sid_failure'
     $sidReady = New-UniqueLabel -Prefix 'dev_appcontainer_sid_ready'
+    $helperFailure = New-UniqueLabel -Prefix 'dev_appcontainer_helper_failure'
+    $helperDone = New-UniqueLabel -Prefix 'dev_appcontainer_helper_done'
+    $savedRdiSlot = $RandomSlot + 0x20
+    $savedRsiSlot = $RandomSlot + 0x28
 
+    # This helper uses RSI/RDI for string construction; preserve the caller's
+    # nonvolatile registers before any generated code or nested Win32 calls.
+    Emit-StoreRdiFrame -SlotPosition $savedRdiSlot
+    Emit-StoreRsiFrame -SlotPosition $savedRsiSlot
     Emit-StoreZero64Frame -SlotPosition $SidSlot
     Emit-StoreZero64Frame -SlotPosition $DerivedSidSlot
     Emit-StoreBits32Frame -SlotPosition $ProfileCreatedSlot -Value 0
@@ -1118,7 +1126,7 @@ function Emit-DevBrokerEnsureAppContainerSid {
     Emit-JumpConditional -ConditionCode 0x85 -Label $randomCheckLoop
     Emit-Bytes -Bytes ([byte[]]@(0x84, 0xC0))
     Emit-JumpConditional -ConditionCode 0x85 -Label $randomNonzero
-    Emit-Jump -Label $FailureLabel
+    Emit-Jump -Label $helperFailure
     Mark-CodeLabel -Label $randomNonzero
 
     # Build the bounded canonical profile name:
@@ -1198,12 +1206,21 @@ function Emit-DevBrokerEnsureAppContainerSid {
     Emit-Win64CallIat -TargetRva ([UInt32]0x32A8) -StackArguments @() # FreeSid
     Emit-StoreZero64Frame -SlotPosition $DerivedSidSlot
     Mark-CodeLabel -Label $skipDerivedFree
-    Emit-Jump -Label $FailureLabel
+    Emit-Jump -Label $helperFailure
 
     Mark-CodeLabel -Label $sidReady
     Emit-LoadRcxFrame -SlotPosition $DerivedSidSlot
     Emit-Win64CallIat -TargetRva ([UInt32]0x32A8) -StackArguments @() # FreeSid
     Emit-StoreZero64Frame -SlotPosition $DerivedSidSlot
+    Emit-LoadRdiFrame -SlotPosition $savedRdiSlot
+    Emit-LoadRsiFrame -SlotPosition $savedRsiSlot
+    Emit-Jump -Label $helperDone
+
+    Mark-CodeLabel -Label $helperFailure
+    Emit-LoadRdiFrame -SlotPosition $savedRdiSlot
+    Emit-LoadRsiFrame -SlotPosition $savedRsiSlot
+    Emit-Jump -Label $FailureLabel
+    Mark-CodeLabel -Label $helperDone
 }
 function Emit-DevBrokerDeleteOwnedAppContainerProfile {
     param(
