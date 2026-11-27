@@ -4791,8 +4791,9 @@ $importSets = @(
     [pscustomobject]@{ Descriptor = 0x154; Lookup = 0xED0; Iat = 0x340; Dll = 'USERENV.dll'; Names = @('DeleteAppContainerProfile') },
     [pscustomobject]@{ Descriptor = 0x168; Lookup = 0xEE0; Iat = 0x350; Dll = 'ADVAPI32.dll'; Names = @('EqualSid') }
 )
+if (($descriptorBase + $importDirectorySize) -gt $idata.Length) { throw 'Import descriptor table exceeds .idata storage.' }
 $apiNameRvas = @{}
-$nameCursor = 0x360
+$nameCursor = 0x3A0
 foreach ($set in $importSets) {
     foreach ($apiName in $set.Names) {
         if (-not $apiNameRvas.ContainsKey($apiName)) {
@@ -4803,6 +4804,9 @@ foreach ($set in $importSets) {
             if (($nameCursor % 2) -ne 0) { $nameCursor++ }
         }
     }
+}
+if ($nameCursor -gt $descriptorBase) {
+    throw ("Import-by-name strings overlap the import descriptor table: end=0x{0:X}, descriptorBase=0x{1:X}." -f $nameCursor, $descriptorBase)
 }
 Set-AsciiZ -Buffer $idata -Offset 0xF00 -Value 'KERNEL32.dll'
 Set-AsciiZ -Buffer $idata -Offset 0xF10 -Value 'USER32.dll'

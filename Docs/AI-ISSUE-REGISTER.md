@@ -600,3 +600,10 @@ Acceptance requires: repair and adversarially validate journal recovery; unique 
 - Prior wording that the service architecture decision was unresolved is superseded: the owner-approved architecture permits implementation planning. It does not authorize installation, production key provisioning, rollout or process-execution enablement.
 - R5.0 does not implement SCM service host, named pipe, service SID, machine CNG key, journal, recovery or child launch. R5.1 is the next native code-bearing increment: Sharnou-generated SCM service-host bootstrap, actual PE import-table verification and Windows service lifecycle tests.
 - Model-facing and autonomous execution remain DISABLED; Phase 2B.8 remains NOT SECURITY ACCEPTED.
+
+
+## R5.1 - SCM host preflight (2026-11-27)
+
+Draft PR #32 records the native SCM service-host contract and preflight. The existing compiler PE emitter has only a single DIR64 relocation entry for its entry-point anchor; service callback tables require a bounded relocation builder and code-label/data-pointer fixups. The current builtin emitter does not yet expose a validated function-pointer callback path. An experimental incomplete service import/builtin scaffold was reverted rather than leaving invalid compiler output. PR #32 is documentation + compiler-baseline restoration only; no service executable or lifecycle test exists. Exact head: `5f6e5bdd1d3362a5b0a77458df956d6acbf41980`; no workflow result yet.
+
+Next implementation: R5.1.a multi-target relocation builder and tests; R5.1.b typed callback ABI and runtime probes; R5.1.c inert SCM host generation and service lifecycle tests. Keep model-facing/autonomous execution disabled.
