@@ -51,7 +51,7 @@ The current strict fixture schema uses:
 - non-empty 128-bit execution identifier;
 - bounded canonical AppContainer profile name;
 - canonical AppContainer package SID;
-- workspace volume serial and 64-bit file identifier;
+- 64-bit volume serial plus the full 128-bit `FILE_ID_128` from Windows `FILE_ID_INFO`; a legacy 64-bit file index is not a sufficient canonical identity.
 - exactly three bounded security-descriptor records (workspace root, Build, broker directory);
 - explicit security-policy version 2;
 - no trailing bytes.
