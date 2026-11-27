@@ -471,3 +471,11 @@ The user explicitly approved the required implementation scope for compiler mile
 3. Re-run crash recovery, malformed-journal, Job Object termination, exact rollback, journal-retirement and reparse-point adversarial tests on the same candidate head.
 4. Reconcile the candidate with current default through a new isolated branch if necessary; PR #24 is stale and must remain draft/unmerged.
 5. Return to the accepted compiler dependency sequence: frozen baseline provenance and ABI acceptance, 7B-7E implementation and tests, native runtime/security prerequisites, then the Sharnou-compiled autonomous agent. Engine 8-13 follow the approved dependency order.
+
+### Follow-up diagnostic commit - 2026-11-27
+
+PR #24 candidate head advanced to bd411c2fc777006f9b1160ab8d3d5992c2a15afa. Stage0/SharnouCompiler.ps1 now emits the exact native journal path to redirected stdout on the read-open failure path, using already-imported GetStdHandle and WriteFile APIs; no new import was added. The metadata-only CreateFile probe remains immediately after this path echo. This is temporary diagnostic code, not production behavior.
+
+- M1-M6 run [45964360562](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45964360562): WINDOWS CI PASS 83/83 on exact head bd411c2fc777006f9b1160ab8d3d5992c2a15afa.
+- Stage 7A/broker run [45964360481](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45964360481): IN PROGRESS at the latest check; no conclusion claimed.
+- Required next evidence: inspect the final log for ACL_RECOVERY_NATIVE_PATH, compare it byte-for-byte with the PowerShell-computed journal path, then decide whether the defect is path construction or process token/ACL access. Do not weaken ACLs to force a pass.
