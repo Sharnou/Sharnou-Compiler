@@ -648,7 +648,7 @@ try {
         try {
             # Probe the exact Win32 open contract from the test process. This
             # separates a DACL/access-mask failure from incorrect native call setup.
-            $genericReadError = [Sharnou.DevAgentJournalProbe]::Probe($journalPath, [uint32]0x80000000, [uint32]1, [uint32]0x00200080)
+            $genericReadError = [Sharnou.DevAgentJournalProbe]::Probe($journalPath, [Convert]::ToUInt32('80000000', 16), [uint32]1, [uint32]0x00200080)
             $dataAndAttributesError = [Sharnou.DevAgentJournalProbe]::Probe($journalPath, [uint32]0x00000081, [uint32]1, [uint32]0x00200080)
             $metadataOnlyError = [Sharnou.DevAgentJournalProbe]::Probe($journalPath, [uint32]0, [uint32]1, [uint32]0x00200080)
             Write-Host ("ACL_RECOVERY_POWERSHELL_CREATEFILE|genericRead={0}|dataAndAttributes={1}|metadataOnly={2}" -f $genericReadError, $dataAndAttributesError, $metadataOnlyError)
