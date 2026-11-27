@@ -1246,6 +1246,7 @@ function Emit-DevBrokerEnsureAppContainerSid {
     Emit-LoadRsiFrame -SlotPosition $savedRsiSlot
     Emit-Jump -Label $FailureLabel
     Mark-CodeLabel -Label $helperDone
+    Emit-DevBrokerDebugMarker -Marker 'ID6:helper-done' -HandleSlot $debugHandleSlot -WrittenSlot $debugWrittenSlot
 }
 function Emit-DevBrokerDeleteOwnedAppContainerProfile {
     param(
@@ -2986,13 +2987,17 @@ function Emit-DevRunTool {
     # A separate fresh identity is created for the actual child; the stable legacy
     # SID is never placed in SECURITY_CAPABILITIES or used for a process token.
     Emit-DevBrokerEnsureAppContainerSid -SidSlot $appContainerSidSlot -ProfileNameSlot $profileNameSlot -RandomSlot $profileRandomSlot -DerivedSidSlot $derivedProfileSidSlot -ProfileCreatedSlot $profileCreatedSlot -FailureLabel $appContainerFail
+    Emit-DevBrokerDebugMarker -Marker 'MAIN:identity-created' -HandleSlot ($scratch + 0xFB0) -WrittenSlot ($scratch + 0xFB8)
 
     Emit-DevBrokerWriteAclJournal -JournalPathSlot $journalPathSlot -TempPathSlot $journalTempPathSlot -WorkspaceRootSlot $workspaceRootSlot -BuildPathSlot $buildPathSlot -BrokerDirectorySlot $brokerDirectorySlot -JournalHandleSlot $journalHandleSlot -JournalWrittenSlot $journalWrittenSlot -HeaderSlot $journalHeaderSlot -RootDescriptorSlot $rootDescriptorSlot -BuildDescriptorSlot $buildDescriptorSlot -BrokerDescriptorSlot $brokerDescriptorSlot -RootLengthSlot $rootDescriptorLengthSlot -BuildLengthSlot $buildDescriptorLengthSlot -BrokerLengthSlot $brokerDescriptorLengthSlot -TransactionActiveSlot $transactionActiveSlot -FailureLabel $journalFail
 
     # Only now may the execution SID gain read access to source and write access to staging.
     Emit-DevBrokerUpdateAcl -PathSlot $workspaceRootSlot -SidSlot $appContainerSidSlot -AccessMask ([UInt32]0x001200A9) -AccessMode 2 -FailureLabel $aclFail
+    Emit-DevBrokerDebugMarker -Marker 'MAIN:root-acl-added' -HandleSlot ($scratch + 0xFB0) -WrittenSlot ($scratch + 0xFB8)
     Emit-DevBrokerUpdateAcl -PathSlot $buildPathSlot -SidSlot $appContainerSidSlot -AccessMask ([UInt32]0x001201FF) -AccessMode 2 -SetLowIntegrityLabel $true -FailureLabel $aclFail
+    Emit-DevBrokerDebugMarker -Marker 'MAIN:build-acl-added' -HandleSlot ($scratch + 0xFB0) -WrittenSlot ($scratch + 0xFB8)
     Emit-DevBrokerUpdateAcl -PathSlot $brokerDirectorySlot -SidSlot $appContainerSidSlot -AccessMask ([UInt32]0x001201FF) -AccessMode 2 -SetLowIntegrityLabel $true -FailureLabel $aclFail
+    Emit-DevBrokerDebugMarker -Marker 'MAIN:broker-acl-added' -HandleSlot ($scratch + 0xFB0) -WrittenSlot ($scratch + 0xFB8)
 
     # Rebuild this path because outputPathSlot held the temporary ACL journal name.
     Emit-DevBrokerBuildWorkspacePath -RootSlot $workspaceRootSlot -RootLengthSlot $rootLengthSlot -SuffixItem $captureSuffixItem -SuffixLength $captureSuffixLength -DestinationSlot $outputPathSlot
