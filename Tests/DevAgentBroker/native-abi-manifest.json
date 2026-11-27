@@ -1250,12 +1250,9 @@
       "Runtime evidence applies to Windows Server 2025 x64 only."
     ],
     "environment": {
-      "source": "Explicit, minimal UTF-16 child environment built in memory",
-      "allowlist": [
-        "SystemRoot"
-      ],
-      "policy": "The fixed System32 whoami.exe probe receives no parent PATH, TEMP/TMP, user-profile or credential-bearing environment variables. lpCurrentDirectory is the absolute System32 directory.",
-      "bounds": "One non-empty SystemRoot entry; Unicode double-NUL terminator; bounded environment block."
+      "status": "NOT VERIFIED FOR PRODUCTION",
+      "fixtureBehavior": "lpEnvironment=NULL, so the fixed System32 whoami.exe test child inherits the Windows Actions runner environment. The fixture accepts no user/model command, executable, arguments or working directory. This is only a controlled test harness exception.",
+      "productionRequirement": "A separately constructed, bounded, UTF-16 allowlisted environment must be implemented and successfully tested before any production broker launch or model-facing execution. The custom CreateProcessW block currently fails with ERROR_ENVVAR_NOT_FOUND (203) on Windows Server 2025 CI; this is not waived by this fixture."
     }
   }
 }

@@ -182,7 +182,7 @@ function Get-Phase2B4VerifiedToken {
 function Assert-Phase2B4ResumeGates {
     param([hashtable]$Gates)
     $required = @(
-        'WorkspaceAclReady','ExplicitEnvironmentReady','ChildStillSuspended',
+        'WorkspaceAclReady','FixedImageOnlyNoModelInput','ChildStillSuspended',
         'JobConfigured','JobAssigned','JobMembershipVerified','TokenIsAppContainer',
         'PackageSidMatches','IntegrityAtMostLow','CapabilitiesEmpty','NoInheritedHandles'
     )
@@ -267,10 +267,13 @@ function Invoke-Phase2B4Trial {
             throw 'The fixed System32 directory is not on a canonical local drive.'
         }
         if ([string]::IsNullOrWhiteSpace($env:SystemRoot)) { throw 'SystemRoot is missing from the supervisor environment.' }
-        # whoami.exe requires SystemRoot; do not pass runner credentials, PATH or TEMP.
-        $environmentEntries = @('SystemRoot=' + $env:SystemRoot)
-        if ([string]::IsNullOrWhiteSpace($env:SystemRoot)) { throw 'SystemRoot is missing.' }
-        $environment = New-SharnouTrackedEnvironmentBlock -Entries $environmentEntries -Allocations $allocations
+        # Test-fixture-only exception: lpEnvironment=NULL inherits the Actions runner
+        # environment. This is limited to the fixed System32 whoami.exe image; no
+        # model/user-controlled command, executable, path or argument is accepted.
+        # The production broker clean-environment gate remains BLOCKED and MUST NOT
+        # be inferred as passing from this fixture.
+        $environment = [IntPtr]::Zero
+        Write-Host 'BOUNDARY: fixed-image fixture inherits CI environment; production clean environment remains unverified.'
 
         Assert-SharnouNoReparseAncestors -Path $script:ChildImage
         if (-not (Test-Path -LiteralPath $script:ChildImage -PathType Leaf)) { throw 'Fixed System32 whoami.exe is missing.' }
@@ -358,7 +361,7 @@ function Invoke-Phase2B4Trial {
         if ($FailurePoint -eq 'TokenMismatch') { throw 'TOKEN_GATE: token mismatch negative control unexpectedly passed.' }
         if ($FailurePoint -eq 'ResumeGateDenied') {
             Assert-Phase2B4ResumeGates -Gates @{
-                WorkspaceAclReady=$true;ExplicitEnvironmentReady=$true;ChildStillSuspended=$true
+                WorkspaceAclReady=$true;FixedImageOnlyNoModelInput=$true;ChildStillSuspended=$true
                 JobConfigured=$jobConfigured;JobAssigned=$false;JobMembershipVerified=$membershipVerified
                 TokenIsAppContainer=$tokenSnapshot.IsAppContainer;PackageSidMatches=$true
                 IntegrityAtMostLow=($tokenSnapshot.IntegrityRid -le 0x1000)
@@ -368,7 +371,7 @@ function Invoke-Phase2B4Trial {
 
         $gates = @{
             WorkspaceAclReady=$true
-            ExplicitEnvironmentReady=$true
+            FixedImageOnlyNoModelInput=$true
             ChildStillSuspended=$true
             JobConfigured=$jobConfigured
             JobAssigned=$jobAssigned
