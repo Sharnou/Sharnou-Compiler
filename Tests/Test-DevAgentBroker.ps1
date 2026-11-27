@@ -626,6 +626,10 @@ try {
             $journalInfo = Get-Item -LiteralPath $journalPath
             $journalHash = (Get-FileHash -LiteralPath $journalPath -Algorithm SHA256).Hash
             Write-Host ("ACL_RECOVERY_JOURNAL|bytes={0}|sha256={1}" -f $journalInfo.Length, $journalHash)
+        }
+        catch {
+            Write-Host ("ACL_RECOVERY_JOURNAL_READ_FAIL|{0}" -f $_.Exception.Message)
+        }
         foreach ($aclPath in $aclPaths) {
             try {
                 $currentSddl = Get-BrokerSecuritySddl -Path $aclPath
