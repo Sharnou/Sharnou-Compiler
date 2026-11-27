@@ -1813,95 +1813,6 @@ function Emit-DevBrokerWriteRecoveryAttributeDiagnostic {
     Emit-Win64CallIat -TargetRva ([UInt32]0x3078) -StackArguments @(@{ Kind = 'Immediate'; Value = 0 }) # WriteFile
 }
 
-function Emit-DevBrokerWriteProcessTokenDiagnostic {
-    $scratch = [int]$script:ActiveContext.ScratchPosition
-    $tokenHandleSlot = $scratch + 0xD98
-    $tokenInfoSlot = $scratch + 0xDA0
-    $tokenLengthSlot = $scratch + 0xDA4
-    $appContainerSlot = $scratch + 0xD70
-    $restrictedSlot = $scratch + 0xD74
-    $elevatedSlot = $scratch + 0xD78
-    $textBufferSlot = $scratch + 0xDA8
-    $textLengthSlot = $scratch + 0xDE8
-    $stdoutHandleSlot = $scratch + 0xD60
-    $bytesWrittenSlot = $scratch + 0xD68
-    $skipClose = New-UniqueLabel -Prefix 'dev_acl_token_diag_skip_close'
-    $formatItem = Register-DataConstant -Value "ACL_RECOVERY_TOKEN|appcontainer=%u|restricted=%u|elevated=%u`r`n"
-
-    Emit-StoreZero64Frame -SlotPosition $tokenHandleSlot
-    foreach ($slot in @($appContainerSlot, $restrictedSlot, $elevatedSlot)) {
-        Emit-StoreBits32Frame -SlotPosition $slot -Value ([UInt32]::MaxValue)
-    }
-    Emit-StoreBits32Frame -SlotPosition $tokenLengthSlot -Value 0
-
-    # Inspect the broker process primary token only. This is read-only and does
-    # not duplicate, adjust, replace, or use the token for child creation.
-    Emit-Bytes -Bytes ([byte[]]@(0x48, 0xC7, 0xC1, 0xFF, 0xFF, 0xFF, 0xFF, 0xBA, 0x08, 0x00, 0x00, 0x00))
-    Emit-LeaRaxFrame -SlotPosition $tokenHandleSlot
-    Emit-Bytes -Bytes ([byte[]]@(0x49, 0x89, 0xC0))
-    Emit-Win64CallIat -TargetRva ([UInt32]0x32B0) -StackArguments @() # OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY)
-    Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
-    $tokenOpenFailed = New-UniqueLabel -Prefix 'dev_acl_token_diag_open_failed'
-    Emit-JumpConditional -ConditionCode 0x84 -Label $tokenOpenFailed
-
-    foreach ($query in @(
-        @{ Class = 29; Slot = $appContainerSlot }, # TokenIsAppContainer
-        @{ Class = 21; Slot = $restrictedSlot },   # TokenHasRestrictions
-        @{ Class = 20; Slot = $elevatedSlot }      # TokenElevation
-    )) {
-        Emit-StoreBits32Frame -SlotPosition $tokenLengthSlot -Value 0
-        Emit-LoadRcxFrame -SlotPosition $tokenHandleSlot
-        Emit-Bytes -Bytes ([byte[]]@(0xBA))
-        Emit-I32 -Value $query.Class
-        Emit-LeaRaxFrame -SlotPosition $tokenInfoSlot
-        Emit-Bytes -Bytes ([byte[]]@(0x49, 0x89, 0xC0, 0x41, 0xB9, 0x04, 0x00, 0x00, 0x00))
-        Emit-Win64CallIat -TargetRva ([UInt32]0x32D8) -StackArguments @(
-            @{ Kind = 'FrameAddress'; SlotPosition = $tokenLengthSlot }
-        ) # GetTokenInformation
-        $queryFailed = New-UniqueLabel -Prefix 'dev_acl_token_diag_query_failed'
-        $queryDone = New-UniqueLabel -Prefix 'dev_acl_token_diag_query_done'
-        Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
-        Emit-JumpConditional -ConditionCode 0x84 -Label $queryFailed
-        Emit-LoadEaxFrame -SlotPosition $tokenInfoSlot
-        Emit-StoreEaxFrame -SlotPosition $query.Slot
-        Emit-Jump -Label $queryDone
-        Mark-CodeLabel -Label $queryFailed
-        Emit-StoreBits32Frame -SlotPosition $query.Slot -Value ([UInt32]::MaxValue)
-        Mark-CodeLabel -Label $queryDone
-    }
-    Mark-CodeLabel -Label $tokenOpenFailed
-
-    Emit-LeaRaxFrame -SlotPosition $textBufferSlot
-    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1))
-    Emit-DataAddress -DataItem $formatItem
-    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC2))
-    Emit-LoadEaxFrame -SlotPosition $appContainerSlot
-    Emit-Bytes -Bytes ([byte[]]@(0x41, 0x89, 0xC0))
-    Emit-LoadEaxFrame -SlotPosition $restrictedSlot
-    Emit-Bytes -Bytes ([byte[]]@(0x41, 0x89, 0xC1))
-    Emit-Win64CallIat -TargetRva ([UInt32]0x3090) -StackArguments @(
-        @{ Kind = 'FrameDword'; SlotPosition = $elevatedSlot }
-    ) # wsprintfA
-    Emit-StoreEaxFrame -SlotPosition $textLengthSlot
-
-    Emit-Bytes -Bytes ([byte[]]@(0xB9, 0xF5, 0xFF, 0xFF, 0xFF)) # STD_OUTPUT_HANDLE
-    Emit-Win64CallIat -TargetRva ([UInt32]0x3070) -StackArguments @() # GetStdHandle
-    Emit-StoreRaxFrame -SlotPosition $stdoutHandleSlot
-    Emit-LoadRcxFrame -SlotPosition $stdoutHandleSlot
-    Emit-LeaRaxFrame -SlotPosition $textBufferSlot
-    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC2))
-    Emit-LoadEaxFrame -SlotPosition $textLengthSlot
-    Emit-Bytes -Bytes ([byte[]]@(0x41, 0x89, 0xC0))
-    Emit-LeaR9Frame -SlotPosition $bytesWrittenSlot
-    Emit-Win64CallIat -TargetRva ([UInt32]0x3078) -StackArguments @(@{ Kind = 'Immediate'; Value = 0 }) # WriteFile
-
-    Emit-LoadRcxFrame -SlotPosition $tokenHandleSlot
-    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x85, 0xC9))
-    Emit-JumpConditional -ConditionCode 0x84 -Label $skipClose
-    Emit-Win64CallIat -TargetRva ([UInt32]0x30B8) -StackArguments @() # CloseHandle
-    Mark-CodeLabel -Label $skipClose
-}
-
 function Emit-DevBrokerRecoverAclJournal {
     param(
         [int] $JournalPathSlot,
@@ -1965,7 +1876,6 @@ function Emit-DevBrokerRecoverAclJournal {
     Emit-DevBrokerWriteDiagnosticPath -PathSlot $JournalPathSlot -PathLengthSlot $PathLengthSlot
     Emit-DevBrokerWriteRecoveryTokenDiagnostic
     Emit-DevBrokerWriteRecoveryAttributeDiagnostic -JournalPathSlot $JournalPathSlot
-    Emit-DevBrokerWriteProcessTokenDiagnostic
     Emit-LeaRaxFrame -SlotPosition $JournalPathSlot
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1, 0x33, 0xD2, 0x41, 0xB8, 0x01, 0x00, 0x00, 0x00, 0x45, 0x33, 0xC9))
     Emit-Win64CallIat -TargetRva ([UInt32]0x30A0) -StackArguments @(
