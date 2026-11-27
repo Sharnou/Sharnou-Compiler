@@ -427,6 +427,27 @@ namespace Sharnou
             return entries;
         }
 
+        private static void AddOrReplaceDriveEntry(List<string> entries, string absolutePath)
+        {
+            if (String.IsNullOrEmpty(absolutePath) || !Path.IsPathRooted(absolutePath))
+                throw new InvalidOperationException("A trusted Windows path is not absolute: " + absolutePath);
+            string root = Path.GetPathRoot(absolutePath);
+            if (String.IsNullOrEmpty(root) || root.Length != 3 ||
+                !Char.IsLetter(root[0]) || root[1] != ':' || root[2] != '\\\\')
+                throw new InvalidOperationException("A trusted Windows path is not on a local drive: " + absolutePath);
+
+            string variableName = "=" + root.Substring(0, 2);
+            for (int index = entries.Count - 1; index >= 0; index--)
+            {
+                string entry = entries[index];
+                if (entry.Length >= 4 && entry[0] == '=' &&
+                    String.Equals(entry.Substring(0, 3), variableName, StringComparison.OrdinalIgnoreCase) &&
+                    entry[3] == '=')
+                    entries.RemoveAt(index);
+            }
+            entries.Add(variableName + "=" + absolutePath);
+        }
+
         private static string BuildExplicitEnvironment()
         {
             string systemRoot = Environment.GetEnvironmentVariable("SystemRoot");
@@ -442,23 +463,12 @@ namespace Sharnou
             // broker variables and secret values remain excluded.
             List<string> entries = ReadApprovedDriveEntries();
 
-            // The selected lpCurrentDirectory is on the Windows system drive.
-            // Ensure its hidden =X: current-directory variable is present even
-            // when the parent is running from a different workspace drive.
-            string currentDirectoryRoot = Path.GetPathRoot(systemDirectory);
-            string expectedSystemDriveRoot = systemDrive + "\\\\";
-            if (!String.Equals(currentDirectoryRoot, expectedSystemDriveRoot, StringComparison.OrdinalIgnoreCase))
-                throw new InvalidOperationException("SystemDirectory and SystemRoot resolve to different drive roots.");
-
-            string currentDriveVariableName = "=" + systemDrive;
-            for (int index = entries.Count - 1; index >= 0; index--)
-            {
-                int separator = entries[index].IndexOf('=', 1);
-                if (separator > 0 &&
-                    String.Equals(entries[index].Substring(0, separator), currentDriveVariableName, StringComparison.OrdinalIgnoreCase))
-                    entries.RemoveAt(index);
-            }
-            entries.Add(currentDriveVariableName + "=" + systemDirectory);
+            // Add deterministic hidden drive entries for both trusted Windows
+            // paths. Hosted Windows runners can place SystemRoot and
+            // GetSystemDirectory on different volumes; assuming one drive can
+            // reproduce ERROR_ENVVAR_NOT_FOUND (203) at CreateProcessAsUserW.
+            AddOrReplaceDriveEntry(entries, systemRoot);
+            AddOrReplaceDriveEntry(entries, systemDirectory);
 
             entries.AddRange(new string[] {
                 "ComSpec=" + Path.Combine(systemDirectory, "cmd.exe"),
