@@ -581,7 +581,7 @@ namespace Sharnou
             return difference == 0;
         }
 
-        public static byte[] VerifyAndValidate(byte[] envelope, byte[] pinnedPublicKeyBlob)
+        public static byte[] VerifySignatureAndGetPayload(byte[] envelope, byte[] pinnedPublicKeyBlob)
         {
             if (envelope == null ||
                 envelope.Length < HeaderBytes + MinimumPayloadBytes + SignatureBytes ||
@@ -646,12 +646,29 @@ namespace Sharnou
 
             byte[] payload = new byte[(int)payloadLength];
             Buffer.BlockCopy(envelope, HeaderBytes, payload, 0, payload.Length);
-            DevAgentDpapiJournalNative.ValidateCanonicalJournalV2(payload);
+            // The PowerShell orchestration layer applies the strict canonical parser only after this method verifies the signature.
             return payload;
         }
     }
 }
 '@
+}
+
+function Get-VerifiedCanonicalJournalPayload {
+    param(
+        [Parameter(Mandatory = $true)][byte[]] $Envelope,
+        [Parameter(Mandatory = $true)][byte[]] $PinnedPublicKeyBlob
+    )
+
+    # The CNG verifier returns payload bytes only after bounds, pinned-key
+    # identity and RSA-PSS signature checks pass. The separately compiled
+    # native parser is then invoked in PowerShell, avoiding a cross-Add-Type
+    # assembly reference while preserving the verify-before-parse ordering.
+    [byte[]]$verified = [Sharnou.DevAgentSignedJournalVerifier]::VerifySignatureAndGetPayload(
+        $Envelope,
+        $PinnedPublicKeyBlob)
+    [Sharnou.DevAgentDpapiJournalNative]::ValidateCanonicalJournalV2($verified)
+    return ,$verified
 }
 
 function Assert-SignedJournalRejected {
@@ -664,9 +681,7 @@ function Assert-SignedJournalRejected {
 
     $rejected = $false
     try {
-        [Sharnou.DevAgentSignedJournalVerifier]::VerifyAndValidate(
-            [byte[]]$Envelope,
-            [byte[]]$PinnedPublicKeyBlob) | Out-Null
+        Get-VerifiedCanonicalJournalPayload -Envelope ([byte[]]$Envelope) -PinnedPublicKeyBlob ([byte[]]$PinnedPublicKeyBlob) | Out-Null
     }
     catch {
         $exception = $_.Exception
@@ -694,9 +709,7 @@ $attackerSigner = [Sharnou.DevAgentJournalSigningKey]::new()
 try {
     [byte[]]$trustedPublicKey = $trustedSigner.ExportPublicKeyBlob()
     [byte[]]$signedEnvelope = $trustedSigner.Sign($plaintext)
-    [byte[]]$verifiedPayload = [Sharnou.DevAgentSignedJournalVerifier]::VerifyAndValidate(
-        $signedEnvelope,
-        $trustedPublicKey)
+    [byte[]]$verifiedPayload = Get-VerifiedCanonicalJournalPayload -Envelope $signedEnvelope -PinnedPublicKeyBlob $trustedPublicKey
     if (-not [Convert]::ToBase64String($verifiedPayload).Equals(
         [Convert]::ToBase64String($plaintext),
         [StringComparison]::Ordinal)) {
