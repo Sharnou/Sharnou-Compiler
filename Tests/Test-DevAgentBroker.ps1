@@ -61,6 +61,8 @@ namespace Sharnou {
         private static extern IntPtr GetCurrentProcess();
         [DllImport("advapi32.dll", SetLastError = true)]
         private static extern bool OpenProcessToken(IntPtr process, uint access, out IntPtr token);
+        [DllImport("advapi32.dll", SetLastError = true)]
+        private static extern bool GetTokenInformation(IntPtr token, int informationClass, IntPtr information, uint informationLength, out uint returnLength);
         public static string ProcessTokenSummary() {
             IntPtr token;
             if (!OpenProcessToken(GetCurrentProcess(), 0x0008, out token))
@@ -76,6 +78,31 @@ namespace Sharnou {
                     }
                     return identity.User.Value + "|" + groups.ToString();
                 }
+            }
+            finally { CloseHandle(token); }
+        }
+        public static uint ProcessTokenIntegrityRid() {
+            IntPtr token;
+            if (!OpenProcessToken(GetCurrentProcess(), 0x0008, out token))
+                throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+            try {
+                uint required;
+                GetTokenInformation(token, 25, IntPtr.Zero, 0, out required); // TokenIntegrityLevel
+                int error = Marshal.GetLastWin32Error();
+                if (error != 122 || required < 16 || required > 4096)
+                    throw new System.ComponentModel.Win32Exception(error, "Unexpected TokenIntegrityLevel size probe.");
+                IntPtr buffer = Marshal.AllocHGlobal((int)required);
+                try {
+                    if (!GetTokenInformation(token, 25, buffer, required, out required))
+                        throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+                    IntPtr sid = Marshal.ReadIntPtr(buffer); // TOKEN_MANDATORY_LABEL.Label.Sid
+                    if (sid == IntPtr.Zero) throw new InvalidOperationException("Token integrity SID is null.");
+                    int subAuthorityCount = Marshal.ReadByte(sid, 1);
+                    if (subAuthorityCount < 1 || subAuthorityCount > 15)
+                        throw new InvalidOperationException("Token integrity SID has invalid sub-authority count.");
+                    return unchecked((uint)Marshal.ReadInt32(sid, 8 + ((subAuthorityCount - 1) * 4)));
+                }
+                finally { Marshal.FreeHGlobal(buffer); }
             }
             finally { CloseHandle(token); }
         }
@@ -732,6 +759,9 @@ try {
             $currentPrincipal = [Security.Principal.WindowsPrincipal]::new($currentIdentity)
             $isBuiltinAdmin = $currentPrincipal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
             $processTokenSummary = [Sharnou.DevAgentJournalProbe]::ProcessTokenSummary()
+            $processTokenIntegrityRid = [Sharnou.DevAgentJournalProbe]::ProcessTokenIntegrityRid()
+            Write-Host ("ACL_RECOVERY_HARNESS_TOKEN|integrityRid={0}|effectiveIdentity={1}|impersonation={2}" -f
+                $processTokenIntegrityRid, $currentIdentity.User.Value, $currentIdentity.ImpersonationLevel)
             Write-Host ("ACL_RECOVERY_JOURNAL_SECURITY|owner={0}|effectiveIdentity={1}|effectiveGroups={2}|impersonation={3}|processToken={4}|isBuiltinAdmin={5}|sddl={6}" -f
                 $journalSecurity.Owner, $currentIdentity.User.Value, $currentGroups, $currentIdentity.ImpersonationLevel,
                 $processTokenSummary, $isBuiltinAdmin, $journalSecuritySddl)
