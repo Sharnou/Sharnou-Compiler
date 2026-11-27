@@ -1,0 +1,45 @@
+name: Sharnou DevAgent AppContainer Job Object Launch
+
+on:
+  push:
+    branches:
+      - devagent-secure-process-broker-20261126
+  pull_request:
+    branches:
+      - Sharnou-Compiler
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-appcontainer-job-launch:
+    runs-on: windows-2025
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Verify Phase 2B.4 source encoding
+        shell: powershell
+        run: |
+          $paths = @(
+            'Tests\DevAgentBroker\native-abi-manifest.json',
+            'Tests\DevAgentBroker\NativeInterop.ps1',
+            'Tests\DevAgentBroker\WorkspaceTransaction.ps1',
+            'Tests\Test-DevAgentAppContainerJobLaunch.ps1'
+          )
+          foreach ($path in $paths) {
+            $bytes = [IO.File]::ReadAllBytes((Join-Path $PWD $path))
+            if ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF) {
+              throw "UTF-8 BOM is not allowed: $path"
+            }
+            foreach ($byte in $bytes) {
+              if ($byte -gt 127) { throw "Non-ASCII source byte: $path" }
+            }
+          }
+          Write-Host 'PASS: Phase 2B.4 source encoding is ASCII without BOM.'
+
+      - name: Run suspended AppContainer Job Object lifecycle and fail-closed gates
+        shell: powershell
+        run: .\Tests\Test-DevAgentAppContainerJobLaunch.ps1

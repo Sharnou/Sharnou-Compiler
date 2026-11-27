@@ -130,6 +130,8 @@ function New-SharnouNativeApiType {
                 'PSID*' { $parameterTypes.Add([IntPtr]) }
                 'PHANDLE' { $parameterTypes.Add([IntPtr]) }
                 'PDWORD' { $parameterTypes.Add([IntPtr]) }
+                'PBOOL' { $parameterTypes.Add([IntPtr]) }
+                'JOBOBJECTINFOCLASS' { $parameterTypes.Add([Int32]) }
                 'PSIZE_T' { $parameterTypes.Add([IntPtr]) }
                 'LPSECURITY_ATTRIBUTES' { $parameterTypes.Add([IntPtr]) }
                 'LPSTARTUPINFOW' { $parameterTypes.Add([IntPtr]) }

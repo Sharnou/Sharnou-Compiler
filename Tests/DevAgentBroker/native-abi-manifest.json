@@ -1130,5 +1130,123 @@
     "The journal root, shared workspace parent, another execution workspace, compiler-source sentinel and broker-image sentinel must deny the AppContainer token.",
     "The journal retains the original owner/group/DACL SDDL before restrictive DACL mutation. Recovery must restore and verify that exact SDDL before removing the workspace.",
     "This test fixture does not integrate the production native process emitter or Job Object; process-tree termination coordination remains a production integration requirement."
-  ]
+  ],
+  "phase2B4Apis": [
+    {
+      "name": "CreateJobObjectW",
+      "dll": "KERNEL32.dll",
+      "returnType": "HANDLE",
+      "parameters": [
+        "LPSECURITY_ATTRIBUTES",
+        "LPCWSTR"
+      ],
+      "header": "um/jobapi2.h",
+      "setLastError": true
+    },
+    {
+      "name": "SetInformationJobObject",
+      "dll": "KERNEL32.dll",
+      "returnType": "BOOL",
+      "parameters": [
+        "HANDLE",
+        "JOBOBJECTINFOCLASS",
+        "LPVOID",
+        "DWORD"
+      ],
+      "header": "um/jobapi2.h",
+      "setLastError": true
+    },
+    {
+      "name": "AssignProcessToJobObject",
+      "dll": "KERNEL32.dll",
+      "returnType": "BOOL",
+      "parameters": [
+        "HANDLE",
+        "HANDLE"
+      ],
+      "header": "um/jobapi2.h",
+      "setLastError": true
+    },
+    {
+      "name": "IsProcessInJob",
+      "dll": "KERNEL32.dll",
+      "returnType": "BOOL",
+      "parameters": [
+        "HANDLE",
+        "HANDLE",
+        "PBOOL"
+      ],
+      "header": "um/jobapi2.h",
+      "setLastError": true
+    },
+    {
+      "name": "ResumeThread",
+      "dll": "KERNEL32.dll",
+      "returnType": "DWORD",
+      "parameters": [
+        "HANDLE"
+      ],
+      "header": "um/processthreadsapi.h",
+      "setLastError": true
+    },
+    {
+      "name": "TerminateJobObject",
+      "dll": "KERNEL32.dll",
+      "returnType": "BOOL",
+      "parameters": [
+        "HANDLE",
+        "DWORD"
+      ],
+      "header": "um/jobapi2.h",
+      "setLastError": true
+    }
+  ],
+  "phase2B4Contract": {
+    "scope": "Test-only fixed-image AppContainer launch. No compiler PE import-table or production process-emitter changes.",
+    "jobLimits": {
+      "informationClass": 9,
+      "limitFlags": "0x00002108",
+      "activeProcessLimit": 1,
+      "perProcessMemoryLimitBytes": 268435456,
+      "structure": "JOBOBJECT_EXTENDED_LIMIT_INFORMATION",
+      "expectedX64Size": 144
+    },
+    "process": {
+      "image": "%SystemRoot%\\System32\\whoami.exe",
+      "creationFlags": [
+        "EXTENDED_STARTUPINFO_PRESENT",
+        "CREATE_SUSPENDED",
+        "CREATE_UNICODE_ENVIRONMENT"
+      ],
+      "inheritHandles": false,
+      "environmentAllowlist": [
+        "SystemRoot",
+        "WINDIR",
+        "PATH",
+        "TEMP",
+        "TMP"
+      ]
+    },
+    "sequence": [
+      "Create an execution-owned AppContainer profile and bind its genuine SID to a fresh crash-safe workspace.",
+      "Configure an unnamed Job Object with KILL_ON_JOB_CLOSE, ACTIVE_PROCESS_LIMIT=1, and a bounded per-process memory limit before process creation.",
+      "Create only the absolute System32 whoami.exe image suspended, with an explicit allowlisted environment and bInheritHandles=FALSE.",
+      "Assign the suspended process to the configured Job Object and verify IsProcessInJob for that exact process/job pair.",
+      "Verify TokenIsAppContainer=1, exact package SID, integrity RID no higher than Low, and zero TokenCapabilities.",
+      "Permit ResumeThread only after workspace ACL, environment, suspended state, Job Object policy, assignment, membership and all token checks pass.",
+      "Wait with a finite timeout, require exit code zero, reap the process, close handles, restore the exact workspace descriptor and delete only the profile owned by this fixture."
+    ],
+    "failClosedTests": [
+      "Injected failure after process creation but before Job Object assignment.",
+      "Invalid Job Object handle negative control for AssignProcessToJobObject.",
+      "Actual child-token package SID mismatch.",
+      "Final resume-gate negative control with one mandatory gate false."
+    ],
+    "limits": [
+      "Test-only PowerShell/.NET in-memory P/Invoke; no production broker integration.",
+      "No arbitrary command, executable, path, arguments, or model-generated input.",
+      "No stdout/stderr capture or handle-list inheritance; those remain Phase 2B.5.",
+      "Runtime evidence applies to Windows Server 2025 x64 only."
+    ]
+  }
 }

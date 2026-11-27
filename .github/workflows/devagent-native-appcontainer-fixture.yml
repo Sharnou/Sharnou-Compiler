@@ -54,3 +54,7 @@ jobs:
       - name: Execute real AppContainer workspace ACL and crash-rollback fixture
         shell: powershell
         run: .\Tests\Test-DevAgentAppContainerWorkspaceAcl.ps1
+
+      - name: Execute suspended AppContainer Job Object launch and fail-closed resume gates
+        shell: powershell
+        run: .\Tests\Test-DevAgentAppContainerJobLaunch.ps1
