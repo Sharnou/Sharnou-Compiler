@@ -46,6 +46,27 @@ $deniedMarkerPath = Join-Path $PSScriptRoot 'DevAgentBroker\denied-write-probe.t
 $capturedOutputPath = Join-Path $buildRoot 'captured-output.bin'
 $journalPath = Join-Path $repoRoot '.sharnou-devagent-acl.journal'
 $journalTempPath = Join-Path $repoRoot '.sharnou-devagent-acl.journal.tmp'
+
+if (-not ('Sharnou.DevAgentJournalProbe' -as [type])) {
+    Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+namespace Sharnou {
+    public static class DevAgentJournalProbe {
+        [DllImport("kernel32.dll", CharSet = CharSet.Ansi, SetLastError = true)]
+        private static extern IntPtr CreateFileA(string name, uint access, uint share, IntPtr security, uint disposition, uint flags, IntPtr template);
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool CloseHandle(IntPtr handle);
+        public static int Probe(string path, uint access, uint share, uint flags) {
+            IntPtr handle = CreateFileA(path, access, share, IntPtr.Zero, 3, flags, IntPtr.Zero);
+            if (handle == new IntPtr(-1)) return Marshal.GetLastWin32Error();
+            CloseHandle(handle);
+            return 0;
+        }
+    }
+}
+'@ -ErrorAction Stop
+}
 $crashChildPidPath = Join-Path $buildRoot 'acl-crash-child.pid'
 $crashReadyPath = Join-Path $buildRoot 'acl-crash-ready.marker'
 $nl = [string][char]10
@@ -625,6 +646,12 @@ try {
         # inspect the committed journal's wire format and report exactly which
         # descriptors remain at their transient or baseline SDDL.
         try {
+            # Probe the exact Win32 open contract from the test process. This
+            # separates a DACL/access-mask failure from incorrect native call setup.
+            $genericReadError = [Sharnou.DevAgentJournalProbe]::Probe($journalPath, [uint32]0x80000000, [uint32]1, [uint32]0x00200080)
+            $dataAndAttributesError = [Sharnou.DevAgentJournalProbe]::Probe($journalPath, [uint32]0x00000081, [uint32]1, [uint32]0x00200080)
+            $metadataOnlyError = [Sharnou.DevAgentJournalProbe]::Probe($journalPath, [uint32]0, [uint32]1, [uint32]0x00200080)
+            Write-Host ("ACL_RECOVERY_POWERSHELL_CREATEFILE|genericRead={0}|dataAndAttributes={1}|metadataOnly={2}" -f $genericReadError, $dataAndAttributesError, $metadataOnlyError)
             # The committed journal is intentionally hidden. Use -Force so the
             # diagnostic does not misreport a hidden file as missing.
             $journalInfo = Get-Item -LiteralPath $journalPath -Force
