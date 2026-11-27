@@ -89,3 +89,48 @@ No native test was executed by the assistant in this session. The new fixture ha
 7. Require independent evidence verification and human security review before any later model-facing authorization proposal.
 
 Model-generated process execution remains DISABLED throughout this work.
+
+
+## 2026-11-27 Windows qualification update - identity and journal-v2 schema primitives
+
+### Exact code revision and evidence
+
+- Code-bearing commit: `907281187ffdf9223d4b345a2847c2a1feb883cf`.
+- Dedicated Windows Server 2025 run [46021589016](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/46021589016): **SUCCESS**.
+- Frozen M1-M6 baseline run [46021589107](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/46021589107): **SUCCESS, 83/83**.
+- Stage 7A/combined suite run [46021589123](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/46021589123): source-encoding gate passed; combined native test step remained in progress at the time of this update. Do not report this exact run as final PASS until its final job conclusion/logs are inspected.
+- Earlier exact baseline branch revision `bfb7f573ca795f2b06a36ee1952f3cb9a31880f9` had Stage 7A combined suite success in run [46020834321](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/46020834321) and M1-M6 83/83 in run [46020834312](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/46020834312). That revision preceded the strict schema parser additions.
+
+### New independently verified Windows results
+
+Identity fixture:
+- Eight freshly generated 128-bit CNG execution identifiers created eight new zero-capability AppContainer profiles.
+- Eight actual suspended child processes were created with the matching AppContainer security capability; their primary tokens were inspected before resume.
+- Each child token was AppContainer, its package SID exactly matched its generated profile, integrity RID was `0x1000` (Low), and TokenCapabilities reported zero groups.
+- Eight profile names and SIDs were pairwise distinct.
+- All eight profiles passed delete -> successful fresh recreate -> final delete cleanup verification.
+- The child-token test intentionally uses the inherited environment only for a suspended, never-resumed process probe. It does **not** qualify the production clean Unicode environment.
+
+Journal primitive:
+- DPAPI current-user envelope protected/unprotected the canonical version-2 test record and rejected three modified envelope locations.
+- Strict v2 parser accepted the canonical record and rejected an unsupported version, truncation, trailing bytes, profile-name length overflow and missing workspace volume identity.
+- The envelope did not contain the journal magic, profile name or package SID in cleartext.
+- The current record schema fixture is 267 bytes before DPAPI protection.
+- This is still a primitive and schema fixture, not native broker integration.
+
+### Security design decision added
+
+`Docs/PHASE-2B8-JOURNAL-TRUST-BOUNDARY.md` records the essential DPAPI limitation: user-scope DPAPI plus public optional entropy can detect byte tampering by actors unable to invoke the same protection context, but it does not prove the writer process against another process running as the same user. A same-user process can call CryptProtectData with the same entropy. Therefore no profile-deletion authority is to be driven by the current DPAPI fixture alone.
+
+A separately approved writer-authentication trust anchor is now an explicit prerequisite before the native broker journal is changed. Candidate directions include a dedicated service identity/key broker; these are not yet selected or implemented.
+
+### Still not implemented / security-blocking
+
+- No changes have been made to `Stage0/SharnouCompiler.ps1` or the compiler-emitted broker.
+- The production broker still uses the stable shared AppContainer profile and v1 ACL journal.
+- No production journal is DPAPI-protected or authenticated with a distinct writer identity.
+- No profile name/SID recovery or profile deletion after parent crash is implemented.
+- Clean explicit Unicode environment remains unresolved; previous attempts surfaced Win32 203. The identity token test was kept separate from that gate rather than weakening the test or claiming success.
+- Separate stdout/stderr, child DLL loader policy, exhaustive crash cut points, cancellation/concurrency and same-head full acceptance remain open.
+
+Model-facing and autonomous process execution remain DISABLED.
