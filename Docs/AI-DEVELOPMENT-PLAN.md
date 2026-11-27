@@ -306,3 +306,8 @@ The first Windows identity and journal-schema primitives are independently teste
 The DPAPI result is deliberately classified as a user-scope protection primitive, not process-writer authentication. A same-user process can use the same DPAPI context and optional entropy to produce a different valid blob. The writer-authentication trust boundary must be decided and reviewed before native v2 journal integration or privileged profile cleanup. See `Docs/PHASE-2B8-JOURNAL-TRUST-BOUNDARY.md`.
 
 No code in the compiler-emitted broker or its v1 journal has yet been changed. Unique per-execution profile creation, persisted authenticated identity, restart-time profile cleanup, explicit Unicode environment, separate streams, child DLL loader policy, cancellation/concurrency and crash-cut qualification remain pending. Model-facing/autonomous execution remains disabled.
+
+
+### Latest Phase 2B.8 identity/journal evidence - 2026-11-27
+
+The latest dedicated Windows test [46022134602](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/46022134602) passed on `a64b81def96b22315b8ab8034bb60c4af1870e32`, including 8 real suspended child-token inspections, distinct AppContainer identities/SIDs, Low IL and zero capabilities, verified normal profile deletion, strict v2 schema negatives, DPAPI tamper/wrong-context checks and an explicit same-user re-protection proof. That last test demonstrates why DPAPI alone does not authenticate the writer process. The production trust anchor remains unresolved; native broker integration must not consume profile cleanup authority from DPAPI-only metadata until this decision is reviewed.
