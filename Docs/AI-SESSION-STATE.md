@@ -2250,3 +2250,10 @@ The journal-v2 test schema was corrected to use Windows `FILE_ID_INFO`: 64-bit v
 - Run [46025925905](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/46025925905) completed **SUCCESS** on `6277f28123b28b56e2710f50d7197239fd034529`: non-NULL Unicode block, 9 entries / 354 UTF-16 code units, SystemRoot/windir/SystemDrive/PATH present, validated hidden drive-current-directory entries preserved, ordinary parent vars discarded, unique parent secret absent.
 - Run [46025925771](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/46025925771) passed frozen M1-M6 baseline 83/83 on the same commit.
 - Limitation: test uses ordinary `CreateProcessW`, not the broker's `CreateProcessAsUserW` + AppContainer security-capability launch. No production broker environment change is made; `lpEnvironment=NULL` remains in the emitted candidate and Win32 203 remains a blocker to integrate until AppContainer-specific proof passes.
+
+## Writer authority and environment qualification update - 2026-11-27
+
+- Added Docs/PHASE-2B8-WRITER-AUTHORITY-SERVICE-DESIGN.md: recommended design is a dedicated Windows service SID owning its non-exportable key and the entire journal/ACL/profile transaction. A generic "sign arbitrary bytes" service is explicitly prohibited. Service installation/upgrade/key-loss recovery is an owner deployment decision; no service has been implemented.
+- Added Tests/Test-DevAgentEnvironmentBlock.ps1. Dedicated Windows run 46025925905 passed a bounded 9-entry/354-WCHAR Unicode environment and CreateProcessW launch; required Windows values were correct and a parent secret was absent. This does not qualify the emitted broker's CreateProcessAsUserW AppContainer path.
+- Latest combined Stage 7A run 46025926233 includes the built-in SecureString AppContainer DPAPI probe; final job/log result had not yet been inspected when this record was appended.
+- Production broker remains unchanged: stable profile identity, v1 journal, lpEnvironment=NULL, merged stdout/stderr. Model-facing execution remains disabled.
