@@ -3899,16 +3899,23 @@ function Emit-BuiltinCall {
         'Win64CallbackProbe' {
             $serviceMainPointer = Register-CodeCallbackPointer -Key 'CALLBACK:SERVICE_MAIN_FUNCTIONW' -Label '__r51_service_main_abi_probe' -Signature 'SERVICE_MAIN_FUNCTIONW'
             $handlerExPointer = Register-CodeCallbackPointer -Key 'CALLBACK:HANDLER_FUNCTION_EX' -Label '__r51_handler_ex_abi_probe' -Signature 'HANDLER_FUNCTION_EX'
+            $script:CallbackProbeServiceMainVector = Register-ByteDataConstant -Key 'CALLBACK:PROBE:SERVICE_MAIN_VECTOR' -Bytes ([byte[]]::new(8))
             $failLabel = New-UniqueLabel -Prefix 'win64_callback_probe_fail'
             $doneLabel = New-UniqueLabel -Prefix 'win64_callback_probe_done'
 
-            # SERVICE_MAIN_FUNCTIONW: RCX=argc (DWORD), RDX=argv-vector pointer (LPWSTR*).
+            # SERVICE_MAIN_FUNCTIONW is VOID: RCX=argc (DWORD), RDX=argv-vector pointer (LPWSTR*).
+            # Pass a writable one-entry pointer vector so the void callback can report its test result
+            # through the documented LPWSTR* argument rather than relying on an undefined return value.
+            Emit-StoreZero64Frame -SlotPosition $script:ActiveContext.ScratchPosition
             Emit-Bytes -Bytes ([byte[]]@(0xB9, 0xDF, 0x9B, 0x57, 0x13))
-            Emit-Bytes -Bytes ([byte[]]@(0x48, 0xB8))
-            $script:Code.AddRange([BitConverter]::GetBytes([UInt64]::Parse('1122334455667788', [System.Globalization.NumberStyles]::HexNumber)))
+            Emit-LeaRaxFrame -SlotPosition $script:ActiveContext.ScratchPosition
             Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC2, 0x48, 0x83, 0xEC, 0x20))
             Emit-CallDataPointer -DataItem $serviceMainPointer
-            Emit-Bytes -Bytes ([byte[]]@(0x48, 0x83, 0xC4, 0x20, 0x3D, 0xDE, 0xC0, 0xA7, 0x51))
+            Emit-Bytes -Bytes ([byte[]]@(0x48, 0x83, 0xC4, 0x20))
+            Emit-LoadRaxFrame -SlotPosition $script:ActiveContext.ScratchPosition
+            Emit-Bytes -Bytes ([byte[]]@(0x48, 0xB9))
+            $script:Code.AddRange([BitConverter]::GetBytes([UInt64]::Parse('0000000051A7C0DE', [System.Globalization.NumberStyles]::HexNumber)))
+            Emit-Bytes -Bytes ([byte[]]@(0x48, 0x39, 0xC8))
             Emit-JumpConditional -ConditionCode 0x85 -Label $failLabel
 
             # HandlerEx: four ABI registers, including both full-width pointer arguments.
