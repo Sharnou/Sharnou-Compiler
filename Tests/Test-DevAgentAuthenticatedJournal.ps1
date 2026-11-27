@@ -176,7 +176,7 @@ namespace Sharnou
                     throw new InvalidDataException("Execution identifier is invalid.");
 
                 uint profileLength = reader.ReadUInt32();
-                if (profileLength != 48)
+                if (profileLength != 49)
                     throw new InvalidDataException("AppContainer profile name length is invalid.");
                 byte[] profileBytes = reader.ReadBytes(checked((int)profileLength));
                 if (profileBytes.Length != profileLength)
@@ -279,7 +279,7 @@ function Test-ByteSequence {
 }
 
 $profileName = 'Sharnou.DevAgent.0123456789abcdef0123456789abcdef'
-$packageSid = 'S-1-15-2-123456789-234567890-345678901-456789012'
+$packageSid = 'S-1-15-2-123456789-234567890-345678901-456789012-567890123-678901234-789012345'
 $entropy = [Text.Encoding]::UTF8.GetBytes('Sharnou.DevAgent.AuthenticatedJournal.v2|user-scope')
 $wrongEntropy = [Text.Encoding]::UTF8.GetBytes('Sharnou.DevAgent.AuthenticatedJournal.v2|wrong-context')
 [byte[]]$plaintext = New-JournalFixturePayload -ProfileName $profileName -PackageSid $packageSid
@@ -320,7 +320,7 @@ foreach ($case in $parserRejectCases) {
     try {
         [Sharnou.DevAgentDpapiJournalNative]::ValidateCanonicalJournalV2([byte[]]$case.Bytes)
     }
-    catch [IO.InvalidDataException] {
+    catch [IO.IOException] {
         $rejected = $true
     }
     if (-not $rejected) {
