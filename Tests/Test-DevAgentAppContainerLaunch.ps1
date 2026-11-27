@@ -441,6 +441,25 @@ namespace Sharnou
             // Retain validated drive-current-directory records only; all ordinary
             // broker variables and secret values remain excluded.
             List<string> entries = ReadApprovedDriveEntries();
+
+            // The selected lpCurrentDirectory is on the Windows system drive.
+            // Ensure its hidden =X: current-directory variable is present even
+            // when the parent is running from a different workspace drive.
+            string currentDirectoryRoot = Path.GetPathRoot(systemDirectory);
+            string expectedSystemDriveRoot = systemDrive + "\\\\";
+            if (!String.Equals(currentDirectoryRoot, expectedSystemDriveRoot, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException("SystemDirectory and SystemRoot resolve to different drive roots.");
+
+            string currentDriveVariableName = "=" + systemDrive;
+            for (int index = entries.Count - 1; index >= 0; index--)
+            {
+                int separator = entries[index].IndexOf('=', 1);
+                if (separator > 0 &&
+                    String.Equals(entries[index].Substring(0, separator), currentDriveVariableName, StringComparison.OrdinalIgnoreCase))
+                    entries.RemoveAt(index);
+            }
+            entries.Add(currentDriveVariableName + "=" + systemDirectory);
+
             entries.AddRange(new string[] {
                 "ComSpec=" + Path.Combine(systemDirectory, "cmd.exe"),
                 "OS=Windows_NT",
