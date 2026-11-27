@@ -322,3 +322,13 @@ Dependency-ordered R5 implementation: R5.0 typed bounded IPC protocol; R5.1 nati
 Current candidate: draft PR #31, branch `phase-2b8-r5-authority-service-protocol-20261127`, stacked on R4 tested source head `b0d3ff96deadd04072d7f63ccb4b2c85b42a5c15`. R5.0 defines the 40-byte IPC v1 request header and five typed operations, provides a test-only strict schema/parser fixture, adds it to Test.ps1, and adds an exact-head Windows Server 2025 CI gate. This protocol tranche is not itself a Windows service.
 
 R5.1 must implement a real Windows SCM host using the Sharnou native code-generation/PE path, validate the actual generated executable import table, and pass service start/stop/control/shutdown tests. Do not use Add-Type as production service code or introduce external compiler/linker dependencies. Keep model-facing and autonomous execution disabled until separate later authorization milestones and complete Phase 2B.8 security acceptance.
+
+
+## R5.1 Native SCM service-host implementation gates
+
+- R5.1.a: bounded multi-target DIR64 relocation builder; preserve normal output compatibility; PE parser and rebase tests.
+- R5.1.b: typed code-label/data-pointer fixups and Win64 callback ABI validation/runtime probes.
+- R5.1.c: inert Sharnou-generated SCM service host with exact import-table verification and disposable Windows install/start/stop/shutdown tests.
+- Current draft PR #32 contains the service lifecycle specification and compiler preflight only. Do not call it a service implementation or mark it passed.
+- R5.2 service identity/key, R5.3 pipe transport, R5.4 signed journal, R5.5 transaction ownership, R5.6 recovery, R5.7 independent review follow only after R5.1.
+- Model-facing and autonomous execution remain disabled until full Phase 2B.8 acceptance and separate policy authorization milestones.
