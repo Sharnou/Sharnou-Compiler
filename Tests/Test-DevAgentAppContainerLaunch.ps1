@@ -152,6 +152,14 @@ namespace Sharnou
 
         [DllImport("kernel32.dll", EntryPoint = "GetEnvironmentStringsW", CharSet = CharSet.Unicode, ExactSpelling = true)]
         private static extern IntPtr GetEnvironmentStringsW();
+        [DllImport("userenv.dll", EntryPoint = "CreateEnvironmentBlock", ExactSpelling = true, SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool CreateEnvironmentBlock(out IntPtr environmentBlock, IntPtr token, [MarshalAs(UnmanagedType.Bool)] bool inherit);
+
+        [DllImport("userenv.dll", EntryPoint = "DestroyEnvironmentBlock", ExactSpelling = true, SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool DestroyEnvironmentBlock(IntPtr environmentBlock);
+
 
         [DllImport("kernel32.dll", EntryPoint = "FreeEnvironmentStringsW", CharSet = CharSet.Unicode, ExactSpelling = true, SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]
@@ -774,11 +782,43 @@ namespace Sharnou
                                 "NULL-environment diagnostic child was created but could not be proven terminated.");
                     }
 
+                    IntPtr userEnvironment = IntPtr.Zero;
+                    bool userEnvironmentCreated = CreateEnvironmentBlock(out userEnvironment, restrictedToken, false);
+                    int userEnvironmentError = userEnvironmentCreated ? 0 : Marshal.GetLastWin32Error();
+                    bool userEnvironmentControlCreated = false;
+                    int userEnvironmentControlError = 0;
+                    if (userEnvironmentCreated && userEnvironment != IntPtr.Zero)
+                    {
+                        PROCESS_INFORMATION userEnvironmentControl = new PROCESS_INFORMATION();
+                        userEnvironmentControlCreated = CreateProcessAsUserW(
+                            restrictedToken, powershell, new StringBuilder(immutableCommandLine),
+                            IntPtr.Zero, IntPtr.Zero, true, flags, userEnvironment,
+                            systemDirectory, ref startup, out userEnvironmentControl);
+                        userEnvironmentControlError = userEnvironmentControlCreated
+                            ? 0 : Marshal.GetLastWin32Error();
+                        if (userEnvironmentControlCreated)
+                        {
+                            TerminateProcess(userEnvironmentControl.hProcess, 0x2BAD);
+                            uint userControlWait = WaitForSingleObject(userEnvironmentControl.hProcess, 10000);
+                            if (userEnvironmentControl.hThread != IntPtr.Zero) CloseHandle(userEnvironmentControl.hThread);
+                            if (userEnvironmentControl.hProcess != IntPtr.Zero) CloseHandle(userEnvironmentControl.hProcess);
+                            if (userControlWait != 0)
+                                throw new InvalidOperationException(
+                                    "CreateEnvironmentBlock diagnostic child could not be proven terminated.");
+                        }
+                    }
+                    if (userEnvironment != IntPtr.Zero && !DestroyEnvironmentBlock(userEnvironment))
+                        throw new Win32Exception(Marshal.GetLastWin32Error(), "DestroyEnvironmentBlock diagnostic cleanup failed.");
+
                     throw new Win32Exception(explicitEnvironmentError,
                         "CreateProcessAsUserW with explicit Unicode environment failed (Win32=" +
                         explicitEnvironmentError + "; NULL-environment suspended control=" +
                         (nullEnvironmentControlCreated ? "CREATED_AND_TERMINATED" : ("FAILED_WIN32_" + nullEnvironmentControlError)) +
-                        "). The NULL-environment control was diagnostic only and was never resumed.");
+                        "; CreateEnvironmentBlock(bInherit=false)=" +
+                        (userEnvironmentCreated
+                            ? (userEnvironmentControlCreated ? "CREATED_AND_TERMINATED" : ("FAILED_WIN32_" + userEnvironmentControlError))
+                            : ("FAILED_WIN32_" + userEnvironmentError)) +
+                        "). Both diagnostic controls were suspended and terminated without resume.");
                 }
 
                 processCreated = true;
