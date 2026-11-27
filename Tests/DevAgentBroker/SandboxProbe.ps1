@@ -6,8 +6,10 @@ try {
     $repoRoot = [IO.Path]::GetFullPath([IO.Path]::Combine([string]$PSScriptRoot, '..', '..'))
     $buildRoot = [IO.Path]::Combine($repoRoot, 'Build', 'DevAgentBroker')
     $testToolRoot = [IO.Path]::Combine($repoRoot, 'Tests', 'DevAgentBroker')
+    $hostRoot = [IO.Path]::Combine($repoRoot, '.sharnou-devagent-host')
     $buildMarker = [IO.Path]::Combine($buildRoot, 'sandbox-write-probe.ok')
     $deniedMarker = [IO.Path]::Combine($testToolRoot, 'denied-write-probe.tmp')
+    $hostDeniedMarker = [IO.Path]::Combine($hostRoot, 'sandbox-host-write-probe.tmp')
 
     try {
         [IO.File]::WriteAllText($buildMarker, 'appcontainer-build-write-ok')
@@ -36,6 +38,26 @@ try {
         [Console]::Error.WriteLine('SANDBOX_SOURCE_WRITE_WAS_ALLOWED')
         $global:SHARNOU_TOOL_EXIT_CODE = 92
         exit 92
+    }
+
+    $hostWriteDenied = $false
+    try {
+        [IO.File]::WriteAllText($hostDeniedMarker, 'must-not-be-created')
+    }
+    catch [UnauthorizedAccessException] {
+        $hostWriteDenied = $true
+    }
+    catch [IO.IOException] {
+        $hostWriteDenied = $true
+    }
+
+    if (-not $hostWriteDenied) {
+        if ([IO.File]::Exists($hostDeniedMarker)) {
+            [IO.File]::Delete($hostDeniedMarker)
+        }
+        [Console]::Error.WriteLine('SANDBOX_HOST_DIRECTORY_WRITE_WAS_ALLOWED')
+        $global:SHARNOU_TOOL_EXIT_CODE = 94
+        exit 94
     }
 
     [Console]::WriteLine('sandbox-probe-pass')
