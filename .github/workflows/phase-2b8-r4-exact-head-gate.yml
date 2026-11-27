@@ -4,6 +4,13 @@ on:
   push:
     branches:
       - phase-2b8-r4-signed-journal-qualification-20261127
+  pull_request:
+    branches:
+      - phase-2b8-r3-native-per-execution-profile-20261127
+    types:
+      - opened
+      - synchronize
+      - reopened
   workflow_dispatch:
 
 permissions:
@@ -18,9 +25,16 @@ jobs:
     name: Exact-head Windows security and regression gate
     runs-on: windows-2025
     timeout-minutes: 90
+    env:
+      EXPECTED_TESTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
     steps:
-      - name: Checkout
+      - name: Checkout exact PR source head
         uses: actions/checkout@v4
+        with:
+          # pull_request workflows default to a synthetic merge commit.
+          # Pin checkout to the PR head so qualification tests the proposed
+          # source commit itself, not the unreviewed merge result.
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - name: Initialize exact-head evidence manifest
         shell: powershell
@@ -29,12 +43,14 @@ jobs:
           $evidence = Join-Path $env:GITHUB_WORKSPACE 'r4-evidence'
           New-Item -ItemType Directory -Path $evidence -Force | Out-Null
           $actualHead = (& git rev-parse HEAD).Trim()
-          if ($LASTEXITCODE -ne 0 -or $actualHead -ne $env:GITHUB_SHA) {
-            throw "Checkout head mismatch: expected=$env:GITHUB_SHA actual=$actualHead"
+          if ($LASTEXITCODE -ne 0 -or $actualHead -ne $env:EXPECTED_TESTED_SHA) {
+            throw "Checkout head mismatch: expected=$env:EXPECTED_TESTED_SHA actual=$actualHead"
           }
           $metadata = @(
             "repository=$env:GITHUB_REPOSITORY",
-            "commit=$actualHead",
+            "event=$env:GITHUB_EVENT_NAME",
+            "event_sha=$env:GITHUB_SHA",
+            "tested_commit=$actualHead",
             "workflow=$env:GITHUB_WORKFLOW",
             "run_id=$env:GITHUB_RUN_ID",
             "run_attempt=$env:GITHUB_RUN_ATTEMPT",
@@ -120,12 +136,14 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           $actualHead = (& git rev-parse HEAD).Trim()
-          if ($LASTEXITCODE -ne 0 -or $actualHead -ne $env:GITHUB_SHA) {
+          if ($LASTEXITCODE -ne 0 -or $actualHead -ne $env:EXPECTED_TESTED_SHA) {
             throw 'Checkout head changed during exact-head qualification.'
           }
           $result = [ordered]@{
             acceptance = 'PASS'
             repository = $env:GITHUB_REPOSITORY
+            event = $env:GITHUB_EVENT_NAME
+            event_sha = $env:GITHUB_SHA
             tested_commit = $actualHead
             workflow_run = $env:GITHUB_RUN_ID
             runner = $env:RUNNER_OS
