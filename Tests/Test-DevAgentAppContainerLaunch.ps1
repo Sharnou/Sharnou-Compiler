@@ -435,6 +435,23 @@ namespace Sharnou
             return entries;
         }
 
+        private static string DescribeEnvironmentNames(IntPtr environmentBlock)
+        {
+            List<string> names = new List<string>();
+            int offset = 0;
+            for (int index = 0; index < 32768; index++)
+            {
+                if (offset >= 32767)
+                    throw new InvalidOperationException("Token environment name scan exceeded its bound.");
+                string entry = Marshal.PtrToStringUni(IntPtr.Add(environmentBlock, checked(offset * 2)));
+                if (String.IsNullOrEmpty(entry)) return String.Join(",", names.ToArray());
+                offset = checked(offset + entry.Length + 1);
+                int equals = entry[0] == '=' ? entry.IndexOf('=', 1) : entry.IndexOf('=');
+                if (equals > 0) names.Add(entry.Substring(0, equals));
+            }
+            throw new InvalidOperationException("Token environment was not double-NUL terminated within the scan bound.");
+        }
+
         private static void AddOrReplaceDriveEntry(List<string> entries, string absolutePath)
         {
             if (String.IsNullOrEmpty(absolutePath) || !Path.IsPathRooted(absolutePath))
@@ -787,8 +804,10 @@ namespace Sharnou
                     int userEnvironmentError = userEnvironmentCreated ? 0 : Marshal.GetLastWin32Error();
                     bool userEnvironmentControlCreated = false;
                     int userEnvironmentControlError = 0;
+                    string userEnvironmentNames = "<unavailable>";
                     if (userEnvironmentCreated && userEnvironment != IntPtr.Zero)
                     {
+                        userEnvironmentNames = DescribeEnvironmentNames(userEnvironment);
                         PROCESS_INFORMATION userEnvironmentControl = new PROCESS_INFORMATION();
                         userEnvironmentControlCreated = CreateProcessAsUserW(
                             restrictedToken, powershell, new StringBuilder(immutableCommandLine),
@@ -818,7 +837,8 @@ namespace Sharnou
                         (userEnvironmentCreated
                             ? (userEnvironmentControlCreated ? "CREATED_AND_TERMINATED" : ("FAILED_WIN32_" + userEnvironmentControlError))
                             : ("FAILED_WIN32_" + userEnvironmentError)) +
-                        "). Both diagnostic controls were suspended and terminated without resume.");
+                        "; token environment names=[" + userEnvironmentNames +
+                        "]). Both diagnostic controls were suspended and terminated without resume.");
                 }
 
                 processCreated = true;
