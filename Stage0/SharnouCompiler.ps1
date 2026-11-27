@@ -1640,21 +1640,45 @@ function Emit-DevBrokerRestoreSecurityDescriptor {
     Emit-JumpConditional -ConditionCode 0x85 -Label $failed
 
     if ($RestoreLabel) {
-        # The Low IL mandatory-label SACL must also be byte-for-byte identical.
-        Emit-StoreBits32Frame -SlotPosition $restoreStageSlot -Value 75 # validate SACL pointers
+        # NULL SACL is a legitimate original state. Treat NULL/NULL as an exact
+        # match; reject only a presence mismatch or different SACL bytes.
+        $compareSacl = New-UniqueLabel -Prefix 'dev_acl_restore_compare_sacl'
+        $skipSaclCompare = New-UniqueLabel -Prefix 'dev_acl_restore_skip_sacl_compare'
+        Emit-StoreBits32Frame -SlotPosition $restoreStageSlot -Value 75 # inspect expected SACL presence
         Emit-LoadRaxFrame -SlotPosition $saclSlot
-        Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC6, 0x48, 0x85, 0xF6))
-        Emit-JumpConditional -ConditionCode 0x84 -Label $failed
+        Emit-Bytes -Bytes ([byte[]]@(0x48, 0x85, 0xC0))
+        Emit-JumpConditional -ConditionCode 0x84 -Label $skipSaclCompare # expected NULL
+
+        # Expected SACL is present: actual readback must also be present.
+        Emit-StoreBits32Frame -SlotPosition $restoreStageSlot -Value 76 # actual SACL must be present
         Emit-LoadRaxFrame -SlotPosition $actualSaclSlot
-        Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC7, 0x48, 0x85, 0xFF))
-        Emit-JumpConditional -ConditionCode 0x84 -Label $failed
-        Emit-StoreBits32Frame -SlotPosition $restoreStageSlot -Value 76 # validate SACL length
-        Emit-Bytes -Bytes ([byte[]]@(0x0F, 0xB7, 0x46, 0x02, 0x0F, 0xB7, 0x57, 0x02, 0x39, 0xD0))
+        Emit-Bytes -Bytes ([byte[]]@(0x48, 0x85, 0xC0))
+        Emit-JumpConditional -ConditionCode 0x85 -Label $compareSacl
+        Emit-Jump -Label $failed
+
+        Mark-CodeLabel -Label $skipSaclCompare
+        # Expected NULL: actual must also be NULL.
+        Emit-StoreBits32Frame -SlotPosition $restoreStageSlot -Value 77 # actual SACL must also be NULL
+        Emit-LoadRaxFrame -SlotPosition $actualSaclSlot
+        Emit-Bytes -Bytes ([byte[]]@(0x48, 0x85, 0xC0))
         Emit-JumpConditional -ConditionCode 0x85 -Label $failed
-        Emit-StoreBits32Frame -SlotPosition $restoreStageSlot -Value 77 # compare SACL bytes
+        $saclPresenceMatched = New-UniqueLabel -Prefix 'dev_acl_restore_sacl_presence_matched'
+        Emit-Jump -Label $saclPresenceMatched
+
+        Mark-CodeLabel -Label $compareSacl
+        # Both SACLs are present: exact size and byte comparison is required.
+        Emit-StoreBits32Frame -SlotPosition $restoreStageSlot -Value 78 # validate SACL lengths
+        Emit-LoadRaxFrame -SlotPosition $saclSlot
+        Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC6))
+        Emit-LoadRaxFrame -SlotPosition $actualSaclSlot
+        Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC7, 0x0F, 0xB7, 0x46, 0x02, 0x0F, 0xB7, 0x57, 0x02, 0x39, 0xD0))
+        Emit-JumpConditional -ConditionCode 0x85 -Label $failed
+        Emit-StoreBits32Frame -SlotPosition $restoreStageSlot -Value 79 # compare SACL bytes
         Emit-Bytes -Bytes ([byte[]]@(0x89, 0xC1, 0xFC, 0xF3, 0xA6)) # CLD; REPE CMPSB
         Emit-JumpConditional -ConditionCode 0x85 -Label $failed
+        Mark-CodeLabel -Label $saclPresenceMatched
     }
+}
 
     Emit-StoreBits32Frame -SlotPosition $daclPresentSlot -Value 1
     Emit-StoreBits32Frame -SlotPosition $restoreStageSlot -Value 0
