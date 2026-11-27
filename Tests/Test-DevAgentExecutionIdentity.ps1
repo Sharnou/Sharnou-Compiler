@@ -447,7 +447,13 @@ namespace Sharnou
                 if (!CreateProcessW(
                     application, commandLine, IntPtr.Zero, IntPtr.Zero, false,
                     creationFlags, environment, systemDirectory, ref startup, out process))
-                    throw new Win32Exception(Marshal.GetLastWin32Error(), "CreateProcessW AppContainer child creation failed.");
+                {
+                    int createError = Marshal.GetLastWin32Error();
+                    throw new Win32Exception(createError,
+                        "CreateProcessW AppContainer child creation failed (Win32=" + createError +
+                        "; app=" + application + "; startup.cb=" + startup.StartupInfo.cb +
+                        "; startupExSize=" + Marshal.SizeOf(typeof(STARTUPINFOEXW)) + ").");
+                }
 
                 childCreated = true;
                 if (!OpenProcessToken(process.hProcess, 0x0008, out childToken))
