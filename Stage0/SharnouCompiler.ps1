@@ -10,6 +10,9 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+if ($EnableAuthorityService -and $EnableDevAgentTools) {
+    throw 'Authority service images cannot enable interactive DevAgent tool-execution builtins.'
+}
 
 function Set-Bytes {
     param([byte[]] $Buffer, [int] $Offset, [byte[]] $Bytes)
@@ -4778,9 +4781,9 @@ $dataRawSize = Align-Up -Value $dataBytes.Length -Alignment 0x200
 # no lookup table may overlap any IAT slot or import-by-name string. Emit-CallIat rebases target RVAs after section placement.
 $idata = [byte[]]::new(0x1000)
 # Import descriptors have a dedicated .idata range, disjoint from lookups, IAT and names.
-$descriptorBase = if ($EnableAuthorityService) { 0xA40 } else { 0xA00 }
-$importDirectorySize = if ($EnableAuthorityService) { 0x1B8 } else { 0x190 }
-$iatDirectorySize = if ($EnableAuthorityService) { 0x330 } else { 0x2F0 }
+$descriptorBase = 0xA00
+$importDirectorySize = 0x190
+$iatDirectorySize = 0x2F0
 if (($descriptorBase + $importDirectorySize) -gt $idata.Length) { throw 'Import descriptor table exceeds .idata storage.' }
 $importSets = @(
     [pscustomobject]@{ Descriptor = 0x00; Lookup = 0xC00; Iat = 0x70; Dll = 'KERNEL32.dll'; Names = @('GetStdHandle', 'WriteFile', 'ExitProcess') },
@@ -4804,13 +4807,19 @@ $importSets = @(
     [pscustomobject]@{ Descriptor = 0x168; Lookup = 0xEE0; Iat = 0x350; Dll = 'ADVAPI32.dll'; Names = @('EqualSid') }
 )
 if ($EnableAuthorityService) {
-    $importSets += @(
-        [pscustomobject]@{ Descriptor = 0x17C; Lookup = 0xF70; Iat = 0x360; Dll = 'KERNEL32.dll'; Names = @('CreateEventW', 'OpenEventW', 'SetEvent') },
-        [pscustomobject]@{ Descriptor = 0x190; Lookup = 0xF90; Iat = 0x380; Dll = 'ADVAPI32.dll'; Names = @('StartServiceCtrlDispatcherW', 'RegisterServiceCtrlHandlerExW', 'SetServiceStatus') }
+    # The SCM service image gets a deliberately minimal import table. Existing
+    # application imports remain byte-for-byte stable in the normal compiler path.
+    $descriptorBase = 0xA40
+    $importDirectorySize = 0x3C
+    $iatDirectorySize = 0x330
+    $importSets = @(
+        [pscustomobject]@{ Descriptor = 0x00; Lookup = 0xC00; Iat = 0x70; Dll = 'KERNEL32.dll'; Names = @('ExitProcess', 'CloseHandle', 'WaitForSingleObject', 'GetLastError', 'CreateEventW', 'OpenEventW', 'SetEvent') },
+        [pscustomobject]@{ Descriptor = 0x14; Lookup = 0xC40; Iat = 0x380; Dll = 'ADVAPI32.dll'; Names = @('StartServiceCtrlDispatcherW', 'RegisterServiceCtrlHandlerExW', 'SetServiceStatus') }
     )
 }
+if (($descriptorBase + $importDirectorySize) -gt $idata.Length) { throw 'Import descriptor table exceeds .idata storage.' }
 $apiNameRvas = @{}
-$nameCursor = if ($EnableAuthorityService) { 0x3A0 } else { 0x360 }
+$nameCursor = 0x3A0
 foreach ($set in $importSets) {
     foreach ($apiName in $set.Names) {
         if (-not $apiNameRvas.ContainsKey($apiName)) {
