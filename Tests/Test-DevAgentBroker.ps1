@@ -25,6 +25,135 @@ function Get-BrokerSecuritySddl {
     return $security.GetSecurityDescriptorSddlForm($sections)
 }
 
+function Get-DevAgentAclJournalEvidence {
+    param(
+        [Parameter(Mandatory = $true)][string] $Path,
+        [Parameter(Mandatory = $true)][System.Collections.IDictionary] $ExpectedSddl,
+        [Parameter(Mandatory = $true)][string] $WorkspaceRoot,
+        [Parameter(Mandatory = $true)][string] $BuildDirectory,
+        [Parameter(Mandatory = $true)][string] $BrokerDirectory
+    )
+
+    # This is an independent test-side parser. It does not call the broker's
+    # decoder and does not modify the journal or workspace security state.
+    $item = Get-Item -LiteralPath $Path -Force
+    if ($item.PSIsContainer -or
+        (($item.Attributes -band [IO.FileAttributes]::Directory) -ne 0) -or
+        (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0)) {
+        throw 'Committed ACL journal must be a regular, non-reparse file.'
+    }
+
+    [byte[]]$bytes = [IO.File]::ReadAllBytes($Path)
+    if ($bytes.Length -lt 32 -or $bytes.Length -gt 0xC020) {
+        throw ("ACL journal size is outside the format bounds: {0} bytes." -f $bytes.Length)
+    }
+    $magic = [Text.Encoding]::ASCII.GetString($bytes, 0, 8)
+    $version = [BitConverter]::ToUInt32($bytes, 8)
+    $flags = [BitConverter]::ToUInt32($bytes, 12)
+    $rootLength = [BitConverter]::ToUInt32($bytes, 16)
+    $buildLength = [BitConverter]::ToUInt32($bytes, 20)
+    $brokerLength = [BitConverter]::ToUInt32($bytes, 24)
+    $reserved = [BitConverter]::ToUInt32($bytes, 28)
+
+    if ($magic -cne 'SHARACL1' -or $version -ne 1 -or $flags -ne 0 -or $reserved -ne 0) {
+        throw 'ACL journal header signature, version, flags or reserved field is invalid.'
+    }
+    foreach ($length in @($rootLength, $buildLength, $brokerLength)) {
+        if ($length -lt 20 -or $length -gt 0x4000) {
+            throw ("ACL journal security-descriptor length is outside [20, 16384]: {0}." -f $length)
+        }
+    }
+    $expectedSize = [long]32 + [long]$rootLength + [long]$buildLength + [long]$brokerLength
+    if ($expectedSize -ne [long]$bytes.Length) {
+        throw ("ACL journal exact-size mismatch: header requires {0} bytes, file contains {1}." -f $expectedSize, $bytes.Length)
+    }
+
+    $sections = [Security.AccessControl.AccessControlSections]::Access -bor
+        [Security.AccessControl.AccessControlSections]::Audit
+    $records = @(
+        [pscustomobject]@{ Name = 'workspace-root'; Path = $WorkspaceRoot; Length = [int]$rootLength },
+        [pscustomobject]@{ Name = 'build'; Path = $BuildDirectory; Length = [int]$buildLength },
+        [pscustomobject]@{ Name = 'broker'; Path = $BrokerDirectory; Length = [int]$brokerLength }
+    )
+    $offset = 32
+    foreach ($record in $records) {
+        if (-not $ExpectedSddl.Contains($record.Path)) {
+            throw ("Missing expected pre-transaction SDDL for journal record '{0}'." -f $record.Name)
+        }
+        $descriptor = [Security.AccessControl.RawSecurityDescriptor]::new($bytes, $offset)
+        if (($descriptor.ControlFlags -band [Security.AccessControl.ControlFlags]::SelfRelative) -eq 0) {
+            throw ("Journal record '{0}' is not a self-relative security descriptor." -f $record.Name)
+        }
+        if ($null -eq $descriptor.DiscretionaryAcl -or $descriptor.BinaryLength -ne $record.Length) {
+            throw ("Journal record '{0}' has an invalid DACL or binary length." -f $record.Name)
+        }
+        $expected = [string]$ExpectedSddl[$record.Path]
+        $expectedDescriptor = [Security.AccessControl.RawSecurityDescriptor]::new($expected)
+
+        # Compare the full DACL form and every mandatory-label ACE separately.
+        # GetSecurityInfo(LABEL_SECURITY_INFORMATION) can serialize an absent
+        # label as a present-but-NULL SACL (SDDL S:PAINO_ACCESS_CONTROL). That
+        # wire representation is semantically "no mandatory label" and differs
+        # textually from Get-Acl's omitted S: field. Do not compare that null
+        # SACL marker as though it were a label ACE.
+        $actualDacl = $descriptor.GetSddlForm([Security.AccessControl.AccessControlSections]::Access)
+        $expectedDacl = $expectedDescriptor.GetSddlForm([Security.AccessControl.AccessControlSections]::Access)
+        if (-not [string]::Equals($actualDacl, $expectedDacl, [StringComparison]::Ordinal)) {
+            Write-Host ("DEVAGENT_JOURNAL_DACL_DIFF|record={0}|path={1}|expected={2}|actual={3}" -f
+                $record.Name, $record.Path, $expectedDacl, $actualDacl)
+            throw ("Journal record '{0}' DACL differs from the independent pre-run snapshot for {1}." -f $record.Name, $record.Path)
+        }
+
+        $actualLabels = New-Object 'System.Collections.Generic.List[string]'
+        if ($null -ne $descriptor.SystemAcl) {
+            foreach ($ace in $descriptor.SystemAcl) {
+                if ([int]$ace.AceType -ne 17) {
+                    throw ("Journal record '{0}' contains an SACL ACE outside the broker's DACL/mandatory-label snapshot contract." -f $record.Name)
+                }
+                [byte[]]$aceBytes = [byte[]]::new($ace.BinaryLength)
+                $ace.GetBinaryForm($aceBytes, 0)
+                $actualLabels.Add([Convert]::ToBase64String($aceBytes))
+            }
+        }
+        $expectedLabels = New-Object 'System.Collections.Generic.List[string]'
+        if ($null -ne $expectedDescriptor.SystemAcl) {
+            foreach ($ace in $expectedDescriptor.SystemAcl) {
+                if ([int]$ace.AceType -ne 17) {
+                    throw ("Pre-run snapshot '{0}' contains an audit SACL ACE that the current journal format does not preserve." -f $record.Name)
+                }
+                [byte[]]$aceBytes = [byte[]]::new($ace.BinaryLength)
+                $ace.GetBinaryForm($aceBytes, 0)
+                $expectedLabels.Add([Convert]::ToBase64String($aceBytes))
+            }
+        }
+        if ($actualLabels.Count -ne $expectedLabels.Count) {
+            throw ("Journal record '{0}' mandatory-label ACE count differs: expected={1}, actual={2}." -f
+                $record.Name, $expectedLabels.Count, $actualLabels.Count)
+        }
+        for ($labelIndex = 0; $labelIndex -lt $expectedLabels.Count; $labelIndex++) {
+            if (-not [string]::Equals($actualLabels[$labelIndex], $expectedLabels[$labelIndex], [StringComparison]::Ordinal)) {
+                throw ("Journal record '{0}' mandatory-label ACE {1} differs from the pre-run snapshot." -f $record.Name, $labelIndex)
+            }
+        }
+        $offset += $record.Length
+    }
+    if ($offset -ne $bytes.Length) {
+        throw 'ACL journal parser did not consume the complete file.'
+    }
+
+    $sha256 = (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash
+    Write-Host ("DEVAGENT_JOURNAL_VERIFIED|version={0}|bytes={1}|root={2}|build={3}|broker={4}|sha256={5}" -f
+        $version, $bytes.Length, $rootLength, $buildLength, $brokerLength, $sha256)
+    return [pscustomobject]@{
+        Version = $version
+        Length = $bytes.Length
+        RootDescriptorLength = $rootLength
+        BuildDescriptorLength = $buildLength
+        BrokerDescriptorLength = $brokerLength
+        Sha256 = $sha256
+    }
+}
+
 $repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $compilerPath = Join-Path $repoRoot 'Stage0\SharnouCompiler.ps1'
 $verifierPath = Join-Path $repoRoot 'Tools\SharnouPEVerify.ps1'
@@ -740,6 +869,15 @@ try {
             $aclDuringCrash[$aclPath] = $duringCrashSddl
         }
 
+        # Independently parse the committed write-ahead record while the ACLs
+        # are transient. Its three descriptors must exactly equal the pre-run
+        # DACL and mandatory-label snapshots, not the temporary child grants.
+        $journalEvidence = Get-DevAgentAclJournalEvidence -Path $journalPath -ExpectedSddl $aclBaseline -WorkspaceRoot $repoRoot -BuildDirectory (Join-Path $repoRoot 'Build') -BrokerDirectory $buildRoot
+        if ($journalEvidence.Version -ne 1 -or $journalEvidence.Length -ne (32 + $journalEvidence.RootDescriptorLength + $journalEvidence.BuildDescriptorLength + $journalEvidence.BrokerDescriptorLength)) {
+            throw 'Independent journal evidence has inconsistent version or exact-length accounting.'
+        }
+        Write-Host 'PASS: independently decoded journal descriptors exactly match all three pre-run security snapshots' -ForegroundColor Green
+
         # Abruptly kill the native broker parent. Closing its Job Object handle
         # must terminate the AppContainer child; the durable journal must remain.
         $crashProcess.Kill()
@@ -879,6 +1017,30 @@ try {
     Write-Host ("PASS: trusted broker host stayed Medium-or-higher IL (0x{0:X}); sandbox child remained AppContainer Low IL" -f $brokerIntegrityRid) -ForegroundColor Green
     Write-Host 'PASS: malformed journal signatures, truncation and trailing bytes failed closed without partial rollback' -ForegroundColor Green
     Write-Host 'PASS: next invocation recovered the abandoned ACL transaction and removed the journal' -ForegroundColor Green
+
+    # Re-enter the broker after successful recovery. The committed-journal lookup
+    # must be a no-op when no transaction exists, and a second full execution
+    # must again restore the exact baseline without residual journal state.
+    Remove-Item -LiteralPath $childPidPath -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $crashChildPidPath -Force -ErrorAction SilentlyContinue
+    $idempotenceLines = @(& $outputPath 2>&1)
+    $idempotenceExitCode = $LASTEXITCODE
+    $idempotenceNumeric = @(Get-BrokerNumericLines -Lines $idempotenceLines)
+    $idempotenceActual = ($idempotenceNumeric -join $nl).TrimEnd([char[]]@([char]13, [char]10))
+    if ($idempotenceExitCode -ne 0 -or
+        -not [string]::Equals($idempotenceActual, $expected, [StringComparison]::Ordinal)) {
+        throw "Post-recovery idempotence replay failed. Expected=[$expected] Actual=[$idempotenceActual] ExitCode=$idempotenceExitCode."
+    }
+    foreach ($aclPath in $aclPaths) {
+        $idempotenceSddl = Get-BrokerSecuritySddl -Path $aclPath
+        if (-not [string]::Equals($idempotenceSddl, $aclBaseline[$aclPath], [StringComparison]::Ordinal)) {
+            throw "Post-recovery idempotence replay changed the exact pre-run security descriptor on $aclPath."
+        }
+    }
+    if ((Test-Path -LiteralPath $journalPath) -or (Test-Path -LiteralPath $journalTempPath)) {
+        throw 'Post-recovery idempotence replay left a committed or temporary journal behind.'
+    }
+    Write-Host 'PASS: second execution is idempotent after recovery; exact SDDL restored and no journal residue remains' -ForegroundColor Green
 
     $brokerDirectory = Join-Path $repoRoot 'Tests\DevAgentBroker'
     $brokerDirectoryBackup = Join-Path $buildRoot 'DevAgentBroker.original'

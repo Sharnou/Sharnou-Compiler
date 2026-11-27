@@ -10,10 +10,12 @@ on:
       - devagent-sandbox-tool-order-diagnostics-20261126
       - devagent-abandoned-mutex-failclosed-20261126
       - devagent-acl-transaction-recovery-20261126
+      - phase-2b8-r1-journal-evidence-20261127
   pull_request:
     branches:
       - Sharnou-Compiler
       - devagent-appcontainer-acl-output-20261126
+      - devagent-acl-transaction-recovery-20261126
 
 jobs:
   windows-stage7a:

@@ -535,3 +535,22 @@ The failure result -2685 decodes from the emitter's status formula to ERROR_ACCE
 Acceptance requires: repair and adversarially validate journal recovery; unique per-execution AppContainer SID/profile with crash cleanup; an explicit bounded allowlisted Unicode environment (lpEnvironment must not be NULL); production integration of the Phase 2B.5 handle allowlist and independent bounded stdout/stderr capture; child DLL-search hardening; final-object/path verification; actual PE import-table validation; and same-head Windows regressions including M6 83/83 and Stage 7A.
 
 **Model-facing and autonomous process execution remain DISABLED.**
+
+
+## Phase 2B.8 R1 progress and evidence - 2026-11-27
+
+Tracking: [Issue #25](https://github.com/Sharnou/Sharnou-Compiler/issues/25); specification `Docs/PHASE-2B8-CRASH-SAFE-EXECUTION-LIFECYCLE.md`; draft implementation PR [#27](https://github.com/Sharnou/Sharnou-Compiler/pull/27). PR #27 stacks on exact PR #24 head `6344632746cd0666025a0beb0d31f4752d6480f6`; PR #24 remains draft/unmerged and has 284/12 divergence against default at reconciliation. No merge/rebase was performed.
+
+### R1 implementation
+- Branch: `phase-2b8-r1-journal-evidence-20261127`.
+- Exact tested head: `396ea1e5cc7d364ba2a77c25ba4ab6d924365def`.
+- Added independent PowerShell 5.1 v1 journal parser, exact DACL and mandatory-label-ACE comparison, a SHA-256 evidence record, repeated recovery/idempotence replay, and CI trigger inclusion for both Windows workflows.
+- R1 did not change production broker/compiler-emitter behavior.
+
+### Same-head Windows results
+- [Run 46011107322](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/46011107322): Stage 7A 24/24; collection imports 2/2; stack-probe/unwind 6/6; Runtime ABI PASS; new journal decoder PASS; journal SHA-256 `18DD6A5DF9CB30707110CF66D8A23DAA884EE3691842E7B2E8CA491946ED2FEC` (v1, 596 bytes; descriptor lengths 188/188/188); malformed-journal rejection PASS; parent-crash recovery PASS; repeated post-recovery execution/idempotence PASS; broker phase-1 PASS; combined result PASS.
+- [Run 46011107258](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/46011107258): frozen M1-M6 regression 83/83 (Stage 2 25, Stage 4 20, verifier 4, Stage 5 25, Stage 6 9).
+- Earlier R1 runs 46010010375, 46010513321 and 46010988209 failed on test-verifier implementation defects and were superseded by exact-head 396ea passing evidence. The null-SACL distinction was resolved by comparing DACL SDDL separately and mandatory-label ACEs as binary ACE records.
+
+### Remaining Phase 2B.8 blockers
+Unique AppContainer profile identity and crash-safe deletion remain absent. Journal v1 has no execution/profile metadata or cryptographic authentication. The native child still inherits the process environment and uses merged stdout/stderr capture. DLL-search hardening, exhaustive crash-cut testing, full path/file identity checks, cancellation, independent concurrent-workspace tests and complete evidence manifest remain outstanding. Keep model-generated execution DISABLED. R1 passing evidence is not Phase 2B.8 security acceptance.
