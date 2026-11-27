@@ -1611,6 +1611,108 @@ function Emit-DevBrokerWriteDiagnosticPath {
     Mark-CodeLabel -Label $skip
 }
 
+function Emit-DevBrokerWriteRecoveryTokenDiagnostic {
+    $scratch = [int]$script:ActiveContext.ScratchPosition
+    $tokenHandleSlot = $scratch + 0xE80
+    $tokenInfoSlot = $scratch + 0xE88
+    $tokenReturnLengthSlot = $scratch + 0xE8C
+    $appContainerSlot = $scratch + 0xE90
+    $restrictedSlot = $scratch + 0xE94
+    $elevationSlot = $scratch + 0xE98
+    $openErrorSlot = $scratch + 0xE9C
+    $queryErrorSlot = $scratch + 0xEA0
+    $textBufferSlot = $scratch + 0xF00
+    $textLengthSlot = $scratch + 0xF80
+    $stdoutHandleSlot = $scratch + 0xD60
+    $bytesWrittenSlot = $scratch + 0xD68
+    $openFailed = New-UniqueLabel -Prefix 'dev_acl_recovery_token_open_failed'
+    $queryLoopDone = New-UniqueLabel -Prefix 'dev_acl_recovery_token_queries_done'
+    $formatReady = New-UniqueLabel -Prefix 'dev_acl_recovery_token_format_ready'
+    Emit-StoreZero64Frame -SlotPosition $tokenHandleSlot
+    foreach ($slot in @($tokenInfoSlot, $tokenReturnLengthSlot, $queryErrorSlot)) {
+        Emit-StoreZero64Frame -SlotPosition $slot
+    }
+    foreach ($slot in @($appContainerSlot, $restrictedSlot, $elevationSlot, $openErrorSlot)) {
+        Emit-StoreBits32Frame -SlotPosition $slot -Value ([UInt32]::MaxValue)
+    }
+
+    # Query the broker's own primary token, not the PowerShell test harness token.
+    # GetCurrentProcess() is the documented pseudo-handle value (HANDLE)-1.
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0xC7, 0xC1, 0xFF, 0xFF, 0xFF, 0xFF, 0xBA, 0x08, 0x00, 0x00, 0x00))
+    Emit-Bytes -Bytes ([byte[]]@(0x4C, 0x8D, 0x85))
+    Emit-I32 -Value (Get-FrameDisp -SlotPosition $tokenHandleSlot)
+    Emit-Win64CallIat -TargetRva ([UInt32]0x32B0) -StackArguments @() # OpenProcessToken(TOKEN_QUERY)
+    Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
+    Emit-JumpConditional -ConditionCode 0x84 -Label $openFailed
+    Emit-StoreBits32Frame -SlotPosition $openErrorSlot -Value 0
+
+    foreach ($query in @(
+        @{ Class = 29; ValueSlot = $appContainerSlot }, # TokenIsAppContainer
+        @{ Class = 21; ValueSlot = $restrictedSlot },   # TokenHasRestrictions
+        @{ Class = 20; ValueSlot = $elevationSlot }     # TokenElevation
+    )) {
+        $queryFailed = New-UniqueLabel -Prefix 'dev_acl_recovery_token_query_failed'
+        $queryDone = New-UniqueLabel -Prefix 'dev_acl_recovery_token_query_done'
+        Emit-StoreZero64Frame -SlotPosition $tokenInfoSlot
+        Emit-StoreZero64Frame -SlotPosition $tokenReturnLengthSlot
+        Emit-LoadRcxFrame -SlotPosition $tokenHandleSlot
+        Emit-Bytes -Bytes ([byte[]]@(0xBA))
+        Emit-I32 -Value ([int]$query.Class)
+        Emit-Bytes -Bytes ([byte[]]@(0x4C, 0x8D, 0x85))
+        Emit-I32 -Value (Get-FrameDisp -SlotPosition $tokenInfoSlot)
+        Emit-Bytes -Bytes ([byte[]]@(0x41, 0xB9, 0x04, 0x00, 0x00, 0x00))
+        Emit-Win64CallIat -TargetRva ([UInt32]0x32D8) -StackArguments @(
+            @{ Kind = 'FrameAddress'; SlotPosition = $tokenReturnLengthSlot }
+        ) # GetTokenInformation(DWORD)
+        Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
+        Emit-JumpConditional -ConditionCode 0x84 -Label $queryFailed
+        Emit-LoadEaxFrame -SlotPosition $tokenInfoSlot
+        Emit-StoreEaxFrame -SlotPosition ([int]$query.ValueSlot)
+        Emit-Jump -Label $queryDone
+        Mark-CodeLabel -Label $queryFailed
+        Emit-Win64CallIat -TargetRva ([UInt32]0x3268) -StackArguments @() # GetLastError
+        Emit-StoreEaxFrame -SlotPosition $queryErrorSlot
+        Emit-StoreBits32Frame -SlotPosition ([int]$query.ValueSlot) -Value ([UInt32]::MaxValue)
+        Mark-CodeLabel -Label $queryDone
+    }
+
+    Emit-LoadRcxFrame -SlotPosition $tokenHandleSlot
+    Emit-Win64CallIat -TargetRva ([UInt32]0x30B8) -StackArguments @() # CloseHandle
+    Emit-Jump -Label $formatReady
+
+    Mark-CodeLabel -Label $openFailed
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3268) -StackArguments @() # GetLastError
+    Emit-StoreEaxFrame -SlotPosition $openErrorSlot
+    Mark-CodeLabel -Label $formatReady
+
+    $formatItem = Register-DataConstant -Value "ACL_RECOVERY_TOKEN|appcontainer=%u|restricted=%u|elevation=%u|openError=%u|queryError=%u`r`n"
+    Emit-LeaRaxFrame -SlotPosition $textBufferSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1))
+    Emit-DataAddress -DataItem $formatItem
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC2))
+    Emit-LoadEaxFrame -SlotPosition $appContainerSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x41, 0x89, 0xC0))
+    Emit-LoadEaxFrame -SlotPosition $restrictedSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x41, 0x89, 0xC1))
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3090) -StackArguments @(
+        @{ Kind = 'FrameDword'; SlotPosition = $elevationSlot },
+        @{ Kind = 'FrameDword'; SlotPosition = $openErrorSlot },
+        @{ Kind = 'FrameDword'; SlotPosition = $queryErrorSlot }
+    ) # wsprintfA
+    Emit-StoreEaxFrame -SlotPosition $textLengthSlot
+
+    Emit-Bytes -Bytes ([byte[]]@(0xB9, 0xF5, 0xFF, 0xFF, 0xFF)) # STD_OUTPUT_HANDLE
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3070) -StackArguments @() # GetStdHandle
+    Emit-StoreRaxFrame -SlotPosition $stdoutHandleSlot
+    Emit-LoadRcxFrame -SlotPosition $stdoutHandleSlot
+    Emit-LeaRaxFrame -SlotPosition $textBufferSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC2))
+    Emit-LoadEaxFrame -SlotPosition $textLengthSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x41, 0x89, 0xC0))
+    Emit-LeaR9Frame -SlotPosition $bytesWrittenSlot
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3078) -StackArguments @(@{ Kind = 'Immediate'; Value = 0 }) # WriteFile
+}
+
 function Emit-DevBrokerWriteRecoveryAttributeDiagnostic {
     param([int] $JournalPathSlot)
     $scratch = [int]$script:ActiveContext.ScratchPosition
@@ -1618,8 +1720,9 @@ function Emit-DevBrokerWriteRecoveryAttributeDiagnostic {
     $errorSlot = $scratch + 0xD74
     # Keep the formatted diagnostic buffer disjoint from the DWORD length slot
     # and from the live recovery-stage value at D90.
-    $textBufferSlot = $scratch + 0xDA8
-    $textLengthSlot = $scratch + 0xDE8
+    # Use a dedicated 128-byte area at the top of the reserved frame scratch.
+    $textBufferSlot = $scratch + 0xF00
+    $textLengthSlot = $scratch + 0xF80
     $stdoutHandleSlot = $scratch + 0xD60
     $bytesWrittenSlot = $scratch + 0xD68
     $attributeFailed = New-UniqueLabel -Prefix 'dev_acl_recovery_getattr_failed'
@@ -1738,6 +1841,7 @@ function Emit-DevBrokerRecoverAclJournal {
     # to redirected stdout before the metadata-only probe.
     Emit-StoreEaxFrame -SlotPosition $expectedSizeSlot
     Emit-DevBrokerWriteDiagnosticPath -PathSlot $JournalPathSlot -PathLengthSlot $PathLengthSlot
+    Emit-DevBrokerWriteRecoveryTokenDiagnostic
     Emit-DevBrokerWriteRecoveryAttributeDiagnostic -JournalPathSlot $JournalPathSlot
     Emit-LeaRaxFrame -SlotPosition $JournalPathSlot
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1, 0x33, 0xD2, 0x41, 0xB8, 0x01, 0x00, 0x00, 0x00, 0x45, 0x33, 0xC9))
