@@ -286,6 +286,7 @@ function Invoke-Phase2B4Trial {
             ('TEMP=' + $script:TempDirectory),
             ('TMP=' + $script:TempDirectory)
         )
+        $environment = New-SharnouTrackedEnvironmentBlock -Entries $environmentEntries -Allocations $allocations
 
         Assert-SharnouNoReparseAncestors -Path $script:ChildImage
         if (-not (Test-Path -LiteralPath $script:ChildImage -PathType Leaf)) { throw 'Fixed System32 whoami.exe is missing.' }
