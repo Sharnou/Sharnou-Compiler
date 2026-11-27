@@ -2597,6 +2597,7 @@ function Emit-DevRunTool {
     $directoryFailCompiler = New-UniqueLabel -Prefix 'dev_tool_directory_fail_compiler'
     $mutexFail = New-UniqueLabel -Prefix 'dev_tool_mutex_fail'
     $appContainerFail = New-UniqueLabel -Prefix 'dev_tool_appcontainer_fail'
+    $legacyAppContainerFail = New-UniqueLabel -Prefix 'dev_tool_legacy_appcontainer_fail'
     $aclFail = New-UniqueLabel -Prefix 'dev_tool_acl_fail'
     $aclRecoveryFail = New-UniqueLabel -Prefix 'dev_tool_acl_recovery_fail'
     $journalFail = New-UniqueLabel -Prefix 'dev_tool_acl_journal_fail'
@@ -2935,7 +2936,7 @@ function Emit-DevRunTool {
     # REVOKE_ACCESS only narrows DACL permissions; no access is expanded here. The
     # journal snapshot is then captured from the post-migration state, before grants
     # for the fresh per-execution SID are applied.
-    Emit-DevBrokerRevokeLegacyAppContainerSid -SidSlot $legacyAppContainerSidSlot -FailureLabel $appContainerFail
+    Emit-DevBrokerRevokeLegacyAppContainerSid -SidSlot $legacyAppContainerSidSlot -FailureLabel $legacyAppContainerFail
     Emit-DevBrokerUpdateAcl -PathSlot $workspaceRootSlot -SidSlot $legacyAppContainerSidSlot -AccessMask ([UInt32]0) -AccessMode 4 -FailureLabel $aclFail
     Emit-DevBrokerUpdateAcl -PathSlot $buildPathSlot -SidSlot $legacyAppContainerSidSlot -AccessMask ([UInt32]0) -AccessMode 4 -SetLowIntegrityLabel $false -FailureLabel $aclFail
     Emit-DevBrokerUpdateAcl -PathSlot $brokerDirectorySlot -SidSlot $legacyAppContainerSidSlot -AccessMask ([UInt32]0) -AccessMode 4 -SetLowIntegrityLabel $false -FailureLabel $aclFail
@@ -3529,7 +3530,12 @@ function Emit-DevRunTool {
     Emit-Jump -Label $cleanup
 
     Mark-CodeLabel -Label $appContainerFail
-    Emit-Bytes -Bytes ([byte[]]@(0xB8, 0x90, 0xFF, 0xFF, 0xFF)) # -112: AppContainer profile/SID setup failed
+    Emit-Bytes -Bytes ([byte[]]@(0xB8, 0x77, 0xFF, 0xFF, 0xFF)) # -137: per-execution profile creation/SID derivation failed
+    Emit-StoreEaxFrame -SlotPosition $resultSlot
+    Emit-Jump -Label $cleanup
+
+    Mark-CodeLabel -Label $legacyAppContainerFail
+    Emit-Bytes -Bytes ([byte[]]@(0xB8, 0x78, 0xFF, 0xFF, 0xFF)) # -136: legacy shared-profile ACL migration SID resolution failed
     Emit-StoreEaxFrame -SlotPosition $resultSlot
     Emit-Jump -Label $cleanup
 
