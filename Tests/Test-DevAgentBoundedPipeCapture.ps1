@@ -700,7 +700,10 @@ try {
     $baselineHandles = Get-Phase2B5HandleCount
     $script:SupervisorHandleBaseline = $baselineHandles
     $small = Invoke-Phase2B5Trial -Mode 'Streams' -TimeoutMilliseconds 10000 -CreateSentinel $true
-    Assert-Phase2B5 ($small.Status -eq 'Completed' -and $small.ExitCode -eq 0 -and $small.ProcessReaped) 'fixed child completes under a Job Object and is reaped'
+    if ($small.Status -ne 'Completed') {
+        Write-Host ('DIAGNOSTIC small trial: status={0}; failure={1}; exit={2}; job={3}; reaped={4}; combined={5}' -f $small.Status,$small.Failure,$small.ExitCode,$small.JobAssigned,$small.ProcessReaped,$small.CombinedBytes) -ForegroundColor Yellow
+    }
+    Assert-Phase2B5 ($small.Status -eq 'Completed' -and $small.ExitCode -eq 0 -and $small.ProcessReaped) ('fixed child completes under a Job Object and is reaped; status={0}; failure={1}; exit={2}; job={3}; reaped={4}' -f $small.Status,$small.Failure,$small.ExitCode,$small.JobAssigned,$small.ProcessReaped)
     $smallOut = [Text.Encoding]::ASCII.GetString($small.Stdout.ToArray())
     $smallErr = [Text.Encoding]::ASCII.GetString($small.Stderr.ToArray())
     Assert-Phase2B5 ($smallOut -ceq ("stdout-ok" + [char]10)) 'stdout is captured byte-exactly'
