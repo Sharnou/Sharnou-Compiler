@@ -598,7 +598,20 @@ try {
         # Child console diagnostics may be visible; compare only broker numeric return records.
         $numericLines = @(Get-BrokerNumericLines -Lines $lines)
         $actual = ($numericLines -join $nl).TrimEnd([char[]]@([char]13, [char]10))
-        if ($exitCode -ne 0) { throw "Broker fixture process exited with code $exitCode. Output=[$actual]." }
+        if ($exitCode -ne 0) {
+            $rawDiagnostic = ($lines -join [string][char]10)
+            if ($rawDiagnostic.Length -gt 65536) { $rawDiagnostic = $rawDiagnostic.Substring(0, 65536) }
+            Write-Host ("DEVAGENT_BROKER_RAW_OUTPUT_BEGIN|exit={0}" -f $exitCode)
+            Write-Host $rawDiagnostic
+            Write-Host 'DEVAGENT_BROKER_RAW_OUTPUT_END'
+            if (Test-Path -LiteralPath $capturedOutputPath -PathType Leaf) {
+                $diagnosticBytes = [IO.File]::ReadAllBytes($capturedOutputPath)
+                $diagnosticLength = [Math]::Min(4096, $diagnosticBytes.Length)
+                $diagnosticText = [Text.Encoding]::UTF8.GetString($diagnosticBytes, 0, $diagnosticLength)
+                Write-Host ("DEVAGENT_CAPTURE_DIAGNOSTIC|length={0}|sample={1}" -f $diagnosticBytes.Length, $diagnosticText)
+            }
+            throw "Broker fixture process exited with code $exitCode. Output=[$actual]."
+        }
         if (-not [string]::Equals($actual, $expected, [StringComparison]::Ordinal)) {
             if (Test-Path -LiteralPath $dpapiStatusPath -PathType Leaf) {
                 $sandboxDpapiStatus = [IO.File]::ReadAllText($dpapiStatusPath, [Text.Encoding]::ASCII).Trim()
