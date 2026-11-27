@@ -1604,6 +1604,7 @@ function Emit-DevBrokerRecoverAclJournal {
     Emit-StoreBits32Frame -SlotPosition $recoveryStageSlot -Value 0
     for ($i = 0; $i -lt 7; $i++) { Emit-StoreZero64Frame -SlotPosition ($fileInfoSlot + ($i * 8)) }
 
+    Emit-StoreBits32Frame -SlotPosition $recoveryStageSlot -Value 1 # open committed journal
     Emit-LeaRaxFrame -SlotPosition $JournalPathSlot
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1, 0xBA, 0x00, 0x00, 0x00, 0x80, 0x45, 0x33, 0xC0, 0x45, 0x33, 0xC9))
     Emit-Win64CallIat -TargetRva ([UInt32]0x30A0) -StackArguments @(
@@ -1616,6 +1617,7 @@ function Emit-DevBrokerRecoverAclJournal {
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x85, 0xC0))
     Emit-JumpConditional -ConditionCode 0x84 -Label $notFound
     Emit-StoreRaxFrame -SlotPosition $JournalHandleSlot
+    Emit-StoreBits32Frame -SlotPosition $recoveryStageSlot -Value 2 # query journal file information
     Emit-Jump -Label $restoreReady
 
     Mark-CodeLabel -Label $notFound
@@ -1633,6 +1635,7 @@ function Emit-DevBrokerRecoverAclJournal {
     Emit-Win64CallIat -TargetRva ([UInt32]0x3208) -StackArguments @()
     Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
     Emit-JumpConditional -ConditionCode 0x84 -Label $failed
+    Emit-StoreBits32Frame -SlotPosition $recoveryStageSlot -Value 3 # validate journal file attributes, links and size
     Emit-LoadEaxFrame -SlotPosition $fileInfoSlot
     Emit-Bytes -Bytes ([byte[]]@(0xA9, 0x10, 0x00, 0x00, 0x00))
     Emit-JumpConditional -ConditionCode 0x85 -Label $failed
@@ -1643,6 +1646,7 @@ function Emit-DevBrokerRecoverAclJournal {
     Emit-JumpConditional -ConditionCode 0x85 -Label $failed
 
     # Read and validate the 32-byte journal header before allocating bounded storage.
+    Emit-StoreBits32Frame -SlotPosition $recoveryStageSlot -Value 4 # read fixed header
     Emit-LoadRcxFrame -SlotPosition $JournalHandleSlot
     Emit-LeaRaxFrame -SlotPosition $HeaderSlot
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC2, 0x41, 0xB8, 0x20, 0x00, 0x00, 0x00))
@@ -1654,6 +1658,7 @@ function Emit-DevBrokerRecoverAclJournal {
     Emit-LoadEaxFrame -SlotPosition $JournalReadCountSlot
     Emit-Bytes -Bytes ([byte[]]@(0x83, 0xF8, 0x20))
     Emit-JumpConditional -ConditionCode 0x85 -Label $failed
+    Emit-StoreBits32Frame -SlotPosition $recoveryStageSlot -Value 5 # validate journal signature and version
     Emit-LoadEaxFrame -SlotPosition $HeaderSlot
     Emit-Bytes -Bytes ([byte[]]@(0x3D, 0x53, 0x48, 0x41, 0x52))
     Emit-JumpConditional -ConditionCode 0x85 -Label $failed
@@ -1664,6 +1669,7 @@ function Emit-DevBrokerRecoverAclJournal {
     Emit-Bytes -Bytes ([byte[]]@(0x83, 0xF8, 0x01))
     Emit-JumpConditional -ConditionCode 0x85 -Label $failed
 
+    Emit-StoreBits32Frame -SlotPosition $recoveryStageSlot -Value 6 # validate descriptor lengths
     foreach ($record in @(
         @{ HeaderOffset = 16; LengthSlot = $RootLengthSlot },
         @{ HeaderOffset = 20; LengthSlot = $BuildLengthSlot },
@@ -1684,6 +1690,7 @@ function Emit-DevBrokerRecoverAclJournal {
     Emit-LoadEaxFrame -SlotPosition $BrokerLengthSlot
     Emit-Bytes -Bytes ([byte[]]@(0x01, 0xD0, 0x83, 0xC0, 0x20))
     Emit-StoreEaxFrame -SlotPosition $expectedSizeSlot
+    Emit-StoreBits32Frame -SlotPosition $recoveryStageSlot -Value 7 # validate exact journal file length
     Emit-LoadEaxFrame -SlotPosition ($fileInfoSlot + 32)
     Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
     Emit-JumpConditional -ConditionCode 0x85 -Label $failed
@@ -1692,7 +1699,7 @@ function Emit-DevBrokerRecoverAclJournal {
     Emit-I32 -Value (Get-FrameDisp -SlotPosition $expectedSizeSlot)
     Emit-JumpConditional -ConditionCode 0x85 -Label $failed
 
-    Emit-StoreBits32Frame -SlotPosition $recoveryStageSlot -Value 1 # allocate bounded descriptor buffer
+    Emit-StoreBits32Frame -SlotPosition $recoveryStageSlot -Value 8 # allocate bounded descriptor buffer
     Emit-Bytes -Bytes ([byte[]]@(0x33, 0xC9, 0xBA, 0x00, 0xC0, 0x00, 0x00, 0x41, 0xB8, 0x00, 0x30, 0x00, 0x00, 0x41, 0xB9, 0x04, 0x00, 0x00, 0x00))
     Emit-Win64CallIat -TargetRva ([UInt32]0x31D0) -StackArguments @() # VirtualAlloc(48 KiB)
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x85, 0xC0))
@@ -1704,7 +1711,7 @@ function Emit-DevBrokerRecoverAclJournal {
         @{ Length = $BuildLengthSlot; Offset = 0x4000; Descriptor = $BuildDescriptorSlot },
         @{ Length = $BrokerLengthSlot; Offset = 0x8000; Descriptor = $BrokerDescriptorSlot }
     )
-    $recordStage = 2
+    $recordStage = 9
     foreach ($record in $records) {
         Emit-StoreBits32Frame -SlotPosition $recoveryStageSlot -Value $recordStage # read exact descriptor bytes
         Emit-LoadRcxFrame -SlotPosition $JournalHandleSlot
@@ -1746,20 +1753,20 @@ function Emit-DevBrokerRecoverAclJournal {
     }
 
     # Restore parents before descendants so each child snapshot wins after inheritance propagation.
-    Emit-StoreBits32Frame -SlotPosition $recoveryStageSlot -Value 8 # restore workspace root
+    Emit-StoreBits32Frame -SlotPosition $recoveryStageSlot -Value 15 # restore workspace root
     Emit-DevBrokerRestoreSecurityDescriptor -PathSlot $WorkspaceRootSlot -DescriptorSlot $RootDescriptorSlot -FailureLabel $failed
-    Emit-StoreBits32Frame -SlotPosition $recoveryStageSlot -Value 9 # restore Build
+    Emit-StoreBits32Frame -SlotPosition $recoveryStageSlot -Value 16 # restore Build
     Emit-DevBrokerRestoreSecurityDescriptor -PathSlot $BuildPathSlot -DescriptorSlot $BuildDescriptorSlot -RestoreLabel $true -FailureLabel $failed
-    Emit-StoreBits32Frame -SlotPosition $recoveryStageSlot -Value 10 # restore broker directory
+    Emit-StoreBits32Frame -SlotPosition $recoveryStageSlot -Value 17 # restore broker directory
     Emit-DevBrokerRestoreSecurityDescriptor -PathSlot $BrokerDirectorySlot -DescriptorSlot $BrokerDescriptorSlot -RestoreLabel $true -FailureLabel $failed
 
-    Emit-StoreBits32Frame -SlotPosition $recoveryStageSlot -Value 11 # close journal handle
+    Emit-StoreBits32Frame -SlotPosition $recoveryStageSlot -Value 18 # close journal handle
     Emit-LoadRcxFrame -SlotPosition $JournalHandleSlot
     Emit-Win64CallIat -TargetRva ([UInt32]0x30B8) -StackArguments @()
     Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
     Emit-JumpConditional -ConditionCode 0x84 -Label $failed
     Emit-StoreZero64Frame -SlotPosition $JournalHandleSlot
-    Emit-StoreBits32Frame -SlotPosition $recoveryStageSlot -Value 12 # retire committed journal
+    Emit-StoreBits32Frame -SlotPosition $recoveryStageSlot -Value 19 # retire committed journal
     Emit-LeaRaxFrame -SlotPosition $JournalPathSlot
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1))
     Emit-Win64CallIat -TargetRva ([UInt32]0x3310) -StackArguments @() # DeleteFileA after complete restore
