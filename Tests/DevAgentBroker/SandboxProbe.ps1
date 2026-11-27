@@ -23,24 +23,21 @@ try {
         exit 91
     }
 
-    # Probe whether a Low-IL AppContainer process can mint a CurrentUser DPAPI
-    # envelope with the same public context entropy as the trusted broker.
-    # This is characterization only; the parent independently tries to unprotect it.
+    # Probe user-scope DPAPI through Windows PowerShell's built-in SecureString
+    # serialization. Add-Type is not available in the restricted sandbox command
+    # surface; ConvertFrom-SecureString exercises CurrentUser DPAPI without adding
+    # any assembly or script compilation capability.
     $dpapiStatus = $null
     try {
-        Add-Type -AssemblyName System.Security -ErrorAction Stop
-        $dpapiEntropy = [Text.Encoding]::UTF8.GetBytes('Sharnou.DevAgent.AuthenticatedJournal.v2|user-scope')
-        $dpapiPayload = [Text.Encoding]::ASCII.GetBytes('appcontainer-created-dpapi-record-v1')
-        $dpapiEnvelope = [System.Security.Cryptography.ProtectedData]::Protect(
-            $dpapiPayload,
-            $dpapiEntropy,
-            [System.Security.Cryptography.DataProtectionScope]::CurrentUser)
-        if ($dpapiEnvelope.Length -lt 32 -or $dpapiEnvelope.Length -gt 65536) {
-            throw 'DPAPI returned an envelope outside the bounded test range.'
+        $dpapiPlaintext = 'appcontainer-created-dpapi-record-v1'
+        $dpapiSecureString = ConvertTo-SecureString -String $dpapiPlaintext -AsPlainText -Force -ErrorAction Stop
+        $dpapiEnvelopeText = ConvertFrom-SecureString -SecureString $dpapiSecureString -ErrorAction Stop
+        if ([string]::IsNullOrEmpty($dpapiEnvelopeText) -or $dpapiEnvelopeText.Length -gt 65536) {
+            throw 'ConvertFrom-SecureString returned an empty or over-limit DPAPI envelope.'
         }
-        [IO.File]::WriteAllBytes($dpapiForgeryPath, $dpapiEnvelope)
+        [IO.File]::WriteAllText($dpapiForgeryPath, $dpapiEnvelopeText, [Text.Encoding]::ASCII)
         $dpapiStatus = 'PROTECT_SUCCESS'
-        [Console]::WriteLine(('SANDBOX_DPAPI_PROTECT_SUCCESS|bytes={0}' -f $dpapiEnvelope.Length))
+        [Console]::WriteLine(('SANDBOX_DPAPI_PROTECT_SUCCESS|chars={0}' -f $dpapiEnvelopeText.Length))
     }
     catch {
         $baseException = $_.Exception.GetBaseException()
