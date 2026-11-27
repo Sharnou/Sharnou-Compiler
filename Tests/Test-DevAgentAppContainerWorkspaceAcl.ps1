@@ -315,7 +315,7 @@ try {
     Assert-Phase2B3 ($child.ProfileSid -ceq $profileA.SidText) 'suspended child token is bound to the exact OS-created package SID'
     $script:childCreated = $true
 
-    [void](Invoke-Phase2B3Open -Token $child.ImpersonationToken -Path $ownFile -DesiredAccess ([UInt32]0x80000000) -Disposition ([UInt32]3) -ExpectedAllowed $true)
+    [void](Invoke-Phase2B3Open -Token $child.ImpersonationToken -Path $ownFile -DesiredAccess ([Convert]::ToUInt32('80000000',16)) -Disposition ([UInt32]3) -ExpectedAllowed $true)
     Assert-Phase2B3 $true 'AppContainer token can read a file in its own execution workspace'
     [void](Invoke-Phase2B3Open -Token $child.ImpersonationToken -Path $ownFile -DesiredAccess ([UInt32]0x40000000) -Disposition ([UInt32]3) -ExpectedAllowed $true)
     Assert-Phase2B3 $true 'AppContainer token can write an existing file in its own execution workspace'
@@ -331,7 +331,7 @@ try {
         @{Path=$brokerSentinel;Name='broker image sentinel'}
     )
     foreach ($target in $deniedTargets) {
-        [void](Invoke-Phase2B3Open -Token $child.ImpersonationToken -Path $target.Path -DesiredAccess ([UInt32]0x80000000) -Disposition ([UInt32]3) -ExpectedAllowed $false)
+        [void](Invoke-Phase2B3Open -Token $child.ImpersonationToken -Path $target.Path -DesiredAccess ([Convert]::ToUInt32('80000000',16)) -Disposition ([UInt32]3) -ExpectedAllowed $false)
         Assert-Phase2B3 $true ("AppContainer token is denied access to " + $target.Name)
     }
 
