@@ -34,6 +34,9 @@ try {
     $outputStreamsTest = Join-Path $PSScriptRoot 'Tests\Test-DevAgentOutputStreams.ps1'
     if (-not (Test-Path -LiteralPath $outputStreamsTest -PathType Leaf)) { throw "DevAgent split-stream test is missing: $outputStreamsTest" }
     & $outputStreamsTest
+    $authorityProtocolTest = Join-Path $PSScriptRoot 'Tests\Test-DevAgentAuthorityProtocol.ps1'
+    if (-not (Test-Path -LiteralPath $authorityProtocolTest -PathType Leaf)) { throw "DevAgent authority IPC protocol test is missing: $authorityProtocolTest" }
+    & $authorityProtocolTest
     $baselineTest = Join-Path $PSScriptRoot 'Tests\BaselineM6\Test-Milestone6Baseline.ps1'
     if (-not (Test-Path -LiteralPath $baselineTest -PathType Leaf)) { throw "Frozen M1-M6 baseline regression is missing: $baselineTest" }
     & $baselineTest
