@@ -6,6 +6,11 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+$relocationModulePath = Join-Path $PSScriptRoot 'SharnouPERelocations.ps1'
+if (-not (Test-Path -LiteralPath $relocationModulePath -PathType Leaf)) {
+    throw "PE relocation verifier module is missing: $relocationModulePath"
+}
+. $relocationModulePath
 
 function Fail-PE {
     param([string] $Message)
@@ -318,14 +323,10 @@ foreach ($api in @('GetStdHandle', 'WriteFile', 'ExitProcess', 'wsprintfA', 'Cre
     if (-not $foundImports.Contains($api)) { Fail-PE "Missing required imported API '$api'." }
 }
 $relocOffset = Convert-RvaToOffset -Rva $relocRva -Size $relocSize -Sections $sections.ToArray() -FileSize $bytes.Length
-$pageRva = [UInt64](Read-U32 -Bytes $bytes -Offset $relocOffset)
-$blockSize = [UInt64](Read-U32 -Bytes $bytes -Offset ($relocOffset + 4))
-if ($blockSize -ne 12 -or $relocSize -ne 12) { Fail-PE 'Expected one 12-byte base-relocation block.' }
-$entry = Read-U16 -Bytes $bytes -Offset ($relocOffset + 8)
-$padding = Read-U16 -Bytes $bytes -Offset ($relocOffset + 10)
-$relocType = $entry -shr 12
-$relocTarget = $pageRva + [UInt64]($entry -band 0x0FFF)
-if ($relocType -ne 10 -or $relocTarget -ne $rdata.Rva -or $padding -ne 0) { Fail-PE 'Base relocation does not contain one DIR64 relocation for the .rdata anchor.' }
+$relocBytes = [byte[]]::new([int]$relocSize)
+[System.Buffer]::BlockCopy($bytes, $relocOffset, $relocBytes, 0, [int]$relocSize)
+$relocationResult = Test-SharnouBaseRelocationDirectory -Bytes $relocBytes -ImageSize ([UInt32]$sizeImage) -AllowedRanges @([pscustomobject]@{ StartRva = [UInt32]$rdata.Rva; Size = [UInt32]$rdata.VirtualSize })
+if (-not ($relocationResult.TargetRvas -contains [UInt32]$rdata.Rva)) { Fail-PE 'Base relocation directory does not include the .rdata absolute-pointer anchor.' }
 $anchorOffset = Convert-RvaToOffset -Rva $rdata.Rva -Size 8 -Sections $sections.ToArray() -FileSize $bytes.Length
 $anchor = Read-U64 -Bytes $bytes -Offset $anchorOffset
 if ($anchor -ne ($imageBase + $entryRva)) { Fail-PE 'Relocation anchor does not equal ImageBase + entry-point RVA.' }
