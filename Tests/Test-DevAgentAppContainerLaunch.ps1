@@ -380,14 +380,58 @@ namespace Sharnou
             finally { Marshal.FreeHGlobal(info); }
         }
 
-        private static List<string> ReadApprovedDriveEntries()
+        private static bool IsLocalAbsolutePath(string value)
         {
-            IntPtr source = GetEnvironmentStringsW();
-            if (source == IntPtr.Zero)
-                throw new Win32Exception(Marshal.GetLastWin32Error(), "GetEnvironmentStringsW failed.");
+            if (String.IsNullOrEmpty(value) || value.Length > 4096 ||
+                !Path.IsPathRooted(value) || value.StartsWith("\\\\", StringComparison.Ordinal) ||
+                value.StartsWith("\\\\?\\", StringComparison.Ordinal) ||
+                value.StartsWith("\\\\.\\", StringComparison.Ordinal))
+                return false;
+            string root = Path.GetPathRoot(value);
+            return !String.IsNullOrEmpty(root) && root.Length == 3 &&
+                Char.IsLetter(root[0]) && root[1] == ':' && root[2] == '\\\\';
+        }
+
+        private static bool IsAllowedUserEnvironmentName(string name)
+        {
+            string[] allowed = new string[] {
+                "ALLUSERSPROFILE", "APPDATA", "CommonProgramFiles", "CommonProgramFiles(x86)",
+                "CommonProgramW6432", "COMPUTERNAME", "HOMEDRIVE", "HOMEPATH",
+                "LOCALAPPDATA", "LOGONSERVER", "NUMBER_OF_PROCESSORS", "PROCESSOR_ARCHITECTURE",
+                "PROCESSOR_IDENTIFIER", "PROCESSOR_LEVEL", "PROCESSOR_REVISION",
+                "ProgramData", "ProgramFiles", "ProgramFiles(x86)", "ProgramW6432",
+                "PUBLIC", "SESSIONNAME", "USERDOMAIN", "USERDOMAIN_ROAMINGPROFILE",
+                "USERNAME", "USERPROFILE"
+            };
+            for (int i = 0; i < allowed.Length; i++)
+                if (String.Equals(name, allowed[i], StringComparison.OrdinalIgnoreCase)) return true;
+            return false;
+        }
+
+        private static bool IsPathEnvironmentName(string name)
+        {
+            return String.Equals(name, "ALLUSERSPROFILE", StringComparison.OrdinalIgnoreCase) ||
+                String.Equals(name, "APPDATA", StringComparison.OrdinalIgnoreCase) ||
+                String.Equals(name, "CommonProgramFiles", StringComparison.OrdinalIgnoreCase) ||
+                String.Equals(name, "CommonProgramFiles(x86)", StringComparison.OrdinalIgnoreCase) ||
+                String.Equals(name, "CommonProgramW6432", StringComparison.OrdinalIgnoreCase) ||
+                String.Equals(name, "LOCALAPPDATA", StringComparison.OrdinalIgnoreCase) ||
+                String.Equals(name, "ProgramData", StringComparison.OrdinalIgnoreCase) ||
+                String.Equals(name, "ProgramFiles", StringComparison.OrdinalIgnoreCase) ||
+                String.Equals(name, "ProgramFiles(x86)", StringComparison.OrdinalIgnoreCase) ||
+                String.Equals(name, "ProgramW6432", StringComparison.OrdinalIgnoreCase) ||
+                String.Equals(name, "PUBLIC", StringComparison.OrdinalIgnoreCase) ||
+                String.Equals(name, "USERPROFILE", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static List<string> ReadFilteredTokenEnvironment(IntPtr token)
+        {
+            IntPtr source = IntPtr.Zero;
+            if (!CreateEnvironmentBlock(out source, token, false) || source == IntPtr.Zero)
+                throw new Win32Exception(Marshal.GetLastWin32Error(), "CreateEnvironmentBlock(token, inherit=false) failed.");
 
             List<string> entries = new List<string>();
-            HashSet<string> driveNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            HashSet<string> seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             try
             {
                 int offset = 0;
@@ -395,7 +439,7 @@ namespace Sharnou
                 for (int index = 0; index < 32768; index++)
                 {
                     if (offset >= 32767)
-                        throw new InvalidOperationException("Parent environment block exceeds its scan bound.");
+                        throw new InvalidOperationException("Token environment exceeds the 32768 UTF-16 code-unit scan limit.");
                     string entry = Marshal.PtrToStringUni(IntPtr.Add(source, checked(offset * 2)));
                     if (String.IsNullOrEmpty(entry))
                     {
@@ -403,109 +447,102 @@ namespace Sharnou
                         break;
                     }
                     offset = checked(offset + entry.Length + 1);
-                    if (offset > 32768)
-                        throw new InvalidOperationException("Parent environment block exceeds its scan bound.");
+                    if (offset > 32768 || entry.IndexOf('\\0') >= 0)
+                        throw new InvalidOperationException("Token environment contains an invalid entry or exceeds its scan limit.");
 
-                    // Preserve only special per-drive current-directory entries;
-                    // never copy ordinary ambient environment variables.
-                    if (entry.Length < 4 || entry[0] != '=' ||
-                        !Char.IsLetter(entry[1]) || entry[2] != ':' || entry[3] != '=')
+                    if (entry[0] == '=')
+                    {
+                        int driveSeparator = entry.IndexOf('=', 1);
+                        if (driveSeparator != 3 || !Char.IsLetter(entry[1]) || entry[2] != ':')
+                            continue;
+                        string driveName = entry.Substring(0, 3);
+                        string drivePath = entry.Substring(4);
+                        if (!IsLocalAbsolutePath(drivePath) ||
+                            !String.Equals(Path.GetPathRoot(drivePath), driveName.Substring(1, 2) + "\\\\", StringComparison.OrdinalIgnoreCase))
+                            throw new InvalidOperationException("Token hidden per-drive current-directory entry is malformed.");
+                        if (!seen.Add(driveName))
+                            throw new InvalidOperationException("Token environment contains duplicate hidden drive entry.");
+                        entries.Add(entry);
                         continue;
+                    }
 
-                    string name = entry.Substring(0, 3);
-                    string drivePath = entry.Substring(4);
-                    string expectedRoot = name.Substring(1, 2) + "\\";
-                    if (!Path.IsPathRooted(drivePath) ||
-                        !String.Equals(Path.GetPathRoot(drivePath), expectedRoot, StringComparison.OrdinalIgnoreCase))
-                        throw new InvalidOperationException("Malformed hidden per-drive current-directory entry.");
-                    if (!driveNames.Add(name))
-                        throw new InvalidOperationException("Duplicate hidden per-drive current-directory entry.");
-                    if (entry.IndexOf('\0') >= 0)
-                        throw new InvalidOperationException("Hidden drive entry contains an embedded NUL.");
+                    int equals = entry.IndexOf('=');
+                    if (equals <= 0) continue;
+                    string name = entry.Substring(0, equals);
+                    if (!IsAllowedUserEnvironmentName(name)) continue;
+                    if (!seen.Add(name))
+                        throw new InvalidOperationException("Token environment contains a duplicate allowlisted variable: " + name);
+                    string value = entry.Substring(equals + 1);
+                    if (value.IndexOf('\\0') >= 0 || value.Length > 4096)
+                        throw new InvalidOperationException("Allowlisted token variable is malformed or too long: " + name);
+                    if (IsPathEnvironmentName(name) && !IsLocalAbsolutePath(value))
+                        throw new InvalidOperationException("Allowlisted token path variable is not an absolute local path: " + name);
+                    if (String.Equals(name, "HOMEDRIVE", StringComparison.OrdinalIgnoreCase) &&
+                        (value.Length != 2 || !Char.IsLetter(value[0]) || value[1] != ':'))
+                        throw new InvalidOperationException("HOMEDRIVE is malformed.");
+                    if (String.Equals(name, "HOMEPATH", StringComparison.OrdinalIgnoreCase) &&
+                        (!value.StartsWith("\\\\", StringComparison.Ordinal) || value.StartsWith("\\\\\\", StringComparison.Ordinal)))
+                        throw new InvalidOperationException("HOMEPATH is malformed.");
                     entries.Add(entry);
                 }
                 if (!terminated)
-                    throw new InvalidOperationException("Parent environment lacks bounded double-NUL termination.");
+                    throw new InvalidOperationException("Token environment was not double-NUL terminated within the scan limit.");
             }
             finally
             {
-                if (!FreeEnvironmentStringsW(source))
-                    throw new Win32Exception(Marshal.GetLastWin32Error(), "FreeEnvironmentStringsW failed.");
+                if (!DestroyEnvironmentBlock(source))
+                    throw new Win32Exception(Marshal.GetLastWin32Error(), "DestroyEnvironmentBlock failed.");
             }
             return entries;
         }
 
-        private static string DescribeEnvironmentNames(IntPtr environmentBlock)
-        {
-            List<string> names = new List<string>();
-            int offset = 0;
-            for (int index = 0; index < 32768; index++)
-            {
-                if (offset >= 32767)
-                    throw new InvalidOperationException("Token environment name scan exceeded its bound.");
-                string entry = Marshal.PtrToStringUni(IntPtr.Add(environmentBlock, checked(offset * 2)));
-                if (String.IsNullOrEmpty(entry)) return String.Join(",", names.ToArray());
-                offset = checked(offset + entry.Length + 1);
-                int equals = entry[0] == '=' ? entry.IndexOf('=', 1) : entry.IndexOf('=');
-                if (equals > 0) names.Add(entry.Substring(0, equals));
-            }
-            throw new InvalidOperationException("Token environment was not double-NUL terminated within the scan bound.");
-        }
-
         private static void AddOrReplaceDriveEntry(List<string> entries, string absolutePath)
         {
-            if (String.IsNullOrEmpty(absolutePath) || !Path.IsPathRooted(absolutePath))
-                throw new InvalidOperationException("A trusted Windows path is not absolute: " + absolutePath);
+            if (!IsLocalAbsolutePath(absolutePath))
+                throw new InvalidOperationException("A trusted Windows path is not an absolute local-drive path: " + absolutePath);
             string root = Path.GetPathRoot(absolutePath);
-            if (String.IsNullOrEmpty(root) || root.Length != 3 ||
-                !Char.IsLetter(root[0]) || root[1] != ':' || root[2] != '\\')
-                throw new InvalidOperationException("A trusted Windows path is not on a local drive: " + absolutePath);
-
             string variableName = "=" + root.Substring(0, 2);
             for (int index = entries.Count - 1; index >= 0; index--)
             {
                 string entry = entries[index];
-                if (entry.Length >= 4 && entry[0] == '=' &&
-                    String.Equals(entry.Substring(0, 3), variableName, StringComparison.OrdinalIgnoreCase) &&
-                    entry[3] == '=')
+                int separator = entry.IndexOf('=', 1);
+                if (separator == 3 &&
+                    String.Equals(entry.Substring(0, separator), variableName, StringComparison.OrdinalIgnoreCase))
                     entries.RemoveAt(index);
             }
             entries.Add(variableName + "=" + absolutePath);
         }
 
-        private static string BuildExplicitEnvironment()
+        private static string BuildExplicitEnvironment(IntPtr token)
         {
             string systemRoot = Environment.GetEnvironmentVariable("SystemRoot");
-            if (String.IsNullOrEmpty(systemRoot) || !Path.IsPathRooted(systemRoot))
-                throw new InvalidOperationException("SystemRoot is missing or not absolute.");
-            string systemDrive = Path.GetPathRoot(systemRoot).TrimEnd('\\');
+            if (String.IsNullOrEmpty(systemRoot) || !IsLocalAbsolutePath(systemRoot))
+                throw new InvalidOperationException("SystemRoot is missing or not an absolute local path.");
+            string systemDrive = Path.GetPathRoot(systemRoot).Substring(0, 2);
             string systemDirectory = Environment.SystemDirectory;
+            if (!IsLocalAbsolutePath(systemDirectory))
+                throw new InvalidOperationException("SystemDirectory is not an absolute local path.");
             string windowsTemp = Path.Combine(systemRoot, "Temp");
 
-            // CreateProcessAsUserW returned ERROR_ENVVAR_NOT_FOUND (203) when
-            // this explicit block omitted Windows' special per-drive entries.
-            // Retain validated drive-current-directory records only; all ordinary
-            // broker variables and secret values remain excluded.
-            List<string> entries = ReadApprovedDriveEntries();
+            // CreateEnvironmentBlock is used only as a source. Its content is
+            // filtered to a fixed metadata/path allowlist; ambient broker secrets,
+            // runner tokens, user-added PATH components and arbitrary variables
+            // never enter the child environment.
+            List<string> entries = ReadFilteredTokenEnvironment(token);
+            entries.Add("ComSpec=" + Path.Combine(systemDirectory, "cmd.exe"));
+            entries.Add("OS=Windows_NT");
+            entries.Add("PATH=" + systemDirectory);
+            entries.Add("PATHEXT=.COM;.EXE;.BAT;.CMD");
+            entries.Add("SystemDrive=" + systemDrive);
+            entries.Add("SystemRoot=" + systemRoot);
+            entries.Add("windir=" + systemRoot);
+            if (!entries.Exists(delegate(string e) { return e.StartsWith("TEMP=", StringComparison.OrdinalIgnoreCase); }))
+                entries.Add("TEMP=" + windowsTemp);
+            if (!entries.Exists(delegate(string e) { return e.StartsWith("TMP=", StringComparison.OrdinalIgnoreCase); }))
+                entries.Add("TMP=" + windowsTemp);
 
-            // Add deterministic hidden drive entries for both trusted Windows
-            // paths. Hosted Windows runners can place SystemRoot and
-            // GetSystemDirectory on different volumes; assuming one drive can
-            // reproduce ERROR_ENVVAR_NOT_FOUND (203) at CreateProcessAsUserW.
             AddOrReplaceDriveEntry(entries, systemRoot);
             AddOrReplaceDriveEntry(entries, systemDirectory);
-
-            entries.AddRange(new string[] {
-                "ComSpec=" + Path.Combine(systemDirectory, "cmd.exe"),
-                "OS=Windows_NT",
-                "PATH=" + systemDirectory,
-                "PATHEXT=.COM;.EXE;.BAT;.CMD",
-                "SystemDrive=" + systemDrive,
-                "SystemRoot=" + systemRoot,
-                "TEMP=" + windowsTemp,
-                "TMP=" + windowsTemp,
-                "windir=" + systemRoot
-            });
             entries.Sort(StringComparer.OrdinalIgnoreCase);
 
             HashSet<string> names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -518,12 +555,12 @@ namespace Sharnou
                 string name = entry.Substring(0, equals);
                 if (!names.Add(name))
                     throw new InvalidOperationException("Explicit child environment contains duplicate name: " + name);
-                if (entry.IndexOf('\0') >= 0)
+                if (entry.IndexOf('\\0') >= 0)
                     throw new InvalidOperationException("Explicit child environment contains an embedded NUL.");
                 block.Append(entry);
-                block.Append('\0');
+                block.Append('\\0');
             }
-            block.Append('\0');
+            block.Append('\\0');
             if (block.Length > 32768)
                 throw new InvalidOperationException("Explicit Unicode environment exceeds 32768 UTF-16 code units.");
             return block.ToString();
@@ -726,7 +763,7 @@ namespace Sharnou
                     new UIntPtr((uint)(inheritedHandles.Length * IntPtr.Size)),
                     IntPtr.Zero, IntPtr.Zero), "UpdateProcThreadAttribute(HANDLE_LIST)");
 
-                string environment = BuildExplicitEnvironment();
+                string environment = BuildExplicitEnvironment(restrictedToken);
                 environmentBuffer = Marshal.AllocHGlobal(checked(environment.Length * 2));
                 for (int i = 0; i < environment.Length; i++)
                     Marshal.WriteInt16(environmentBuffer, checked(i * 2), (short)environment[i]);
