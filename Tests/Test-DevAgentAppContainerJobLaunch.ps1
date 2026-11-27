@@ -17,7 +17,7 @@ if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT -or [IntPtr]::Si
 $manifestPath = Join-Path $PSScriptRoot 'DevAgentBroker\native-abi-manifest.json'
 $manifest = Get-Content -LiteralPath $manifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
 if (@($manifest.testFixtureApis).Count -ne 22) { throw 'The Phase 2B.2 API manifest changed unexpectedly.' }
-if (@($manifest.phase2B4Apis).Count -ne 6) { throw 'Phase 2B.4 requires exactly six separately reviewed Job Object/resume APIs.' }
+if (@($manifest.phase2B4Apis).Count -ne 8) { throw 'Phase 2B.4 requires six Job Object/resume APIs and two environment-block APIs.' }
 
 $module = New-SharnouNativeInteropModule -Name 'Sharnou.DevAgent.Phase2B4'
 $types = New-SharnouRuntimeStructTypes -Module $module -StructureManifest @($manifest.structureLayouts)
