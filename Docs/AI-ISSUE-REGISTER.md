@@ -429,3 +429,12 @@ Classification: REPOSITORY PRESENT / STATIC REVIEWED; historical PR #7 WINDOWS C
 - Issue #14: OPEN; Phase 2B.4 test-only fixture passes; clean environment and Phase 2B.5 output isolation remain pending.
 - Milestone 7B remains unaccepted; PR #5 is still proposal-only.
 - No compiler/test/build/runtime/Engine/IDE/game source changed; no PR or workflow was modified. Keep the accepted development plan unchanged.
+
+
+## Stage 7B candidate re-audit - 2026-11-27 08:08 Africa/Cairo
+
+PR #5 remains OPEN / UNMERGED at 0b8dee87b699eabcaaac37f111686231fb29a82c, 2 ahead / 59 behind current default, with three changed paths (compiler, root test runner, Stage 7B test). Exact-head Windows run [44693097619](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/44693097619) passed Stage 7A 23/23 and Stage 7B 32/32 (15 positive, 13 negative, 4 instruction checks), but did not run the 83-case baseline. Do not merge or copy this stale candidate automatically.
+
+Static review found a short-circuit constant-evaluation gap: when the left operand of a logical node is dynamic, Get-ConstantValue still traverses the right subtree. This is compile-time constant-arithmetic validation, not runtime RHS execution, but it can reject an expression whose RHS should be skipped at runtime (for example a dynamic Boolean left operand and a constant divide-by-zero RHS). The positive tests only use literal left operands for the short-circuit skip/evaluate cases. The four machine-code checks test opcode presence and do not decode rel32 destinations.
+
+Proposal-only test expansion: four dynamic-variable-left AND/OR skip/evaluate cases; two explicit Boolean function argument/return ABI rejection cases while function ABI remains integer-only; one three-level nested-loop target case; and rel32 destination decoding for the four existing machine checks. This yields a 39-case Stage 7B suite (20 positive, 15 negative, 4 instruction checks) and a 145-case same-commit gate (83 baseline + 23 Stage 7A + 39 Stage 7B). Preserve the original 83 cases unchanged. Milestone 7B remains unaccepted and unimplemented; use a fresh isolated branch only after explicit scope approval and baseline/provenance prerequisites.
