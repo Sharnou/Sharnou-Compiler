@@ -256,6 +256,269 @@ namespace Sharnou
                     "Best-effort profile cleanup failed; HRESULT=0x" +
                     unchecked((uint)hr).ToString("X8"));
         }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct STARTUPINFOW
+        {
+            public uint cb;
+            public IntPtr lpReserved;
+            public IntPtr lpDesktop;
+            public IntPtr lpTitle;
+            public uint dwX, dwY, dwXSize, dwYSize;
+            public uint dwXCountChars, dwYCountChars, dwFillAttribute, dwFlags;
+            public ushort wShowWindow, cbReserved2;
+            public IntPtr lpReserved2;
+            public IntPtr hStdInput, hStdOutput, hStdError;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct STARTUPINFOEXW
+        {
+            public STARTUPINFOW StartupInfo;
+            public IntPtr lpAttributeList;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct SECURITY_CAPABILITIES
+        {
+            public IntPtr AppContainerSid;
+            public IntPtr Capabilities;
+            public uint CapabilityCount;
+            public uint Reserved;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct PROCESS_INFORMATION
+        {
+            public IntPtr hProcess;
+            public IntPtr hThread;
+            public uint dwProcessId;
+            public uint dwThreadId;
+        }
+
+        [DllImport("kernel32.dll", EntryPoint = "InitializeProcThreadAttributeList",
+            ExactSpelling = true, SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool InitializeProcThreadAttributeList(
+            IntPtr attributeList, int attributeCount, uint flags, ref IntPtr size);
+
+        [DllImport("kernel32.dll", EntryPoint = "UpdateProcThreadAttribute",
+            ExactSpelling = true, SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool UpdateProcThreadAttribute(
+            IntPtr attributeList, uint flags, IntPtr attribute, IntPtr value,
+            UIntPtr size, IntPtr previousValue, IntPtr returnSize);
+
+        [DllImport("kernel32.dll", EntryPoint = "DeleteProcThreadAttributeList",
+            ExactSpelling = true)]
+        private static extern void DeleteProcThreadAttributeList(IntPtr attributeList);
+
+        [DllImport("kernel32.dll", EntryPoint = "CreateProcessW",
+            CharSet = CharSet.Unicode, ExactSpelling = true, SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool CreateProcessW(
+            string applicationName, StringBuilder commandLine,
+            IntPtr processAttributes, IntPtr threadAttributes,
+            [MarshalAs(UnmanagedType.Bool)] bool inheritHandles,
+            uint creationFlags, IntPtr environment, string currentDirectory,
+            ref STARTUPINFOEXW startupInfo, out PROCESS_INFORMATION processInformation);
+
+        [DllImport("kernel32.dll", EntryPoint = "OpenProcessToken",
+            ExactSpelling = true, SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool OpenProcessToken(
+            IntPtr processHandle, uint desiredAccess, out IntPtr tokenHandle);
+
+        [DllImport("advapi32.dll", EntryPoint = "GetTokenInformation",
+            ExactSpelling = true, SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool GetTokenInformation(
+            IntPtr tokenHandle, int informationClass, IntPtr information,
+            uint informationLength, out uint returnLength);
+
+        [DllImport("advapi32.dll", EntryPoint = "GetSidSubAuthorityCount",
+            ExactSpelling = true)]
+        private static extern IntPtr GetSidSubAuthorityCount(IntPtr sid);
+
+        [DllImport("advapi32.dll", EntryPoint = "GetSidSubAuthority",
+            ExactSpelling = true)]
+        private static extern IntPtr GetSidSubAuthority(IntPtr sid, uint subAuthority);
+
+        [DllImport("kernel32.dll", EntryPoint = "TerminateProcess",
+            ExactSpelling = true, SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool TerminateProcess(IntPtr process, uint exitCode);
+
+        [DllImport("kernel32.dll", EntryPoint = "WaitForSingleObject",
+            ExactSpelling = true, SetLastError = true)]
+        private static extern uint WaitForSingleObject(IntPtr handle, uint milliseconds);
+
+        [DllImport("kernel32.dll", EntryPoint = "CloseHandle",
+            ExactSpelling = true, SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool CloseHandle(IntPtr handle);
+
+        private static IntPtr QueryTokenInformation(IntPtr token, int informationClass)
+        {
+            uint required = 0;
+            GetTokenInformation(token, informationClass, IntPtr.Zero, 0, out required);
+            int error = Marshal.GetLastWin32Error();
+            if (required == 0 || (error != 122 && error != 0))
+                throw new Win32Exception(error, "GetTokenInformation sizing query failed for class " + informationClass + ".");
+            IntPtr buffer = Marshal.AllocHGlobal(checked((int)required));
+            if (!GetTokenInformation(token, informationClass, buffer, required, out required))
+            {
+                error = Marshal.GetLastWin32Error();
+                Marshal.FreeHGlobal(buffer);
+                throw new Win32Exception(error, "GetTokenInformation failed for class " + informationClass + ".");
+            }
+            return buffer;
+        }
+
+        public static string CreateSuspendedAppContainerChildAndVerify(string profileName, string expectedSid)
+        {
+            ValidateProfileName(profileName);
+            IntPtr packageSid = IntPtr.Zero;
+            IntPtr attributeList = IntPtr.Zero;
+            IntPtr attributeBuffer = IntPtr.Zero;
+            IntPtr environment = IntPtr.Zero;
+            IntPtr childToken = IntPtr.Zero;
+            PROCESS_INFORMATION process = new PROCESS_INFORMATION();
+            bool childCreated = false;
+            bool attributeListInitialized = false;
+
+            try
+            {
+                int hr = DeriveAppContainerSidFromAppContainerName(profileName, out packageSid);
+                if (hr != 0 || packageSid == IntPtr.Zero)
+                    throw new InvalidOperationException(
+                        "Cannot derive package SID for child-token probe; HRESULT=0x" + unchecked((uint)hr).ToString("X8"));
+
+                string derivedSid = SidToString(packageSid);
+                if (!String.Equals(derivedSid, expectedSid, StringComparison.Ordinal))
+                    throw new InvalidOperationException("Child-token probe received a mismatched profile SID.");
+
+                IntPtr attributeSize = IntPtr.Zero;
+                bool sizingResult = InitializeProcThreadAttributeList(IntPtr.Zero, 1, 0, ref attributeSize);
+                int sizingError = Marshal.GetLastWin32Error();
+                if (sizingResult || sizingError != 122 || attributeSize.ToInt64() < 1 || attributeSize.ToInt64() > 65536)
+                    throw new Win32Exception(sizingError, "InitializeProcThreadAttributeList sizing contract failed.");
+
+                attributeBuffer = Marshal.AllocHGlobal(attributeSize);
+                attributeList = attributeBuffer;
+                if (!InitializeProcThreadAttributeList(attributeList, 1, 0, ref attributeSize))
+                    throw new Win32Exception(Marshal.GetLastWin32Error(), "InitializeProcThreadAttributeList failed.");
+                attributeListInitialized = true;
+
+                SECURITY_CAPABILITIES securityCapabilities = new SECURITY_CAPABILITIES();
+                securityCapabilities.AppContainerSid = packageSid;
+                securityCapabilities.Capabilities = IntPtr.Zero;
+                securityCapabilities.CapabilityCount = 0;
+                securityCapabilities.Reserved = 0;
+                IntPtr securityCapabilitiesPtr = Marshal.AllocHGlobal(Marshal.SizeOf(typeof(SECURITY_CAPABILITIES)));
+                try
+                {
+                    Marshal.StructureToPtr(securityCapabilities, securityCapabilitiesPtr, false);
+                    IntPtr securityCapabilitiesAttribute = new IntPtr(0x00020009); // PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES
+                    if (!UpdateProcThreadAttribute(
+                        attributeList, 0, securityCapabilitiesAttribute, securityCapabilitiesPtr,
+                        (UIntPtr)Marshal.SizeOf(typeof(SECURITY_CAPABILITIES)), IntPtr.Zero, IntPtr.Zero))
+                        throw new Win32Exception(Marshal.GetLastWin32Error(), "Security-capabilities process attribute failed.");
+                }
+                finally
+                {
+                    Marshal.FreeHGlobal(securityCapabilitiesPtr);
+                }
+
+                // A two-WCHAR empty block is explicit and terminated; do not inherit
+                // the broker/test runner environment into this identity probe.
+                environment = Marshal.AllocHGlobal(4);
+                Marshal.WriteInt16(environment, 0, 0);
+                Marshal.WriteInt16(environment, 2, 0);
+
+                string systemDirectory = Environment.SystemDirectory;
+                string application = System.IO.Path.Combine(systemDirectory, "cmd.exe");
+                StringBuilder commandLine = new StringBuilder("\"" + application + "\" /c exit 0");
+                STARTUPINFOEXW startup = new STARTUPINFOEXW();
+                startup.StartupInfo.cb = (uint)Marshal.SizeOf(typeof(STARTUPINFOEXW));
+                startup.lpAttributeList = attributeList;
+                uint creationFlags = 0x00080004 | 0x00000400 | 0x08000000; // EXTENDED_STARTUPINFO_PRESENT | CREATE_SUSPENDED | CREATE_UNICODE_ENVIRONMENT | CREATE_NO_WINDOW
+
+                if (!CreateProcessW(
+                    application, commandLine, IntPtr.Zero, IntPtr.Zero, false,
+                    creationFlags, environment, systemDirectory, ref startup, out process))
+                    throw new Win32Exception(Marshal.GetLastWin32Error(), "CreateProcessW AppContainer child creation failed.");
+
+                childCreated = true;
+                if (!OpenProcessToken(process.hProcess, 0x0008, out childToken))
+                    throw new Win32Exception(Marshal.GetLastWin32Error(), "OpenProcessToken on suspended AppContainer child failed.");
+
+                IntPtr appContainerInfo = IntPtr.Zero;
+                IntPtr appContainerFlag = IntPtr.Zero;
+                IntPtr capabilitiesInfo = IntPtr.Zero;
+                IntPtr integrityInfo = IntPtr.Zero;
+                try
+                {
+                    appContainerFlag = QueryTokenInformation(childToken, 29); // TokenIsAppContainer
+                    if (Marshal.ReadInt32(appContainerFlag) != 1)
+                        throw new InvalidOperationException("Suspended child token is not marked as an AppContainer.");
+
+                    appContainerInfo = QueryTokenInformation(childToken, 31); // TokenAppContainerSid
+                    IntPtr actualSid = Marshal.ReadIntPtr(appContainerInfo);
+                    string actualSidText = SidToString(actualSid);
+                    if (!String.Equals(actualSidText, expectedSid, StringComparison.Ordinal))
+                        throw new InvalidOperationException("Suspended child token package SID differs from the execution profile SID.");
+
+                    capabilitiesInfo = QueryTokenInformation(childToken, 30); // TokenCapabilities (TOKEN_GROUPS)
+                    uint capabilityCount = unchecked((uint)Marshal.ReadInt32(capabilitiesInfo));
+                    if (capabilityCount != 0)
+                        throw new InvalidOperationException("Suspended AppContainer child unexpectedly has capability SIDs: " + capabilityCount);
+
+                    integrityInfo = QueryTokenInformation(childToken, 25); // TokenIntegrityLevel
+                    IntPtr integritySid = Marshal.ReadIntPtr(integrityInfo);
+                    IntPtr subAuthorityCount = GetSidSubAuthorityCount(integritySid);
+                    if (subAuthorityCount == IntPtr.Zero)
+                        throw new Win32Exception(Marshal.GetLastWin32Error(), "GetSidSubAuthorityCount failed.");
+                    byte count = Marshal.ReadByte(subAuthorityCount);
+                    if (count == 0)
+                        throw new InvalidOperationException("Child integrity SID has no subauthorities.");
+                    IntPtr ridPtr = GetSidSubAuthority(integritySid, (uint)(count - 1));
+                    if (ridPtr == IntPtr.Zero)
+                        throw new Win32Exception(Marshal.GetLastWin32Error(), "GetSidSubAuthority failed.");
+                    uint integrityRid = unchecked((uint)Marshal.ReadInt32(ridPtr));
+                    if (integrityRid != 0x1000)
+                        throw new InvalidOperationException("AppContainer child integrity RID is not Low (0x1000): 0x" + integrityRid.ToString("X"));
+
+                    return "AppContainer=1;PackageSID=" + actualSidText +
+                        ";IntegrityRID=0x" + integrityRid.ToString("X") +
+                        ";Capabilities=" + capabilityCount.ToString();
+                }
+                finally
+                {
+                    if (integrityInfo != IntPtr.Zero) Marshal.FreeHGlobal(integrityInfo);
+                    if (capabilitiesInfo != IntPtr.Zero) Marshal.FreeHGlobal(capabilitiesInfo);
+                    if (appContainerInfo != IntPtr.Zero) Marshal.FreeHGlobal(appContainerInfo);
+                    if (appContainerFlag != IntPtr.Zero) Marshal.FreeHGlobal(appContainerFlag);
+                }
+            }
+            finally
+            {
+                if (childToken != IntPtr.Zero) CloseHandle(childToken);
+                if (childCreated && process.hProcess != IntPtr.Zero)
+                {
+                    TerminateProcess(process.hProcess, 0x2BAD);
+                    uint wait = WaitForSingleObject(process.hProcess, 10000);
+                    if (wait != 0)
+                        throw new InvalidOperationException("Suspended AppContainer child did not terminate within 10 seconds.");
+                }
+                if (process.hThread != IntPtr.Zero) CloseHandle(process.hThread);
+                if (process.hProcess != IntPtr.Zero) CloseHandle(process.hProcess);
+                if (attributeListInitialized) DeleteProcThreadAttributeList(attributeList);
+                if (attributeBuffer != IntPtr.Zero) Marshal.FreeHGlobal(attributeBuffer);
+                if (environment != IntPtr.Zero) Marshal.FreeHGlobal(environment);
+                if (packageSid != IntPtr.Zero) FreeSid(packageSid);
+            }
+        }
     }
 }
 '@
@@ -290,6 +553,8 @@ try {
             throw "Derived AppContainer SID did not match the SID returned at profile creation for $name."
         }
 
+        $childTokenSummary = [Sharnou.DevAgentExecutionIdentityNative]::CreateSuspendedAppContainerChildAndVerify($name, $sid)
+        Write-Host ("PASS: suspended child token independently verified: {0}" -f $childTokenSummary) -ForegroundColor Green
         Write-Host ("PASS: unique 128-bit CNG execution ID created a new zero-capability AppContainer profile ({0})" -f $index) -ForegroundColor Green
     }
 
