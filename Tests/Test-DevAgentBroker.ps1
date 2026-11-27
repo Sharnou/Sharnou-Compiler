@@ -90,6 +90,8 @@ function Get-DevAgentAclJournalEvidence {
         $actualSddl = $descriptor.GetSddlForm($sections)
         $expected = [string]$ExpectedSddl[$record.Path]
         if (-not [string]::Equals($actualSddl, $expected, [StringComparison]::Ordinal)) {
+            Write-Host ("DEVAGENT_JOURNAL_DESCRIPTOR_DIFF|record={0}|path={1}|expected={2}|actual={3}|controlFlags={4}|binaryLength={5}" -f
+                $record.Name, $record.Path, $expected, $actualSddl, [int]$descriptor.ControlFlags, $descriptor.BinaryLength)
             throw ("Journal record '{0}' does not match the independent pre-run DACL/mandatory-label snapshot for {1}." -f $record.Name, $record.Path)
         }
         $offset += $record.Length
