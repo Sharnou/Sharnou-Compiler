@@ -1028,3 +1028,22 @@ Normal human review of PR #11 remains the integration decision; do not auto-merg
 ### Next dependency-ordered task
 
 Retrieve the final result of run 45963617259. Decode whether the native metadata-only journal open succeeds. If it succeeds, isolate the generic-read/access check; if it fails, inspect the constructed path buffer and broker process token/ACL context. Reproduce and fix the native failure without weakening the ACL policy. Then rerun the complete crash-recovery adversarial suite and prove exact DACL/mandatory-label rollback and journal retirement. Keep PR #24 draft/unmerged and model-facing process execution disabled. After the security boundary is proven, return to the accepted compiler sequence: baseline provenance/ABI, 7B-7E, native runtime and SharnouDevAgent, then Engine 8-13 and Honour War integration.
+
+## Follow-up native-path diagnostic - 2026-11-27
+
+After the prior session record, one more isolated diagnostic commit was added to PR #24:
+
+- Branch: devagent-acl-transaction-recovery-20261126.
+- Commit: bd411c2fc777006f9b1160ab8d3d5992c2a15afa.
+- Changed path: Stage0/SharnouCompiler.ps1.
+- The recovery emitter now writes the exact constructed journal path to redirected stdout when the GENERIC_READ open fails, using existing GetStdHandle and WriteFile imports. No new PE imports were added. It then performs the metadata-only CreateFile probe. This is diagnostic-only and must be removed or gated before production acceptance.
+- M1-M6 baseline run [45964360562](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45964360562): WINDOWS CI PASS 83/83 on exact candidate head bd411c2fc777006f9b1160ab8d3d5992c2a15afa.
+- Candidate Stage 7A/broker run [45964360481](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45964360481): IN PROGRESS at the latest check; no conclusion claimed.
+- Next check: retrieve its final log and inspect the ACL_RECOVERY_NATIVE_PATH line. This will establish the exact native path string before further changes to ACL or access policy.
+
+### Cross-repository live inventory
+
+- Sharnou-IDE: default main HEAD ae596680806e7534feddd0889150874fb32fee49; open PR #3 production roadmap and PR #1 compiler resolver; latest policy run 44594245147 SUCCESS.
+- Sharnou-Engine: default main HEAD 91f90cf34c081184d54e5d3f71435922679ff5f8; open PR #2 production roadmap and PR #1 compiler C++ target fail-closed gate; latest policy run 44594247991 SUCCESS.
+- Honour-War: default main HEAD 6608c5607e187f05b39b198eeb595c2e89af595b; open PR #15 compiler pin; latest stack validation run 44178026612 SUCCESS.
+- No IDE, Engine, or Honour War files were changed in this session. These policy/roadmap runs are not proof of a native IDE/Engine/game executable or gameplay runtime.
