@@ -19,6 +19,9 @@ try {
     $brokerTest = Join-Path $PSScriptRoot 'Tests\Test-DevAgentBroker.ps1'
     if (-not (Test-Path -LiteralPath $brokerTest -PathType Leaf)) { throw "DevAgent broker regression is missing: $brokerTest" }
     & $brokerTest
+    $identityTest = Join-Path $PSScriptRoot 'Tests\Test-DevAgentExecutionIdentity.ps1'
+    if (-not (Test-Path -LiteralPath $identityTest -PathType Leaf)) { throw "DevAgent execution identity test is missing: $identityTest" }
+    & $identityTest
     $baselineTest = Join-Path $PSScriptRoot 'Tests\BaselineM6\Test-Milestone6Baseline.ps1'
     if (-not (Test-Path -LiteralPath $baselineTest -PathType Leaf)) { throw "Frozen M1-M6 baseline regression is missing: $baselineTest" }
     & $baselineTest
