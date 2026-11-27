@@ -285,6 +285,19 @@ try {
     if ($tokenSidCheckOffset -lt 0 -or $resumeChildOffset -le $tokenSidCheckOffset) {
         throw 'The primary token package SID must match the created profile SID before ResumeThread.'
     }
+    $tokenInformationOffset = $brokerEmitterSource.IndexOf('GetTokenInformation(TOKEN_APPCONTAINER_INFORMATION)', [StringComparison]::Ordinal)
+    $tokenSidPointerLoadOffset = $brokerEmitterSource.IndexOf('Emit-LoadRaxFrame -SlotPosition $tokenInformationSlot', $tokenInformationOffset, [StringComparison]::Ordinal)
+    $tokenRestrictionOffset = $brokerEmitterSource.IndexOf('# TokenHasRestrictions must be TRUE', $tokenSidPointerLoadOffset, [StringComparison]::Ordinal)
+    if ($tokenInformationOffset -lt 0 -or $tokenSidPointerLoadOffset -le $tokenInformationOffset -or
+        $tokenRestrictionOffset -le $tokenSidPointerLoadOffset) {
+        throw 'Primary-token AppContainer SID retrieval must expose the TOKEN_APPCONTAINER_INFORMATION pointer load.'
+    }
+    $tokenSidPointerSource = $brokerEmitterSource.Substring($tokenSidPointerLoadOffset, $tokenRestrictionOffset - $tokenSidPointerLoadOffset)
+    if (-not $tokenSidPointerSource.Contains('0x48, 0x89, 0xC1') -or
+        $tokenSidPointerSource.Contains('0x48, 0x8B, 0x08')) {
+        throw 'EqualSid must receive the PSID value from TOKEN_APPCONTAINER_INFORMATION, not a dereferenced SID data word.'
+    }
+
     $restoreHelperStart = $compilerSource.IndexOf('function Emit-DevBrokerRestoreSecurityDescriptor', [StringComparison]::Ordinal)
     $restoreHelperEnd = $compilerSource.IndexOf('function Emit-DevBrokerWriteAclJournal', $restoreHelperStart, [StringComparison]::Ordinal)
     $restoreHelperSource = $compilerSource.Substring($restoreHelperStart, $restoreHelperEnd - $restoreHelperStart)
