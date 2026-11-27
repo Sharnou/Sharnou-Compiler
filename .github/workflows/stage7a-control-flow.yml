@@ -12,6 +12,7 @@ on:
       - devagent-acl-transaction-recovery-20261126
       - phase-2b8-identity-profile-qualification-20261127
       - phase-2b8-r3-native-per-execution-profile-20261127
+      - phase-2b8-r4-signed-journal-qualification-20261127
   pull_request:
     branches:
       - Sharnou-Compiler
