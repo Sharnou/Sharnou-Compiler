@@ -31,9 +31,26 @@ Therefore -2685 decodes to readWin32=5 and metadataWin32=5 (ERROR_ACCESS_DENIED 
 
 The diagnostic native path was being captured by the test harness but not forwarded into the GitHub Actions log. The Phase 2B.6 diagnostic patch now forwards ACL_RECOVERY_NATIVE_PATH and emits the decoded Win32 fields. The next Windows run must establish the exact path and native call result before any security-policy change is made.
 
+## 2A. Native integrity diagnosis and recovery-host relocation candidate - 2026-11-27
+
+A follow-up native diagnostic established that the broker process launched for recovery was running at Low Integrity:
+
+- The failed Stage 7A run 45999117333 reported `appcontainer=0`, `restricted=0`, `elevation=1`, and `integrityRid=4096` from the broker's own primary token.
+- The same process received `ERROR_ACCESS_DENIED (5)` from native `GetFileAttributesA` for the exact journal path, before the `CreateFileA` recovery open. The PowerShell control in the test runner could still read the journal.
+- The image path used by that candidate was `Build\DevAgentBroker\DevAgentBroker.exe`. The same transaction applies an inheritable Low-IL mandatory label to both `Build` and `Build\DevAgentBroker`. A parent crash leaves those directory labels committed; relaunching the broker from an image in that tree can therefore start the recovery host at Low IL.
+- This is a confirmed host-image placement/integrity defect and a credible contributor to the recovery failure. It is not treated as proof that Low IL alone explains the journal open error; the security descriptor and process access checks still require Windows runtime proof.
+
+The candidate now moves the broker host image to `\.sharnou-devagent-host\DevAgentBroker.exe`, under the checked workspace root and outside both Low-IL writable staging directories. The root receives only the AppContainer's existing read-only inherited grant; the AppContainer must not be able to create or replace files in the host directory. Writable child staging remains limited to `Build` and `Build\DevAgentBroker`; neither their DACLs nor their Low-IL labels are weakened.
+
+The Windows test now checks that the host directory and image do not carry a Low-IL label, that the live broker process is at least Medium IL, and that the launched child remains an AppContainer at Low IL. The host directory is included in the ACL baseline/rollback comparison, and the sandbox probe attempts a write there and must receive access denied. This remains a **candidate fix** until the crash-recovery replay passes on the exact current commit.
+
+Same-head evidence after the relocation candidate:
+- M6 baseline run 46000385100: PASS, 83/83 on commit 091a264b8e6f65b8848cbda16a2afd9cde4a13b4.
+- Stage 7A run 46000385150: in progress at the time this record was written; do not mark recovery fixed until its full log confirms replay and exact descriptor restoration.
+
 ## 3. Workstream A - crash-safe ACL recovery
 
-A.1. Fix the actual native recovery failure, using the forwarded exact path and decoded Win32 diagnostics. Do not weaken the workspace DACL, add broad Users/Everyone ACEs, switch to an unrestricted token, or discard the journal to make the test pass.
+A.1. Validate the host-image relocation candidate against the post-crash native failure and require successful journal replay plus exact DACL/mandatory-label restoration. Do not weaken workspace DACLs, add broad Users/Everyone ACEs, increase child privileges, discard the journal, or treat a Medium-IL host token alone as proof of recovery.
 
 A.2. Validate the journal as a regular, single-link, non-reparse file opened by handle. Verify the final path and file identity are within the canonical workspace root before consuming the contents. Retain the journal on every malformed, inaccessible, truncated, version-mismatched, or restore-failure path.
 
