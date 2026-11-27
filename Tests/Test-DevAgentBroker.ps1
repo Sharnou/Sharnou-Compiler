@@ -280,7 +280,7 @@ try {
         $journalCommit -le $uniqueProfileCall -or $legacyRevokeLines.Count -ne 3) {
         throw 'Legacy shared-profile DACL revocation must narrow root/Build/broker ACLs before the fresh identity and write-ahead snapshot.'
     }
-    $tokenSidCheckOffset = $brokerEmitterSource.IndexOf('TokenAppContainerSid = 31', [StringComparison]::Ordinal)
+    $tokenSidCheckOffset = $brokerEmitterSource.IndexOf('TOKEN_APPCONTAINER_INFORMATION', [StringComparison]::Ordinal)
     $resumeChildOffset = $brokerEmitterSource.IndexOf('TargetRva ([UInt32]0x31A8)', [StringComparison]::Ordinal)
     if ($tokenSidCheckOffset -lt 0 -or $resumeChildOffset -le $tokenSidCheckOffset) {
         throw 'The primary token package SID must match the created profile SID before ResumeThread.'
