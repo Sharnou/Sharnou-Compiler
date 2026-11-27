@@ -246,8 +246,15 @@ try {
     if (-not $compilerSource.Contains('GetFileAttributesA') -or -not $compilerSource.Contains('GetFileInformationByHandle') -or -not $compilerSource.Contains('GetModuleFileNameA') -or -not $compilerSource.Contains('SetCurrentDirectoryA') -or -not $compilerSource.Contains('0x400') -or -not $compilerSource.Contains('0x00200080')) {
         throw 'Image-relative workspace and opened-handle reparse-point checks are missing.'
     }
-    if ($brokerEmitterSource.Contains('Sharnou.DevAgent.ProcessBroker.v1')) {
-        throw 'Production broker must not reuse the stable shared AppContainer profile.'
+    $legacyHelperStart = $compilerSource.IndexOf('function Emit-DevBrokerRevokeLegacyAppContainerSid', [StringComparison]::Ordinal)
+    $legacyHelperEnd = $compilerSource.IndexOf('function Emit-DevBrokerEnsureAppContainerSid', $legacyHelperStart, [StringComparison]::Ordinal)
+    if ($legacyHelperStart -lt 0 -or $legacyHelperEnd -le $legacyHelperStart) {
+        throw 'One-time legacy shared-profile ACL migration helper is missing.'
+    }
+    $legacyHelperSource = $compilerSource.Substring($legacyHelperStart, $legacyHelperEnd - $legacyHelperStart)
+    if (-not $legacyHelperSource.Contains('Sharnou.DevAgent.ProcessBroker.v1') -or
+        -not $legacyHelperSource.Contains('DeriveAppContainerSidFromAppContainerName')) {
+        throw 'Legacy package identity may be resolved only by the bounded ACL-migration helper.'
     }
     if (-not $compilerSource.Contains('BCRYPT_USE_SYSTEM_PREFERRED_RNG') -and
         -not $compilerSource.Contains('BCryptGenRandom(BCRYPT_USE_SYSTEM_PREFERRED_RNG)')) {
@@ -260,8 +267,17 @@ try {
         -not $compilerSource.Contains('EqualSid')) {
         throw 'Native per-execution AppContainer profile creation, child SID binding, or deletion is incomplete.'
     }
-    if ($brokerEmitterSource.Contains('-AccessMode 4')) {
-        throw 'A freshly generated per-execution SID must not require a pre-journal stale-profile ACL revoke.'
+    $legacyRevokeCall = $brokerEmitterSource.IndexOf('Emit-DevBrokerRevokeLegacyAppContainerSid', [StringComparison]::Ordinal)
+    $uniqueProfileCall = $brokerEmitterSource.IndexOf('Emit-DevBrokerEnsureAppContainerSid', [StringComparison]::Ordinal)
+    $journalCommit = $brokerEmitterSource.IndexOf('Emit-DevBrokerWriteAclJournal', [StringComparison]::Ordinal)
+    $legacyRevokeLines = @($brokerEmitterSource -split '\r?\n' | Where-Object {
+        $_.Contains('Emit-DevBrokerUpdateAcl') -and
+        $_.Contains('-SidSlot $legacyAppContainerSidSlot') -and
+        $_.Contains('-AccessMode 4')
+    })
+    if ($legacyRevokeCall -lt 0 -or $uniqueProfileCall -le $legacyRevokeCall -or
+        $journalCommit -le $uniqueProfileCall -or $legacyRevokeLines.Count -ne 3) {
+        throw 'Legacy shared-profile DACL revocation must narrow root/Build/broker ACLs before the fresh identity and write-ahead snapshot.'
     }
     $tokenSidCheckOffset = $brokerEmitterSource.IndexOf('TokenAppContainerSid = 31', [StringComparison]::Ordinal)
     $resumeChildOffset = $brokerEmitterSource.IndexOf('TargetRva ([UInt32]0x31A8)', [StringComparison]::Ordinal)
