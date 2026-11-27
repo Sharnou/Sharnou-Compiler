@@ -1622,10 +1622,10 @@ function Emit-DevBrokerWriteRecoveryTokenDiagnostic {
     $openErrorSlot = $scratch + 0xE9C
     $queryErrorSlot = $scratch + 0xEA0
     $integrityInfoSlot = $scratch + 0xEA8
-    $integrityReturnLengthSlot = $scratch + 0xEB8
-    $integrityRidSlot = $scratch + 0xEC0
-    $textBufferSlot = $scratch + 0xF00
-    $textLengthSlot = $scratch + 0xF80
+    $integrityReturnLengthSlot = $scratch + 0xF28
+    $integrityRidSlot = $scratch + 0xF2C
+    $textBufferSlot = $scratch + 0xF40
+    $textLengthSlot = $scratch + 0xFC0
     $stdoutHandleSlot = $scratch + 0xD60
     $bytesWrittenSlot = $scratch + 0xD68
     $openFailed = New-UniqueLabel -Prefix 'dev_acl_recovery_token_open_failed'
@@ -1636,7 +1636,7 @@ function Emit-DevBrokerWriteRecoveryTokenDiagnostic {
         Emit-StoreZero64Frame -SlotPosition $slot
     }
     foreach ($slot in @($appContainerSlot, $restrictedSlot, $elevationSlot, $openErrorSlot)) {
-        Emit-StoreBits32Frame -SlotPosition $slot -Value ([UInt32]::MaxValue)
+        Emit-StoreBits32Frame -SlotPosition $slot -Value 0
     }
 
     # Query the broker's own primary token, not the PowerShell test harness token.
@@ -1675,7 +1675,7 @@ function Emit-DevBrokerWriteRecoveryTokenDiagnostic {
         Mark-CodeLabel -Label $queryFailed
         Emit-Win64CallIat -TargetRva ([UInt32]0x3268) -StackArguments @() # GetLastError
         Emit-StoreEaxFrame -SlotPosition $queryErrorSlot
-        Emit-StoreBits32Frame -SlotPosition ([int]$query.ValueSlot) -Value ([UInt32]::MaxValue)
+        Emit-StoreBits32Frame -SlotPosition ([int]$query.ValueSlot) -Value 0
         Mark-CodeLabel -Label $queryDone
     }
 
@@ -1690,7 +1690,7 @@ function Emit-DevBrokerWriteRecoveryTokenDiagnostic {
     Emit-Bytes -Bytes ([byte[]]@(0xBA, 0x19, 0x00, 0x00, 0x00)) # TokenIntegrityLevel = 25
     Emit-Bytes -Bytes ([byte[]]@(0x4C, 0x8D, 0x85))
     Emit-I32 -Value (Get-FrameDisp -SlotPosition $integrityInfoSlot)
-    Emit-Bytes -Bytes ([byte[]]@(0x41, 0xB9, 0x10, 0x00, 0x00, 0x00)) # TOKEN_MANDATORY_LABEL = 16 bytes
+    Emit-Bytes -Bytes ([byte[]]@(0x41, 0xB9, 0x80, 0x00, 0x00, 0x00)) # 128-byte TOKEN_MANDATORY_LABEL plus SID buffer
     Emit-Win64CallIat -TargetRva ([UInt32]0x32D8) -StackArguments @(
         @{ Kind = 'FrameAddress'; SlotPosition = $integrityReturnLengthSlot }
     ) # GetTokenInformation
