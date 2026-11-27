@@ -582,21 +582,22 @@ try {
             }
             $dpapiEnvelopeInfo = Get-Item -LiteralPath $dpapiForgeryPath
             if ($dpapiEnvelopeInfo.Length -lt 32 -or $dpapiEnvelopeInfo.Length -gt 65536) {
-                throw "Sandbox DPAPI envelope length is outside 32..65536 bytes: $($dpapiEnvelopeInfo.Length)"
+                throw "Sandbox DPAPI envelope text is outside 32..65536 bytes: $($dpapiEnvelopeInfo.Length)"
             }
-            Add-Type -AssemblyName System.Security -ErrorAction Stop
-            $dpapiEntropy = [Text.Encoding]::UTF8.GetBytes('Sharnou.DevAgent.AuthenticatedJournal.v2|user-scope')
-            $dpapiEnvelope = [IO.File]::ReadAllBytes($dpapiForgeryPath)
+            $dpapiEnvelopeText = [IO.File]::ReadAllText($dpapiForgeryPath, [Text.Encoding]::ASCII).Trim()
             try {
-                $dpapiPlaintext = [Security.Cryptography.ProtectedData]::Unprotect(
-                    $dpapiEnvelope,
-                    $dpapiEntropy,
-                    [Security.Cryptography.DataProtectionScope]::CurrentUser)
+                $dpapiSecureString = ConvertTo-SecureString -String $dpapiEnvelopeText -ErrorAction Stop
             }
             catch {
                 throw ("AppContainer created a CurrentUser DPAPI envelope, but the trusted broker user context could not unprotect it: {0}" -f $_.Exception.GetBaseException().Message)
             }
-            $dpapiPlaintextText = [Text.Encoding]::ASCII.GetString($dpapiPlaintext)
+            $dpapiBstr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($dpapiSecureString)
+            try {
+                $dpapiPlaintextText = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($dpapiBstr)
+            }
+            finally {
+                [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($dpapiBstr)
+            }
             if ($dpapiPlaintextText -cne 'appcontainer-created-dpapi-record-v1') {
                 throw 'AppContainer DPAPI envelope did not decrypt to the exact sandbox fixture payload.'
             }
