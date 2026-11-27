@@ -559,7 +559,7 @@ Candidate implementation:
 Do not mark Phase 2B.5 complete until the exact-head Windows workflow and integrated ABI/AppContainer, workspace-security, baseline and Stage 7A regression workflows pass. **Model-facing and autonomous process execution remain DISABLED.** A separate production integration milestone and explicit owner approval are still required after all remaining gates; Phase 2B.5 alone cannot enable it.
 
 
-## Issue #14 — Phase 2B.5 verification result — 2026-11-27
+## Issue #14 - Phase 2B.5 verification result - 2026-11-27
 
 Phase 2B.5 has passed as a **test-only Windows fixture** on source commit d6ddfa0e272520982e537790e9ec45ffe49bbcee. Dedicated Windows Server 2025 run 45984424420: **121 assertions PASS**. The exact two-handle STARTUPINFOEX allowlist, separate stdout/stderr capture, exact/overflow 65,536-byte cap, timeout, injected ReadFile failure, Job Object descendant containment, and handle cleanup all passed.
 

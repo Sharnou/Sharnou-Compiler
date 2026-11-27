@@ -331,7 +331,7 @@ The dedicated workflow exercises separate streams, exact-cap and overflow cases,
 **Enablement rule:** Phase 2B.5 completion alone does not enable model-facing or autonomous execution. A later production-integration milestone must close the clean-environment and loader/DLL-search gates, integrate restricted-token/AppContainer + per-execution workspace ACLs with the production broker, integrate the handle list/output cap with the production emitter, add cancellation and durable audit/restart recovery, pass same-head Windows adversarial and regression suites, and receive explicit owner approval for a limited allowlisted canary. General autonomy follows only after that canary is proven and a kill switch is operational. No calendar date is asserted; acceptance is gate-driven.
 
 
-## Phase 2B.5 verification — 2026-11-27
+## Phase 2B.5 verification - 2026-11-27
 
 **Result: PASS as a Windows Server 2025 test-only process-launch/output-capture fixture.** Exact tested source commit: d6ddfa0e272520982e537790e9ec45ffe49bbcee. Dedicated workflow run 45984424420 completed successfully with **121 assertions**. Test log SHA-256 values: harness 7ABDCE355A1811C75AB98188E7BDBDEA7DF2A7940DDBA76079E4574912F780DB; native ABI manifest C284977638A126D906E422A9F7A11825D807B57B33BD0F275B70C1BC30813633; NativeInterop 0DFD437AE263658E9CD8BB176BAE9FFCA56673C10F651C522512BD5AC209E3DB; fixed child D2FF866D377DA80C690E753DC69078416443A1FE1A42A127568E9A61CAE45C49.
 

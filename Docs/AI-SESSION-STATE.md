@@ -1167,7 +1167,7 @@ Expected adversarial checks:
 No Windows pass, build, production import, model-execution permission, merge or release is claimed at this checkpoint. **Model-facing process execution and autonomous process execution remain DISABLED.** Phase 2B.5 must pass on the exact commit before being closed; a later production integration and explicit approval are separately required before a limited model-facing canary.
 
 
-## Phase 2B.5 — final Windows verification update — 2026-11-27
+## Phase 2B.5 - final Windows verification update - 2026-11-27
 
 **Accepted scope: test-only fixture PASS.** Tested source commit: d6ddfa0e272520982e537790e9ec45ffe49bbcee. Dedicated Windows Server 2025 workflow run 45984424420 passed **121/121 assertions**. Captured SHA-256 from the CI log:
 - Harness: 7ABDCE355A1811C75AB98188E7BDBDEA7DF2A7940DDBA76079E4574912F780DB
