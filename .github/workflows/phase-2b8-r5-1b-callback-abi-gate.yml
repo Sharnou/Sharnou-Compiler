@@ -1,0 +1,150 @@
+name: Phase 2B.8 R5.1.b Exact-Head Windows Callback ABI Gate
+
+on:
+  push:
+    branches:
+      - phase-2b8-r5-1b-win64-callback-abi-r2-20261127
+  pull_request:
+    branches:
+      - phase-2b8-r5-1a-pe-relocations-20261127
+    types:
+      - opened
+      - synchronize
+      - reopened
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: phase-2b8-r5-1b-callback-abi
+  cancel-in-progress: false
+
+jobs:
+  r51b-callback-qualification:
+    name: Exact-head Windows callback-pointer and ABI regression gate
+    runs-on: windows-2025
+    timeout-minutes: 120
+    env:
+      EXPECTED_TESTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - name: Checkout exact PR source head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Initialize exact-head evidence
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $evidence = Join-Path $env:GITHUB_WORKSPACE 'r51b-evidence'
+          New-Item -ItemType Directory -Path $evidence -Force | Out-Null
+          $actualHead = (& git rev-parse HEAD).Trim()
+          if ($LASTEXITCODE -ne 0 -or $actualHead -ne $env:EXPECTED_TESTED_SHA) {
+            throw "Checkout head mismatch: expected=$env:EXPECTED_TESTED_SHA actual=$actualHead"
+          }
+          $metadata = @(
+            "repository=$env:GITHUB_REPOSITORY",
+            "event=$env:GITHUB_EVENT_NAME",
+            "event_sha=$env:GITHUB_SHA",
+            "tested_commit=$actualHead",
+            "workflow=$env:GITHUB_WORKFLOW",
+            "run_id=$env:GITHUB_RUN_ID",
+            "run_attempt=$env:GITHUB_RUN_ATTEMPT",
+            "runner_os=$env:RUNNER_OS",
+            "runner_arch=$env:RUNNER_ARCH",
+            "windows=$([Environment]::OSVersion.VersionString)",
+            "powershell=$($PSVersionTable.PSVersion.ToString())"
+          )
+          [IO.File]::WriteAllLines((Join-Path $evidence 'metadata.txt'), $metadata, [Text.Encoding]::ASCII)
+          $tracked = @(& git ls-files)
+          if ($LASTEXITCODE -ne 0 -or $tracked.Count -eq 0) { throw 'Could not enumerate tracked repository files.' }
+          $hashLines = foreach ($relativePath in $tracked) {
+            if (-not (Test-Path -LiteralPath $relativePath -PathType Leaf)) { throw "Tracked file missing: $relativePath" }
+            $item = Get-FileHash -LiteralPath $relativePath -Algorithm SHA256
+            "{0}  {1}" -f $item.Hash.ToLowerInvariant(), $relativePath
+          }
+          [IO.File]::WriteAllLines((Join-Path $evidence 'tracked-files.sha256'), [string[]]$hashLines, [Text.Encoding]::ASCII)
+
+      - name: Verify repository source encoding
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          # Enforce ASCII on executable/compiler inputs and workflow/configuration files.
+          # Markdown documentation is UTF-8 content, not compiler source; it is intentionally
+          # excluded so typographic punctuation cannot block a native-code qualification run.
+          $tracked = @(& git ls-files)
+          if ($LASTEXITCODE -ne 0) { throw 'Could not enumerate tracked source files.' }
+          $files = foreach ($relativePath in $tracked) {
+            $extension = [IO.Path]::GetExtension($relativePath)
+            if ($extension -in @('.ps1', '.sharnou', '.yml', '.json', '.b64')) {
+              Get-Item -LiteralPath $relativePath -ErrorAction Stop
+            }
+          }
+          foreach ($file in $files) {
+            $bytes = [IO.File]::ReadAllBytes($file.FullName)
+            if ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF) {
+              throw "UTF-8 BOM is not allowed: $($file.FullName)"
+            }
+            foreach ($byte in $bytes) {
+              if ($byte -gt 127) { throw "Non-ASCII byte found: $($file.FullName)" }
+            }
+          }
+          Write-Host 'PASS: source encoding gate.'
+
+      - name: Run focused R5.1.b Win64 callback ABI and relocation tests
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $log = Join-Path (Join-Path $env:GITHUB_WORKSPACE 'r51b-evidence') 'win64-callback-abi.log'
+          Start-Transcript -LiteralPath $log -Force
+          try { & .\Tests\Test-Win64CallbackABI.ps1 } finally { Stop-Transcript }
+
+      - name: Run complete combined regression suite
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $log = Join-Path (Join-Path $env:GITHUB_WORKSPACE 'r51b-evidence') 'combined-Test.ps1.log'
+          Start-Transcript -LiteralPath $log -Force
+          try { & .\Test.ps1 } finally { Stop-Transcript }
+
+      - name: Write exact-head PASS manifest
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $actualHead = (& git rev-parse HEAD).Trim()
+          if ($LASTEXITCODE -ne 0 -or $actualHead -ne $env:EXPECTED_TESTED_SHA) {
+            throw 'Checkout head changed during R5.1.b qualification.'
+          }
+          $result = [ordered]@{
+            acceptance = 'PASS'
+            scope = 'R5.1.b typed SERVICE_MAIN_FUNCTIONW and HANDLER_FUNCTION_EX callback pointers, runtime ABI probe, PE relocations and inherited regressions'
+            native_scm_service_implemented = $false
+            repository = $env:GITHUB_REPOSITORY
+            event = $env:GITHUB_EVENT_NAME
+            event_sha = $env:GITHUB_SHA
+            tested_commit = $actualHead
+            workflow_run = $env:GITHUB_RUN_ID
+            runner = $env:RUNNER_OS
+            windows = [Environment]::OSVersion.VersionString
+            suites = @(
+              'R5.1.a multi-target DIR64 relocation directory builder/parser',
+              'R5.1.b relocated typed code-label pointers and runtime callback ABI probes',
+              'Actual PE import, section, unwind and relocation verifier',
+              'Stage 7A, collection imports, stack-probe/unwind and Runtime ABI',
+              'DevAgent broker, execution identity, journal, environment, AppContainer and split streams',
+              'Frozen M1-M6 regression'
+            )
+          }
+          $result | ConvertTo-Json -Depth 5 |
+            Set-Content -LiteralPath (Join-Path $env:GITHUB_WORKSPACE 'r51b-evidence\exact-head-acceptance.json') -Encoding ASCII
+          Write-Host 'R5.1.b exact-head Windows callback ABI qualification: PASS' -ForegroundColor Green
+
+      - name: Upload exact-head evidence bundle
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: r5-1b-callback-abi-evidence
+          path: r51b-evidence/
+          if-no-files-found: warn
+          retention-days: 14

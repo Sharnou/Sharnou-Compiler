@@ -332,3 +332,12 @@ R5.1 must implement a real Windows SCM host using the Sharnou native code-genera
 - Current draft PR #32 contains the service lifecycle specification and compiler preflight only. Do not call it a service implementation or mark it passed.
 - R5.2 service identity/key, R5.3 pipe transport, R5.4 signed journal, R5.5 transaction ownership, R5.6 recovery, R5.7 independent review follow only after R5.1.
 - Model-facing and autonomous execution remain disabled until full Phase 2B.8 acceptance and separate policy authorization milestones.
+
+
+## R5.1.a/.b result and R5.1.c dependency — 2026-11-27
+
+R5.1.a is accepted for its relocation primitive scope on exact Windows source head `2583faec76d5e469962756d17d2ffabecd6fcd98`, run 46066382172, artifact 15231785189 (SHA-256 `698ebd55dfb66b529cd8b001aa986e4832e995e8f37a68f7906c7db19546b725`). The 21-case relocation suite and combined compiler/ABI/broker/Phase 2B.8 regression passed, including M1-M6 83/83. Low-IL AppContainer DPAPI protection remains INCONCLUSIVE due to missing System.Security in the CI PowerShell process.
+
+R5.1.b callback ABI implementation passed on predecessor head `beb7f47989b1180dcc83c916422cee5123ce58d2`, run 46066393744, artifact 15230738893 (SHA-256 `90a45413274ff3f86d665fb0ecdf90a03071cc81ca30da076eef139a7317bed1`). That run verifies actual relocated ServiceMain/HandlerEx callback pointers and runtime ABI probes, but the old PR base was stale. The correctly stacked replacement is draft PR #35 (base R5.1.a accepted head); its exact-head run 46067337857 is pending and must pass before PR #35 can be accepted.
+
+Next: R5.1.c actual Sharnou-generated SCM service host and disposable Windows SCM lifecycle tests. These primitive passes do not equal a service implementation or full Phase 2B.8 acceptance. Keep model-facing and autonomous execution disabled.
