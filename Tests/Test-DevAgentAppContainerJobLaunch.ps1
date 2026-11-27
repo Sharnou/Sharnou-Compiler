@@ -267,22 +267,25 @@ function Invoke-Phase2B4Trial {
             throw 'The fixed System32 directory is not on a canonical local drive.'
         }
         if ([string]::IsNullOrWhiteSpace($env:SystemRoot)) { throw 'SystemRoot is missing from the supervisor environment.' }
-        $driveCurrentDirectoryEntry = ('=' + $driveRoot.Substring(0,2) + '=' + $script:SystemDirectory)
-        $environmentEntries = @(
-            $driveCurrentDirectoryEntry,
+        $driveCurrentDirectoryEntries = New-Object 'System.Collections.Generic.List[string]'
+        $driveCurrentDirectoryEntries.Add(('=' + $driveRoot.Substring(0,2) + '=' + $script:SystemDirectory))
+        # Preserve drive-relative current directories for the system, workspace and temp volumes.
+        $parentDirectory = [Environment]::CurrentDirectory
+        $parentDrive = [System.IO.Path]::GetPathRoot($parentDirectory)
+        if ($parentDrive.Length -eq 3 -and $parentDrive[1] -eq ':' -and [char]$parentDrive[2] -eq [char]92 -and -not $parentDrive.Equals($driveRoot,[StringComparison]::OrdinalIgnoreCase)) {
+            $driveCurrentDirectoryEntries.Add(('=' + $parentDrive.Substring(0,2) + '=' + $parentDirectory))
+        }
+        $tempDrive = [System.IO.Path]::GetPathRoot($script:TempDirectory)
+        if ($tempDrive.Length -eq 3 -and $tempDrive[1] -eq ':' -and [char]$tempDrive[2] -eq [char]92 -and -not $tempDrive.Equals($driveRoot,[StringComparison]::OrdinalIgnoreCase) -and -not $tempDrive.Equals($parentDrive,[StringComparison]::OrdinalIgnoreCase)) {
+            $driveCurrentDirectoryEntries.Add(('=' + $tempDrive.Substring(0,2) + '=' + $script:TempDirectory))
+        }
+        $environmentEntries = @($driveCurrentDirectoryEntries.ToArray()) + @(
             ('SystemRoot=' + $env:SystemRoot),
             ('WINDIR=' + $env:SystemRoot),
             ('PATH=' + $script:SystemDirectory),
             ('TEMP=' + $script:TempDirectory),
             ('TMP=' + $script:TempDirectory)
         )
-        foreach ($entry in $environmentEntries) {
-            $separator = if ($entry.StartsWith('=')) { $entry.IndexOf('=',3) } else { $entry.IndexOf('=') }
-            if ($separator -lt 1 -or $separator -eq ($entry.Length - 1)) {
-                throw 'The explicit child environment contains a malformed or empty value.'
-            }
-        }
-        $environment = New-SharnouTrackedEnvironmentBlock -Entries $environmentEntries -Allocations $allocations
 
         Assert-SharnouNoReparseAncestors -Path $script:ChildImage
         if (-not (Test-Path -LiteralPath $script:ChildImage -PathType Leaf)) { throw 'Fixed System32 whoami.exe is missing.' }
