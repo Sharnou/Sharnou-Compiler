@@ -219,8 +219,32 @@ function New-SharnouTrackedEnvironmentBlock {
     }
     $ordered = [string[]]$Entries.Clone()
     [Array]::Sort($ordered,[StringComparer]::OrdinalIgnoreCase)
+    $seenNames = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
     foreach ($entry in $ordered) {
-        if ($entry -notmatch '^[^=]+=') { throw "Invalid environment block entry: $entry" }
+        if ($entry.StartsWith('=')) {
+            # CreateProcessW supports the special per-drive current-directory
+            # variables (for example, =C:=C:\Windows\System32). They must be
+            # retained explicitly when a custom environment block is supplied.
+            if ($entry -notmatch '^=[A-Za-z]:=.+
+    $blockText = ($ordered -join [char]0) + [char]0 + [char]0
+    $bytes = [Text.Encoding]::Unicode.GetBytes($blockText)
+    if ($bytes.Length -lt 4 -or $bytes.Length -gt 32768 -or $bytes[$bytes.Length-1] -ne 0 -or $bytes[$bytes.Length-2] -ne 0 -or $bytes[$bytes.Length-3] -ne 0 -or $bytes[$bytes.Length-4] -ne 0) {
+        throw 'Environment block is not a bounded UTF-16 double-NUL-terminated block.'
+    }
+    $pointer = [Runtime.InteropServices.Marshal]::AllocHGlobal($bytes.Length)
+    if ($pointer -eq [IntPtr]::Zero) { throw 'AllocHGlobal returned NULL for the environment block.' }
+    [Runtime.InteropServices.Marshal]::Copy($bytes,0,$pointer,$bytes.Length)
+    $Allocations.Add($pointer)
+    return $pointer
+}
+) { throw "Invalid per-drive environment entry: $entry" }
+            $variableName = $entry.Substring(0,3)
+        }
+        else {
+            if ($entry -notmatch '^[^=]+=') { throw "Invalid environment block entry: $entry" }
+            $variableName = $entry.Substring(0,$entry.IndexOf('='))
+        }
+        if (-not $seenNames.Add($variableName)) { throw "Duplicate environment variable name: $variableName" }
         if ($entry.IndexOf([char]0) -ge 0) { throw 'Environment block entry contains an embedded NUL.' }
     }
     $blockText = ($ordered -join [char]0) + [char]0 + [char]0

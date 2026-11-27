@@ -1220,6 +1220,7 @@
       ],
       "inheritHandles": false,
       "environmentAllowlist": [
+        "=drive-current-directory",
         "SystemRoot",
         "WINDIR",
         "PATH",
