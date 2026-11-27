@@ -18,7 +18,7 @@ $manifest = Get-Content -LiteralPath $manifestPath -Raw -Encoding UTF8 | Convert
 if (@($manifest.phase2B5Apis).Count -ne 6) {
     throw 'Phase 2B.5 requires exactly seven separately reviewed pipe/handle APIs.'
 }
-if ($manifest.phase2B5Contract.combinedOutputLimitBytes -ne 65536) {
+if ($manifest.phase2B5Contract.outputCapture.combinedOutputLimitBytes -ne 65536) {
     throw 'Phase 2B.5 combined-output cap changed unexpectedly.'
 }
 
@@ -30,10 +30,10 @@ $script:BaseDirectory = Join-Path ([IO.Path]::GetTempPath()) ('Sharnou-DevAgent-
 $script:ChildScript = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot 'DevAgentBroker\PipeCaptureChild.ps1'))
 $script:SystemDirectory = [Environment]::SystemDirectory
 $script:ChildImage = [IO.Path]::GetFullPath((Join-Path $script:SystemDirectory 'WindowsPowerShell\v1.0\powershell.exe'))
-$script:OutputLimit = [int]$manifest.phase2B5Contract.combinedOutputLimitBytes
+$script:OutputLimit = [int]$manifest.phase2B5Contract.outputCapture.combinedOutputLimitBytes
 $script:NativeInteropPath = Join-Path $PSScriptRoot 'DevAgentBroker\NativeInterop.ps1'
 $script:ScratchAllocations = New-Object 'System.Collections.Generic.List[IntPtr]'
-$script:ChunkSize = [int]$manifest.phase2B5Contract.readChunkBytes
+$script:ChunkSize = [int]$manifest.phase2B5Contract.outputCapture.readChunkBytes
 $script:SupervisorHandleBaseline = 0
 
 function Assert-Phase2B5 {
