@@ -538,6 +538,13 @@ try {
         $actual = ($numericLines -join $nl).TrimEnd([char[]]@([char]13, [char]10))
         if ($exitCode -ne 0) { throw "Broker fixture process exited with code $exitCode. Output=[$actual]." }
         if (-not [string]::Equals($actual, $expected, [StringComparison]::Ordinal)) {
+            if (Test-Path -LiteralPath $dpapiStatusPath -PathType Leaf) {
+                $sandboxDpapiStatus = [IO.File]::ReadAllText($dpapiStatusPath, [Text.Encoding]::ASCII).Trim()
+                Write-Host ("DEVAGENT_SANDBOX_DPAPI_STATUS|{0}" -f $sandboxDpapiStatus)
+            }
+            if (Test-Path -LiteralPath $dpapiForgeryPath -PathType Leaf) {
+                Write-Host ("DEVAGENT_SANDBOX_DPAPI_ENVELOPE_BYTES|{0}" -f (Get-Item -LiteralPath $dpapiForgeryPath).Length)
+            }
             $timeoutDiagnosticPath = Join-Path $buildRoot 'timeout-probe-diagnostic.txt'
             Write-Host ("DEVAGENT_TIMEOUT_MARKER_PRESENT|{0}" -f (Test-Path -LiteralPath $childPidPath -PathType Leaf))
             if (Test-Path -LiteralPath $timeoutDiagnosticPath -PathType Leaf) {
