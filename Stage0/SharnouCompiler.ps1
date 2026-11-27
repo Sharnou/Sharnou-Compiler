@@ -1037,6 +1037,46 @@ function Emit-DevBrokerVerifyScript {
     Mark-CodeLabel -Label $done
 }
 
+function Emit-DevBrokerRevokeLegacyAppContainerSid {
+    param([int] $SidSlot, [string] $FailureLabel)
+    $nameItem = Register-WideDataConstant -Value 'Sharnou.DevAgent.ProcessBroker.v1'
+    $displayItem = Register-WideDataConstant -Value 'Sharnou Legacy Broker Profile (ACL Migration)'
+    $descriptionItem = Register-WideDataConstant -Value 'Legacy zero-capability profile retained only for one-time workspace ACL revocation.'
+    $alreadyExists = New-UniqueLabel -Prefix 'dev_legacy_appcontainer_exists'
+    $done = New-UniqueLabel -Prefix 'dev_legacy_appcontainer_ready'
+    Emit-StoreZero64Frame -SlotPosition $SidSlot
+    Emit-DataAddress -DataItem $nameItem
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1))
+    Emit-DataAddress -DataItem $displayItem
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC2))
+    Emit-DataAddress -DataItem $descriptionItem
+    Emit-Bytes -Bytes ([byte[]]@(0x49, 0x89, 0xC0, 0x45, 0x33, 0xC9))
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3278) -StackArguments @(
+        @{ Kind = 'Immediate'; Value = 0 },
+        @{ Kind = 'FrameAddress'; SlotPosition = $SidSlot }
+    ) # Create legacy profile only to derive its existing package SID
+    Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
+    Emit-JumpConditional -ConditionCode 0x84 -Label $done
+    Emit-Bytes -Bytes ([byte[]]@(0x3D))
+    Emit-I32 -Value -2147024713 # HRESULT_FROM_WIN32(ERROR_ALREADY_EXISTS)
+    Emit-JumpConditional -ConditionCode 0x84 -Label $alreadyExists
+    Emit-Jump -Label $FailureLabel
+
+    Mark-CodeLabel -Label $alreadyExists
+    Emit-DataAddress -DataItem $nameItem
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1))
+    Emit-LeaRaxFrame -SlotPosition $SidSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC2))
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3280) -StackArguments @() # DeriveAppContainerSidFromAppContainerName
+    Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
+    Emit-JumpConditional -ConditionCode 0x85 -Label $FailureLabel
+
+    Mark-CodeLabel -Label $done
+    Emit-LoadRaxFrame -SlotPosition $SidSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x85, 0xC0))
+    Emit-JumpConditional -ConditionCode 0x84 -Label $FailureLabel
+}
+
 function Emit-DevBrokerEnsureAppContainerSid {
     param(
         [int] $SidSlot,
@@ -2438,6 +2478,7 @@ function Emit-DevRunTool {
     $profileNameSlot = $scratch + 0xF00
     $profileRandomSlot = $scratch + 0xF80
     $derivedProfileSidSlot = $scratch + 0xF90
+    $legacyAppContainerSidSlot = $scratch + 0xF98
     $mutexAcquiredSlot = $scratch + 0xAF8
     $attributeListReadySlot = $scratch + 0xAFC
     $childActiveSlot = $scratch + 0xB00
@@ -2477,7 +2518,7 @@ function Emit-DevRunTool {
     foreach ($slot in @(
         $jobHandleSlot, $hashFileHandleSlot, $attributeListSlot, $pipeReadSlot,
         $pipeWriteSlot, $nulHandleSlot, $outputBufferSlot, $outputFileHandleSlot,
-        $appContainerSidSlot, $mutexHandleSlot, $sourceTokenSlot,
+        $appContainerSidSlot, $legacyAppContainerSidSlot, $mutexHandleSlot, $sourceTokenSlot,
         $restrictedTokenSlot, $childTokenSlot, $journalHandleSlot,
         $rootDescriptorSlot, $buildDescriptorSlot, $brokerDescriptorSlot,
         $journalBufferSlot
@@ -2860,8 +2901,17 @@ function Emit-DevRunTool {
     # so rebuild the committed journal target before the next transaction starts.
     Emit-DevBrokerBuildWorkspacePath -RootSlot $workspaceRootSlot -RootLengthSlot $rootLengthSlot -SuffixItem $journalSuffixItem -SuffixLength $journalSuffixLength -DestinationSlot $journalPathSlot
 
-    # The fresh profile SID has never been granted workspace access. Do not mutate
-    # any ACL before the durable snapshot; all permission changes follow the commit.
+    # One-time migration: remove any ACL grants left for the former shared package SID.
+    # REVOKE_ACCESS only narrows DACL permissions; no access is expanded here. The
+    # journal snapshot is then captured from the post-migration state, before grants
+    # for the fresh per-execution SID are applied.
+    Emit-DevBrokerRevokeLegacyAppContainerSid -SidSlot $legacyAppContainerSidSlot -FailureLabel $appContainerFail
+    Emit-DevBrokerUpdateAcl -PathSlot $workspaceRootSlot -SidSlot $legacyAppContainerSidSlot -AccessMask ([UInt32]0) -AccessMode 4 -FailureLabel $aclFail
+    Emit-DevBrokerUpdateAcl -PathSlot $buildPathSlot -SidSlot $legacyAppContainerSidSlot -AccessMask ([UInt32]0) -AccessMode 4 -SetLowIntegrityLabel $false -FailureLabel $aclFail
+    Emit-DevBrokerUpdateAcl -PathSlot $brokerDirectorySlot -SidSlot $legacyAppContainerSidSlot -AccessMask ([UInt32]0) -AccessMode 4 -SetLowIntegrityLabel $false -FailureLabel $aclFail
+
+    # A separate fresh identity is created for the actual child; the stable legacy
+    # SID is never placed in SECURITY_CAPABILITIES or used for a process token.
     Emit-DevBrokerEnsureAppContainerSid -SidSlot $appContainerSidSlot -ProfileNameSlot $profileNameSlot -RandomSlot $profileRandomSlot -DerivedSidSlot $derivedProfileSidSlot -ProfileCreatedSlot $profileCreatedSlot -FailureLabel $appContainerFail
 
     Emit-DevBrokerWriteAclJournal -JournalPathSlot $journalPathSlot -TempPathSlot $journalTempPathSlot -WorkspaceRootSlot $workspaceRootSlot -BuildPathSlot $buildPathSlot -BrokerDirectorySlot $brokerDirectorySlot -JournalHandleSlot $journalHandleSlot -JournalWrittenSlot $journalWrittenSlot -HeaderSlot $journalHeaderSlot -RootDescriptorSlot $rootDescriptorSlot -BuildDescriptorSlot $buildDescriptorSlot -BrokerDescriptorSlot $brokerDescriptorSlot -RootLengthSlot $rootDescriptorLengthSlot -BuildLengthSlot $buildDescriptorLengthSlot -BrokerLengthSlot $brokerDescriptorLengthSlot -TransactionActiveSlot $transactionActiveSlot -FailureLabel $journalFail
@@ -3674,6 +3724,14 @@ function Emit-DevRunTool {
     Emit-JumpConditional -ConditionCode 0x84 -Label $skipFreeSid
     Emit-Win64CallIat -TargetRva ([UInt32]0x32A8) -StackArguments @() # FreeSid
     Mark-CodeLabel -Label $skipFreeSid
+
+    Emit-LoadRcxFrame -SlotPosition $legacyAppContainerSidSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x85, 0xC9))
+    $skipFreeLegacySid = New-UniqueLabel -Prefix 'dev_tool_skip_free_legacy_sid'
+    Emit-JumpConditional -ConditionCode 0x84 -Label $skipFreeLegacySid
+    Emit-Win64CallIat -TargetRva ([UInt32]0x32A8) -StackArguments @() # FreeSid
+    Emit-StoreZero64Frame -SlotPosition $legacyAppContainerSidSlot
+    Mark-CodeLabel -Label $skipFreeLegacySid
 
     Emit-LoadEaxFrame -SlotPosition $mutexAcquiredSlot
     Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
