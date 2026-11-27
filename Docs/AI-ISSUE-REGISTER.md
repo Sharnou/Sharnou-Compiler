@@ -404,3 +404,28 @@ Classification: REPOSITORY PRESENT / STATIC REVIEWED; historical PR #7 WINDOWS C
 - Earlier run 45771836551 failed only at the broker fixture output comparison on prior head `4f03b25841dd3e35e48abb6713024a075fdcd08b`; the later single-separator image-suffix correction at `7a15892a...` is followed by successful exact-head runs.
 - The PR18 security design document was updated in the latest docs-only commits to match native CNG and image-derived workspace discovery. The broker still changes process-wide current directory and does not restore it; this needs explicit serialization or removal before concurrent use.
 - The default branch has no source changes from this audit. Only the session-state and issue-register status documents are changed; no compiler, test, workflow, runtime, Engine, IDE, or game source is changed. The development plan remains unchanged because 7B and autonomous-agent scope are not newly accepted.
+
+
+## Scheduled live blocker and DevAgent update - 2026-11-27 08:08 Africa/Cairo
+
+### Baseline and ABI
+- Default HEAD at review: 8893ef5156b271132a4104300beb55cac5a74923. Latest default Stage 7A run 45638680338 passed 23/23 on 6899a086bb9b212a7a1e714d1e8fba375ae28fb6; the five commits to current HEAD changed only the session-state and issue-register documents.
+- PR #6 remains OPEN / UNMERGED at 9dfe1bc09685a6f7deb9d29b5192b1aae0686039, 15 ahead / 57 behind. Its latest runs 44700641397 (83/83) and 44700641419 (Stage 7A 23/23) succeeded. Do not merge it automatically.
+- PR #18 carries the baseline and ABI candidate but remains OPEN / DRAFT / UNMERGED at a8e0ebcf3bfa453cf0011fee673522743e9d300e, 197 ahead / 2 behind, 48 changed paths, 7,846 additions / 117 deletions; mergeable=false. Its exact-head run 45918027479 passed the baseline 83/83. The baseline remains absent from default.
+- The baseline runner records members_verified_against_original_sha256_manifest=false; it does not independently load the original SHA256SUMS.txt. The separate R25-R4 archive comparison remains NOT RUN. Keep issue #9 OPEN.
+- PR #18 Windows run 45918027351 passed Stage 7A 24/24 (9 positive, 12 negative, 3 instruction checks), collection imports 2/2, stack-probe/unwind 6/6, Runtime ABI, DevAgent broker phase-1, M1-M6 83/83 and Combined result. These are feature-branch results, not default-branch acceptance.
+- Issue #1 remains OPEN. The candidate's stack-probe/unwind suite passed 6/6 and Runtime ABI passed, but no OS RtlVirtualUnwind/exception-dispatch runtime test was found. Emit-Win64CallIat supports typed stack descriptors up to 12 arguments; the first four register arguments remain manually prepared, so a complete signature-driven API marshaller is still missing.
+
+### DevAgent security boundary
+- PR #18 Phase 2B.2-2B.4 remain test-only PowerShell/.NET P/Invoke fixtures, not production broker integration. Latest runs: 45918027341 (integrated fixture SUCCESS; 11 profile/token, 30 ACL and 41 Job Object assertions), 45918027348 (ACL 30/30), 45918027377 (Job Object/AppContainer 41/41), and 45918027504 (workspace transaction/security 46/46). ABI contract run 45918027532 succeeded.
+- The Phase 2B.4 fixture verifies a real AppContainer token, exact package SID, Low-or-lower integrity, zero capabilities, Job Object membership and fail-closed resume ordering for fixed System32 whoami.exe. It does not accept model/user-selected commands, paths or arguments.
+- Explicit custom CreateProcessW environment creation failed with Win32 203 on prior head a2e3aae9... (runs 45917660587 and 45917660542). Current successful fixture uses lpEnvironment=NULL and inherits the runner environment for the fixed whoami test. The clean production environment remains BLOCKED.
+- The production Phase-1 broker still uses CreateProcessA with the caller token and inherited environment, no AppContainer integration, and no stdout/stderr handle capture. It also changes process-wide current directory without restoring it. Do not expose it to model-generated plans.
+- Next bounded proposal: Phase 2B.5 test-only STARTUPINFOEX handle allowlist and bounded concurrent stdout/stderr capture. Use the exact child write-handle list, non-inheritable parent read handles, STARTF_USESTDHANDLES, concurrent stream drains, a combined byte cap and Job Object termination on overflow. The handle-list attribute requires bInheritHandles=TRUE. Keep clean-environment remediation as a separate production gate. No source implementation or workflow dispatch was authorized in this run.
+
+### Disposition
+- Issue #9: OPEN; baseline integration and provenance remain pending.
+- Issue #1: OPEN; partial ABI CI evidence on PR #18, full generic marshalling/OS unwind acceptance pending.
+- Issue #14: OPEN; Phase 2B.4 test-only fixture passes; clean environment and Phase 2B.5 output isolation remain pending.
+- Milestone 7B remains unaccepted; PR #5 is still proposal-only.
+- No compiler/test/build/runtime/Engine/IDE/game source changed; no PR or workflow was modified. Keep the accepted development plan unchanged.
