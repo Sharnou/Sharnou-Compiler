@@ -242,9 +242,9 @@ The recommended separate-principal Windows authority service and its non-exporta
 
 ---
 
-## R3 addendum — emitted broker per-execution AppContainer identity (2026-11-27)
+## R3 addendum - emitted broker per-execution AppContainer identity (2026-11-27)
 
-This addendum supersedes the earlier “What this exact-head evidence does and does not prove” statement for the specific R3 implementation below. The earlier section is retained as the historical baseline that preceded R3.
+This addendum supersedes the earlier 'What this exact-head evidence does and does not prove' statement for the specific R3 implementation below. The earlier section is retained as the historical baseline that preceded R3.
 
 ### Code-bearing changes
 
