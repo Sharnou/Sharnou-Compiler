@@ -1611,7 +1611,7 @@ function Emit-DevBrokerRestoreSecurityDescriptor {
     # Read the descriptor back from the same opened object. Compare the complete
     # DACL byte sequence, and the SACL/mandatory-label bytes for Build directories,
     # before declaring restoration complete.
-    Emit-StoreBits32Frame -SlotPosition $restoreStageSlot -Value 7 # GetSecurityInfo readback
+    Emit-StoreBits32Frame -SlotPosition $restoreStageSlot -Value 70 # GetSecurityInfo readback
     Emit-LoadRcxFrame -SlotPosition $handleSlot
     Emit-Bytes -Bytes ([byte[]]@(0xBA, 0x01, 0x00, 0x00, 0x00, 0x41, 0xB8, 0x14, 0x00, 0x00, 0x00, 0x45, 0x33, 0xC9))
     Emit-Win64CallIat -TargetRva ([UInt32]0x32C8) -StackArguments @(
@@ -1622,29 +1622,36 @@ function Emit-DevBrokerRestoreSecurityDescriptor {
     ) # GetSecurityInfo(DACL + LABEL)
     Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
     Emit-JumpConditional -ConditionCode 0x85 -Label $failed
+    Emit-StoreBits32Frame -SlotPosition $restoreStageSlot -Value 71 # readback API succeeded
 
     # DACL must be byte-for-byte identical, including ACE order and flags.
+    Emit-StoreBits32Frame -SlotPosition $restoreStageSlot -Value 72 # validate DACL pointers
     Emit-LoadRaxFrame -SlotPosition $daclSlot
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC6, 0x48, 0x85, 0xF6))
     Emit-JumpConditional -ConditionCode 0x84 -Label $failed
     Emit-LoadRaxFrame -SlotPosition $actualDaclSlot
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC7, 0x48, 0x85, 0xFF))
     Emit-JumpConditional -ConditionCode 0x84 -Label $failed
+    Emit-StoreBits32Frame -SlotPosition $restoreStageSlot -Value 73 # validate DACL length
     Emit-Bytes -Bytes ([byte[]]@(0x0F, 0xB7, 0x46, 0x02, 0x0F, 0xB7, 0x57, 0x02, 0x39, 0xD0))
     Emit-JumpConditional -ConditionCode 0x85 -Label $failed
+    Emit-StoreBits32Frame -SlotPosition $restoreStageSlot -Value 74 # compare DACL bytes
     Emit-Bytes -Bytes ([byte[]]@(0x89, 0xC1, 0xFC, 0xF3, 0xA6)) # CLD; REPE CMPSB
     Emit-JumpConditional -ConditionCode 0x85 -Label $failed
 
     if ($RestoreLabel) {
         # The Low IL mandatory-label SACL must also be byte-for-byte identical.
+        Emit-StoreBits32Frame -SlotPosition $restoreStageSlot -Value 75 # validate SACL pointers
         Emit-LoadRaxFrame -SlotPosition $saclSlot
         Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC6, 0x48, 0x85, 0xF6))
         Emit-JumpConditional -ConditionCode 0x84 -Label $failed
         Emit-LoadRaxFrame -SlotPosition $actualSaclSlot
         Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC7, 0x48, 0x85, 0xFF))
         Emit-JumpConditional -ConditionCode 0x84 -Label $failed
+        Emit-StoreBits32Frame -SlotPosition $restoreStageSlot -Value 76 # validate SACL length
         Emit-Bytes -Bytes ([byte[]]@(0x0F, 0xB7, 0x46, 0x02, 0x0F, 0xB7, 0x57, 0x02, 0x39, 0xD0))
         Emit-JumpConditional -ConditionCode 0x85 -Label $failed
+        Emit-StoreBits32Frame -SlotPosition $restoreStageSlot -Value 77 # compare SACL bytes
         Emit-Bytes -Bytes ([byte[]]@(0x89, 0xC1, 0xFC, 0xF3, 0xA6)) # CLD; REPE CMPSB
         Emit-JumpConditional -ConditionCode 0x85 -Label $failed
     }
