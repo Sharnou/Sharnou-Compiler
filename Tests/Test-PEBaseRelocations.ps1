@@ -99,6 +99,9 @@ Assert-Throws 'target outside approved data range' {
 Assert-Throws 'invalid approved data range' {
     New-SharnouBaseRelocationDirectory -TargetRvas ([UInt32[]]@(0x2000)) -ImageSize $imageSize -AllowedRanges @([pscustomobject]@{ StartRva = [UInt32]0x7000; Size = [UInt32]0x2000 })
 }
+Assert-Throws 'approved range smaller than DIR64 pointer' {
+    New-SharnouBaseRelocationDirectory -TargetRvas ([UInt32[]]@(0x2000)) -ImageSize $imageSize -AllowedRanges @([pscustomobject]@{ StartRva = [UInt32]0x2000; Size = [UInt32]4 })
+}
 Assert-Throws 'directory size limit' {
     New-SharnouBaseRelocationDirectory -TargetRvas ([UInt32[]]@(0x2000, 0x2008)) -ImageSize $imageSize -AllowedRanges $range -MaximumDirectoryBytes 8
 }
