@@ -2293,3 +2293,29 @@ Architecture selection for the dedicated writer-authority service is owner-appro
 - PR #32 current head `5f6e5bdd1d3362a5b0a77458df956d6acbf41980`; no exact-head workflow run is currently exposed. Do not claim R5.1 CI pass.
 - Next code-bearing task is R5.1.a: implement bounded multi-target DIR64 relocation generation and parser/runtime tests, preserving no-extra-relocation output compatibility. Then code-label/data-pointer fixups, callback ABI probes, and only then SCM host generation.
 - Model-facing and autonomous execution remain DISABLED. Phase 2B.8 remains NOT SECURITY ACCEPTED.
+
+
+## 2026-11-27 - R5.1.a and R5.1.b implementation sequence
+
+### R5.1.a - PE DIR64 relocation builder/parser
+
+- Draft PR #33: https://github.com/Sharnou/Sharnou-Compiler/pull/33; branch `phase-2b8-r5-1a-pe-relocations-20261127`; base is R5.1 preflight PR #32 branch.
+- Added `Tools/SharnouPERelocations.ps1`: bounded canonical DIR64 builder/parser, sorted 4 KiB page blocks, sorted aligned offsets, ABS block padding, exact-target-set check, image/data-range checks, and rejection of duplicate/unaligned/unknown/truncated/malformed inputs.
+- Integrated the generalized builder in `Stage0/SharnouCompiler.ps1`; for the baseline anchor-only image it preserves the legacy 12-byte relocation directory byte-for-byte.
+- Updated `Tools/SharnouPEVerify.ps1` and compiler internal validation to parse the generated image's actual relocation directory, constrain relocation targets to .rdata, and require the legacy entry-point anchor.
+- Added `Tests/Test-PEBaseRelocations.ps1`, wired into Test.ps1, and a Windows exact-head gate `.github/workflows/phase-2b8-r5-1a-relocation-gate.yml`.
+- Run [46064648534](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/46064648534), exact tested source head `4125a8636d7a006ce9918d30c5f37351986b5b72`: checkout, evidence initialization, source encoding and focused relocation tests completed SUCCESS. The complete combined regression step remains IN_PROGRESS at this status; no R5.1.a PASS claim yet.
+
+### R5.1.b - typed callback pointers and Win64 ABI probes
+
+- Draft PR #34: https://github.com/Sharnou/Sharnou-Compiler/pull/34; branch `phase-2b8-r5-1b-win64-callback-abi-20261127`; stacked on the R5.1.a branch.
+- Adds an explicit callback signature allowlist: `SERVICE_MAIN_FUNCTIONW = VOID WINAPI(DWORD, LPWSTR*)` and `HANDLER_FUNCTION_EX = DWORD WINAPI(DWORD, DWORD, LPVOID, LPVOID)`.
+- Adds aligned .rdata callback pointer slots, internal code-label validation, RIP-relative indirect-call emission, post-layout 64-bit VA materialization, and a DIR64 relocation for each pointer slot.
+- Emits compiler-owned leaf ABI probe callbacks which exercise DWORD argument positions and full-width pointer registers (RDX, R8 and R9); leaf stubs preserve all nonvolatile registers and require no unwind rows.
+- The callback test builtin is available only when the compiler is explicitly invoked with `-EnableWin64CallbackTests`; it is not part of the default builtin set and does not enable `sh_dev_run_tool`.
+- Added `Tests/Test-Win64CallbackABI.ps1`, integrated into Test.ps1, and Windows exact-head workflow `.github/workflows/phase-2b8-r5-1b-callback-abi-gate.yml`.
+- Current R5.1.b exact-head run [46065163499](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/46065163499) on head `cd7b9c44369372c21b083d6c8756767905b7378a` is QUEUED; no callback ABI test result is claimed.
+
+### Boundary and next work
+
+Neither R5.1.a nor R5.1.b implements an SCM service executable, service registration, service SID, production CNG key, named pipe, production journal, process launch, or crash recovery. R5.1.c must still implement the inert native SCM host after .a and .b are accepted. Model-facing execution and autonomous execution remain DISABLED; Phase 2B.8 remains NOT SECURITY ACCEPTED.
