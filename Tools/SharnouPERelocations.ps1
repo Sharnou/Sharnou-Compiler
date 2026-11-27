@@ -13,10 +13,11 @@ function Test-SharnouRvaInRanges {
         }
         $start = [UInt64]$range.StartRva
         $size = [UInt64]$range.Size
-        if ($size -eq 0 -or ($start + $size) -gt $ImageSize) {
+        if ($start -ge $ImageSize -or $size -eq 0 -or $size -gt ($ImageSize - $start)) {
             throw 'Relocation range descriptor exceeds the image bounds.'
         }
-        if ($TargetRva -ge $start -and ($TargetRva + 8) -le ($start + $size)) {
+        $rangeEnd = $start + $size
+        if ($TargetRva -ge $start -and $TargetRva -le ($rangeEnd - 8)) {
             return $true
         }
     }
