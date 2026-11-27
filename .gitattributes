@@ -12,3 +12,6 @@
 
 # Canonical format governance document.
 Docs/FileFormats.md text eol=lf
+
+# Preserve the fixed Phase 2B.5 child hash across Windows checkouts.
+Tests/DevAgentBroker/PipeCaptureChild.ps1 text eol=lf

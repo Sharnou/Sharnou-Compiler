@@ -1,0 +1,45 @@
+name: Sharnou DevAgent Phase 2B.5 bounded pipe capture
+
+on:
+  push:
+    branches:
+      - devagent-secure-process-broker-20261126
+  pull_request:
+    branches:
+      - Sharnou-Compiler
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-bounded-pipe-capture:
+    runs-on: windows-2025
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Verify Phase 2B.5 source encoding
+        shell: powershell
+        run: |
+          $paths = @(
+            'Tests\DevAgentBroker\native-abi-manifest.json',
+            'Tests\DevAgentBroker\NativeInterop.ps1',
+            'Tests\DevAgentBroker\PipeCaptureChild.ps1',
+            'Tests\Test-DevAgentBoundedPipeCapture.ps1'
+          )
+          foreach ($path in $paths) {
+            $bytes = [IO.File]::ReadAllBytes((Join-Path $PWD $path))
+            if ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF) {
+              throw "UTF-8 BOM is not allowed: $path"
+            }
+            foreach ($byte in $bytes) {
+              if ($byte -gt 127) { throw "Non-ASCII source byte: $path" }
+            }
+          }
+          Write-Host 'PASS: Phase 2B.5 source encoding is ASCII without BOM.'
+
+      - name: Run STARTUPINFOEX allowlist and bounded dual-stream fixture
+        shell: powershell
+        run: .\Tests\Test-DevAgentBoundedPipeCapture.ps1

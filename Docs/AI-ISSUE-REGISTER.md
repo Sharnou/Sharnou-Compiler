@@ -539,3 +539,21 @@ The fixture configures a Job Object (kill-on-close, one active process, 256 MiB 
 **Environment limitation is not waived:** custom explicit environment blocks continue to produce Win32 203 on this Windows Server 2025 CI runner. The test fixture uses `lpEnvironment=NULL` and inherits CI environment for the fixed System32 whoami image only, with no model/user-controlled command or arguments. Source emits a warning. Clean explicit environment remains BLOCKED as a production requirement and must be resolved before production integration/model-facing execution. No compiler/PE production emitter changed. Model-facing execution remains DISABLED.
 
 Phase 2B.4 status: **PASS as an isolated test-only Job Object/token/resume fixture; production sandbox/agent integration NOT ACCEPTED.** Next: Phase 2B.5 handle allowlist and bounded dual-stream output capture, retaining clean environment as an independent blocker.
+
+
+## Issue #14 update - DevAgent Phase 2B.5 bounded pipe capture candidate - 2026-11-27
+
+PR #18 feature branch devagent-secure-process-broker-20261126 remains OPEN / DRAFT / UNMERGED. Phase 2B.5 adds a test-only STARTUPINFOEX handle-list and bounded dual-stream capture candidate. At this source checkpoint, the new Windows workflow has not yet run: status is **PENDING / NOT WINDOWS-CI ACCEPTED**.
+
+Candidate implementation:
+- Fixed SHA-256-pinned test child plus absolute System32 PowerShell host.
+- Two anonymous pipes; parent read endpoints are non-inheritable; child write endpoints are inheritable.
+- Exactly two sorted handles are supplied through PROC_THREAD_ATTRIBUTE_HANDLE_LIST; STARTF_USESTDHANDLES binds stdout and stderr. A separate inheritable sentinel handle is omitted and must not be inherited.
+- Suspended child is assigned to the Job Object and exact membership is checked before resume.
+- Round-robin stdout/stderr draining uses PeekNamedPipe / ReadFile, 4 KiB chunks, and a 65,536-byte combined cap.
+- Exact-cap, over-cap, timeout, post-capture ReadFile failure, descendant-in-job, stream separation, handle inheritance and handle-leak checks are included.
+- Test-only API/layout changes are isolated to the native ABI manifest, interop helper and test harness. No production compiler PE import map or emitter change is included.
+
+**Environment boundary remains BLOCKED:** the test harness uses lpEnvironment=NULL with the caller token. It does not solve the previously observed Windows Server 2025 ERROR_ENVVAR_NOT_FOUND (203) failure for explicit environment blocks, and does not bind this process to the real AppContainer workspace ACL transaction. It does not prove production DLL search, network denial, cancellation, durable evidence/restart recovery or general autonomous process execution.
+
+Do not mark Phase 2B.5 complete until the exact-head Windows workflow and integrated ABI/AppContainer, workspace-security, baseline and Stage 7A regression workflows pass. **Model-facing and autonomous process execution remain DISABLED.** A separate production integration milestone and explicit owner approval are still required after all remaining gates; Phase 2B.5 alone cannot enable it.

@@ -1137,3 +1137,31 @@ Therefore: Phase 2B.4 is accepted **only as a test-only Job Object + AppContaine
 No production compiler source, PE import table, native emitter or DevAgent production broker was changed. No native compile/link, external toolchain, release, or merge occurred. Model-facing/autonomous process execution remains **DISABLED**.
 
 Next: Phase 2B.5 - explicit STARTUPINFOEX handle allowlist plus bounded, concurrent stdout/stderr capture. Carry the clean-environment failure as an independent blocking acceptance item and resolve it before production integration/2B.6 acceptance. Keep the AppContainer launch and handle policy test-only.
+
+
+## DevAgent Phase 2B.5 - candidate source and acceptance boundary - 2026-11-27
+
+**Status at source-generation checkpoint: implementation candidate prepared; Windows execution NOT YET RUN / CI PENDING. Do not record this milestone as PASS until the dedicated Windows workflow and same-head regression runs complete.**
+
+Target: Sharnou/Sharnou-Compiler, branch devagent-secure-process-broker-20261126, PR #18 (OPEN / DRAFT / UNMERGED). Starting branch head before Phase 2B.5 additions: a8e0ebcf3bfa453cf0011fee673522743e9d300e.
+
+Candidate files:
+- Tests/DevAgentBroker/PipeCaptureChild.ps1 - fixed test-only child with deterministic stream, cap-boundary, flood, timeout, descendant and omitted-sentinel-handle modes. SHA-256 pinned in the native ABI manifest: D2FF866D377DA80C690E753DC69078416443A1FE1A42A127568E9A61CAE45C49.
+- Tests/Test-DevAgentBoundedPipeCapture.ps1 - Windows PowerShell 5.1 x64 test harness using the in-memory native interop helper. It creates two anonymous pipes, verifies inheritance flags, constructs a sorted two-entry PROC_THREAD_ATTRIBUTE_HANDLE_LIST, configures STARTUPINFOEXW standard handles, creates the child suspended, assigns and verifies Job Object membership before resume, and captures both streams with a combined 65,536-byte ceiling / 4,096-byte read chunks.
+- Tests/DevAgentBroker/NativeInterop.ps1 - adds a 32-bit BOOL SECURITY_ATTRIBUTES.bInheritHandle structure-field mapping so the layout is represented with the correct Win32 type.
+- Tests/DevAgentBroker/native-abi-manifest.json - adds six test-only KERNEL32 bindings (CreatePipe, SetHandleInformation, GetHandleInformation, ReadFile, PeekNamedPipe, GetProcessHandleCount), SECURITY_ATTRIBUTES and the fixed fixture/output policy.
+- .github/workflows/devagent-bounded-pipe-capture.yml - dedicated Windows Server 2025 workflow with ASCII/no-BOM checks and the Phase 2B.5 test harness.
+- Tests/Test-DevAgentNativeAbi.ps1 - adds the BOOL 32-bit x64 layout alias for the manifest's static SDK/layout contract.
+
+Expected adversarial checks:
+1. stdout and stderr remain distinct and byte-exact.
+2. A 32,768 + 32,768 byte payload is accepted exactly at the 65,536-byte combined cap.
+3. A payload exceeding the combined cap returns CapExceeded, retains no more than 65,536 bytes, and terminates/reaps the whole Job Object.
+4. An inheritable sentinel omitted from the two-entry handle allowlist is not available in the child.
+5. Timeout and injected ReadFile failure terminate/reap the process and report incomplete bounded output.
+6. A fixed descendant is confirmed inside the same Job Object and is gone after whole-job termination.
+7. Owned process, thread, job and pipe handles are closed; the parent handle count returns within the declared tolerance.
+
+**Fixture limitations, not waived:** this test uses the caller token, does not attach the child to the real per-execution AppContainer SID/ACL transaction, and sets lpEnvironment=NULL (inherits the CI environment). The documented clean explicit environment failure (ERROR_ENVVAR_NOT_FOUND=203) remains an independent production blocker. This is not native compiler/PE-emitter integration and accepts no model-controlled command or path. Production DLL-search policy, network denial, cancellation, durable evidence journaling, crash/restart recovery, final-path/ADS/UNC/device validation, and cross-version Windows adversarial coverage remain open.
+
+No Windows pass, build, production import, model-execution permission, merge or release is claimed at this checkpoint. **Model-facing process execution and autonomous process execution remain DISABLED.** Phase 2B.5 must pass on the exact commit before being closed; a later production integration and explicit approval are separately required before a limited model-facing canary.

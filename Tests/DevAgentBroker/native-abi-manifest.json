@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "status": "PHASE_2B_3_APPCONTAINER_WORKSPACE_ACL_BINDING_AND_CRASH_ROLLBACK",
+  "status": "PHASE_2B_5_TEST_ONLY_STARTUPINFOEX_HANDLE_ALLOWLIST_AND_BOUNDED_DUAL_STREAM_CAPTURE",
   "target": {
     "architecture": "x86-64",
     "pointerSize": 8,
@@ -9,9 +9,11 @@
   },
   "evidence": {
     "level": "Windows SDK header declaration and field-order verification plus deterministic x64 layout computation",
-    "notProven": "No native sizeof/offsetof execution, no native compiler invocation, no generated PE, no process creation, and no sandbox proof.",
+    "notProven": "No native compiler invocation, production PE import/emitter changes, production restricted-token/AppContainer broker integration, clean explicit environment, production cancellation/audit/restart integration, or general-purpose autonomous execution. Phase 2B.5 Windows execution has not yet occurred; no passing result is recorded.",
     "note": "SDK field order and the arithmetic x64 ABI model are statically cross-checked. This is not an executed compiler sizeof/offsetof probe, and must not be used alone to ship native structure offsets.",
-    "next": "Phase 2B.3 uses the OS-created package SID in the existing crash-safe workspace transaction, applies a non-FullControl scratch ACL, and uses the real suspended AppContainer child token for impersonated filesystem access checks. The test proves effective access only for its fixture paths; production broker/job integration remains a separate gate."
+    "next": "Phase 2B.5 adds a fixed-image test-only STARTUPINFOEX handle-list fixture with bounded concurrent stdout/stderr draining, a 64 KiB combined output limit, Job Object termination/reap, and adversarial inheritance/timeout/descendant tests. This does not integrate the production compiler emitter, does not enable model-facing execution, and does not resolve the explicit-environment blocker.",
+    "windowsCiStatus": "PENDING",
+    "sourceValidation": "The candidate PowerShell scripts and JSON have been reviewed statically for source policy and manifest consistency; Windows PowerShell execution has not yet occurred."
   },
   "currentImportTable": {
     "descriptorBase": "0xA00",
@@ -251,7 +253,11 @@
     "SECURITY_MANDATORY_LOW_RID": "0x00001000",
     "PROCESS_QUERY_LIMITED_INFORMATION": "0x1000",
     "HEAP_ZERO_MEMORY": "0x00000008",
-    "S_OK": "0x00000000"
+    "S_OK": "0x00000000",
+    "HANDLE_FLAG_INHERIT": "0x00000001",
+    "ERROR_BROKEN_PIPE": 109,
+    "WAIT_OBJECT_0": 0,
+    "WAIT_TIMEOUT": 258
   },
   "structureLayouts": [
     {
@@ -598,6 +604,29 @@
           136
         ]
       ]
+    },
+    {
+      "name": "SECURITY_ATTRIBUTES",
+      "header": "shared/wtypesbase.h",
+      "size": 24,
+      "alignment": 8,
+      "fields": [
+        [
+          "nLength",
+          "DWORD",
+          0
+        ],
+        [
+          "lpSecurityDescriptor",
+          "PTR",
+          8
+        ],
+        [
+          "bInheritHandle",
+          "BOOL",
+          16
+        ]
+      ]
     }
   ],
   "rules": [
@@ -609,7 +638,23 @@
     "STARTUPINFOEXW.StartupInfo.cb is sizeof(STARTUPINFOEXW), 112 bytes on x64, not sizeof(STARTUPINFOW).",
     "CreateProcessW command-line storage must be writable because Windows may modify it; construct a mutable per-call copy from compiler-owned immutable data.",
     "When PROC_THREAD_ATTRIBUTE_HANDLE_LIST is used, CreateProcess bInheritHandles MUST be TRUE and listed handles must be inheritable; without an explicit handle list keep bInheritHandles FALSE.",
-    "For every GetTokenInformation call, perform a NULL/zero-length size query, require ERROR_INSUFFICIENT_BUFFER and a nonzero bounded ReturnLength, allocate that size, then verify the returned length is within the allocation before reading fields or SIDs."
+    "For every GetTokenInformation call, perform a NULL/zero-length size query, require ERROR_INSUFFICIENT_BUFFER and a nonzero bounded ReturnLength, allocate that size, then verify the returned length is within the allocation before reading fields or SIDs.",
+    "Phase 2B.5 is test-fixture-only and must not add production PE imports or call the compiler-emitted broker.",
+    "When PROC_THREAD_ATTRIBUTE_HANDLE_LIST is supplied, CreateProcessW must use bInheritHandles=TRUE and every listed handle must have HANDLE_FLAG_INHERIT set.",
+    "The two parent-side pipe read endpoints must have HANDLE_FLAG_INHERIT cleared; the exact attribute list contains only the stdout and stderr child-side write endpoints.",
+    "STARTUPINFOEXW.StartupInfo.dwFlags must include STARTF_USESTDHANDLES and its standard output/error fields must reference the corresponding allowlisted write endpoints.",
+    "Drain stdout and stderr concurrently. A blocking read on one pipe while the other pipe is not drained can deadlock when the other pipe buffer fills.",
+    "The combined captured byte count, not each stream independently, is bounded to 65536 bytes. Never append beyond the cap.",
+    "On cap overflow or any non-EOF pipe-reader failure, terminate the whole Job Object, wait for the root process and job descendants to exit, close all handles, and return bounded partial output with an explicit status.",
+    "Only the manifest-hash-pinned child script and fixed absolute System32 PowerShell image may be launched by the test fixture; no model input, arbitrary command, executable, argv, or working directory is accepted.",
+    "The Phase 2B.5 fixture inherits the CI environment and runs with the caller token. This does not prove AppContainer integration or clean-environment policy; both remain separate production gates.",
+    "The PROC_THREAD_ATTRIBUTE_HANDLE_LIST array is sorted in ascending handle-value order before UpdateProcThreadAttribute.",
+    "Reader failure test injection must exercise a failed ReadFile call after at least one valid output chunk has already been retained; a failed PeekNamedPipe call alone does not validate the actual stream-read failure path.",
+    "SECURITY_ATTRIBUTES.bInheritHandle is a Win32 BOOL and is represented by a signed 32-bit field in the runtime structure manifest.",
+    "OutputComplete is true only when both pipe streams reach EOF and the fixed child exits zero; timeout, read failure, and cap overflow return Truncated=true with bounded partial output.",
+    "The Phase 2B.5 test invalidates the stdout ReadFile endpoint after at least one valid capture chunk; it must not substitute a PeekNamedPipe-only failure test.",
+    "CreatePipe output parameters are indeterminate on FALSE; do not read or close their contents on failure. Only inspect and validate returned handles after TRUE.",
+    "The omitted-handle sentinel test compares a 32-byte marker, not a single byte, to avoid treating an unrelated reused handle as proof of inheritance."
   ],
   "references": [
     "https://learn.microsoft.com/en-us/windows/win32/secauthz/implementing-an-appcontainer",
@@ -621,7 +666,19 @@
     "https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-createprocessw",
     "https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-openprocesstoken",
     "https://learn.microsoft.com/en-us/windows/win32/api/securitybaseapi/nf-securitybaseapi-gettokeninformation",
-    "https://learn.microsoft.com/en-us/windows/win32/api/securitybaseapi/nf-securitybaseapi-freesid"
+    "https://learn.microsoft.com/en-us/windows/win32/api/securitybaseapi/nf-securitybaseapi-freesid",
+    "https://learn.microsoft.com/en-us/windows/win32/api/namedpipeapi/nf-namedpipeapi-createpipe",
+    "https://learn.microsoft.com/en-us/windows/win32/api/handleapi/nf-handleapi-sethandleinformation",
+    "https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-readfile",
+    "https://learn.microsoft.com/en-us/windows/win32/api/namedpipeapi/nf-namedpipeapi-peeknamedpipe",
+    "https://learn.microsoft.com/en-us/windows/win32/procthread/inheritance",
+    "https://learn.microsoft.com/en-us/windows/win32/api/wtypesbase/ns-wtypesbase-security_attributes",
+    "https://learn.microsoft.com/en-us/windows/win32/api/namedpipeapi/nf-namedpipeapi-createpipe",
+    "https://learn.microsoft.com/en-us/windows/win32/api/handleapi/nf-handleapi-sethandleinformation",
+    "https://learn.microsoft.com/en-us/windows/win32/api/handleapi/nf-handleapi-gethandleinformation",
+    "https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-readfile",
+    "https://learn.microsoft.com/en-us/windows/win32/api/namedpipeapi/nf-namedpipeapi-peeknamedpipe",
+    "https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-getprocesshandlecount"
   ],
   "callingConvention": "Microsoft x64 ABI: Windows x64 uses the unified x64 calling convention; arguments 1-4 use RCX/RDX/R8/R9, later arguments use the caller-provided stack argument area, and the caller provides 32 bytes of shadow space with 16-byte stack alignment at call boundaries.",
   "plannedApiSignatures": [
@@ -1254,5 +1311,172 @@
       "fixtureBehavior": "lpEnvironment=NULL, so the fixed System32 whoami.exe test child inherits the Windows Actions runner environment. The fixture accepts no user/model command, executable, arguments or working directory. This is only a controlled test harness exception.",
       "productionRequirement": "A separately constructed, bounded, UTF-16 allowlisted environment must be implemented and successfully tested before any production broker launch or model-facing execution. The custom CreateProcessW block currently fails with ERROR_ENVVAR_NOT_FOUND (203) on Windows Server 2025 CI; this is not waived by this fixture."
     }
+  },
+  "phase2B5Apis": [
+    {
+      "name": "CreatePipe",
+      "dll": "KERNEL32.dll",
+      "returnType": "BOOL",
+      "parameters": [
+        "PHANDLE",
+        "PHANDLE",
+        "LPSECURITY_ATTRIBUTES",
+        "DWORD"
+      ],
+      "header": "um/namedpipeapi.h",
+      "setLastError": true
+    },
+    {
+      "name": "SetHandleInformation",
+      "dll": "KERNEL32.dll",
+      "returnType": "BOOL",
+      "parameters": [
+        "HANDLE",
+        "DWORD",
+        "DWORD"
+      ],
+      "header": "um/handleapi.h",
+      "setLastError": true
+    },
+    {
+      "name": "GetHandleInformation",
+      "dll": "KERNEL32.dll",
+      "returnType": "BOOL",
+      "parameters": [
+        "HANDLE",
+        "LPDWORD"
+      ],
+      "header": "um/handleapi.h",
+      "setLastError": true
+    },
+    {
+      "name": "ReadFile",
+      "dll": "KERNEL32.dll",
+      "returnType": "BOOL",
+      "parameters": [
+        "HANDLE",
+        "LPVOID",
+        "DWORD",
+        "LPDWORD",
+        "LPOVERLAPPED"
+      ],
+      "header": "um/fileapi.h",
+      "setLastError": true
+    },
+    {
+      "name": "PeekNamedPipe",
+      "dll": "KERNEL32.dll",
+      "returnType": "BOOL",
+      "parameters": [
+        "HANDLE",
+        "LPVOID",
+        "DWORD",
+        "LPDWORD",
+        "LPDWORD",
+        "LPDWORD"
+      ],
+      "header": "um/namedpipeapi.h",
+      "setLastError": true
+    },
+    {
+      "name": "GetProcessHandleCount",
+      "dll": "KERNEL32.dll",
+      "returnType": "BOOL",
+      "parameters": [
+        "HANDLE",
+        "PDWORD"
+      ],
+      "header": "um/processthreadsapi.h",
+      "setLastError": true
+    }
+  ],
+  "phase2B5Contract": {
+    "status": "TEST_FIXTURE_ONLY_NOT_PRODUCTION_INTEGRATED",
+    "fixedChildScript": "Tests/DevAgentBroker/PipeCaptureChild.ps1",
+    "fixedChildSha256": "D2FF866D377DA80C690E753DC69078416443A1FE1A42A127568E9A61CAE45C49",
+    "fixedImage": "%SystemRoot%\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+    "fixedImagePolicy": "Absolute 64-bit System32 path; no PATH lookup; image hash is recorded per run because Windows servicing changes the binary.",
+    "startupInfoEx": {
+      "sizeX64": 112,
+      "attributeListOffset": 104,
+      "dwFlagsOffset": 60,
+      "hStdInputOffset": 80,
+      "hStdOutputOffset": 88,
+      "hStdErrorOffset": 96,
+      "startfUseStdHandles": "0x00000100",
+      "extendedStartupInfoPresent": "0x00080000"
+    },
+    "inheritance": {
+      "bInheritHandles": true,
+      "attribute": "PROC_THREAD_ATTRIBUTE_HANDLE_LIST",
+      "attributeValue": "0x00020002",
+      "allowlistedHandles": [
+        "stdout pipe write endpoint",
+        "stderr pipe write endpoint"
+      ],
+      "allowlistCount": 2,
+      "parentReadEndpointsInheritable": false,
+      "childWriteEndpointsInheritable": true,
+      "sentinelTest": "A separate inheritable file handle is deliberately omitted from the two-handle list; the child must report DENIED.",
+      "handleListSort": "Two handle values are sorted in ascending numeric order before UpdateProcThreadAttribute."
+    },
+    "securityAttributes": {
+      "sizeX64": 24,
+      "fields": {
+        "nLength": 0,
+        "lpSecurityDescriptor": 8,
+        "bInheritHandle": 16
+      },
+      "inheritFlag": "HANDLE_FLAG_INHERIT=0x00000001",
+      "bInheritHandleType": "BOOL"
+    },
+    "standardHandles": {
+      "flag": "STARTF_USESTDHANDLES=0x00000100",
+      "stdin": "stdout write endpoint; fixture never reads stdin",
+      "stdout": "stdout write endpoint",
+      "stderr": "stderr write endpoint"
+    },
+    "outputCapture": {
+      "combinedOutputLimitBytes": 65536,
+      "readChunkBytes": 4096,
+      "drainStrategy": "Round-robin PeekNamedPipe then bounded ReadFile on both streams; never block on one stream while the other is not drained.",
+      "overflow": "Stop reading at the combined cap; detect any additional available byte; terminate the whole Job Object; wait/reap; retain partial output with CapExceeded/truncated status.",
+      "readerFailure": "The test injects an invalid ReadFile endpoint only after at least one output chunk has been captured; the broker fixture must return ReaderFailure, retain bounded partial output, terminate the Job Object, and reap.",
+      "eof": "Treat ERROR_BROKEN_PIPE as stream EOF only.",
+      "partialOutputStatuses": [
+        "CapExceeded",
+        "ReaderFailure",
+        "TimedOut"
+      ],
+      "outputCompleteIsTrueOnlyFor": "Completed"
+    },
+    "jobObject": {
+      "informationClass": 9,
+      "limitFlags": "0x00002108",
+      "killOnJobClose": true,
+      "activeProcessLimit": 2,
+      "perProcessMemoryLimitBytes": 268435456
+    },
+    "testModes": [
+      "Streams: exact independent stdout/stderr lines",
+      "Boundary: exactly 32768 bytes per stream (65536 combined)",
+      "Flood: 65536 bytes per stream (combined overflow)",
+      "Timeout: fixed child sleeps past bounded deadline",
+      "Descendant: fixed child starts a fixed PowerShell descendant; Job termination must reap both",
+      "Sentinel: inheritable handle excluded from list must be unavailable to child",
+      "ReaderFailure: after partial capture, force ReadFile(stdout) to fail and require fail-closed whole-job termination",
+      "HandleLeak: native process handle count returns to baseline within a two-handle tolerance"
+    ],
+    "processPolicy": "This is an isolated test-only caller-token fixture. It does not use an AppContainer token or workspace ACL transaction and accepts no model-controlled input. Existing Phase 2B.2-2B.4 fixtures separately prove those test boundaries; production integration is not claimed.",
+    "environment": {
+      "status": "BLOCKED_FOR_PRODUCTION",
+      "fixtureBehavior": "lpEnvironment=NULL; the fixed Windows PowerShell child inherits the Windows CI runner environment.",
+      "productionRequirement": "The independently required clean, explicit, bounded environment remains unverified. Phase 2B.5 does not resolve or waive the Windows Server 2025 ERROR_ENVVAR_NOT_FOUND (203) failure."
+    },
+    "testSource": "Tests/Test-DevAgentBoundedPipeCapture.ps1",
+    "testSourceStatus": "CANDIDATE_NOT_YET_WINDOWS_CI_VALIDATED",
+    "readerFailureTest": "The test invalidates the stdout ReadFile handle after at least one valid chunk has been captured; PeekNamedPipe remains valid so the next bounded ReadFile call must fail.",
+    "sentinelTest": "The child attempts to read a 32-byte fixed marker through the numeric sentinel handle value; only byte-exact equality reports INHERITED. The expected marker is not supplied by a file path.",
+    "createPipeFailureHandling": "Do not inspect or close output pointers when CreatePipe returns FALSE because the API documents those outputs as indeterminate on failure. If CreatePipe returns TRUE but an endpoint is invalid, close any valid partial endpoint and fail."
   }
 }

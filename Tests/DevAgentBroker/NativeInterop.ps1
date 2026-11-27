@@ -17,6 +17,7 @@ function New-SharnouRuntimeStructTypes {
         [object[]] $StructureManifest
     )
     $typeMap = @{
+        BOOL = [Int32]
         DWORD = [UInt32]
         WORD = [UInt16]
         PTR = [IntPtr]
@@ -130,6 +131,8 @@ function New-SharnouNativeApiType {
                 'PSID*' { $parameterTypes.Add([IntPtr]) }
                 'PHANDLE' { $parameterTypes.Add([IntPtr]) }
                 'PDWORD' { $parameterTypes.Add([IntPtr]) }
+                'LPDWORD' { $parameterTypes.Add([IntPtr]) }
+                'LPOVERLAPPED' { $parameterTypes.Add([IntPtr]) }
                 'PBOOL' { $parameterTypes.Add([IntPtr]) }
                 'JOBOBJECTINFOCLASS' { $parameterTypes.Add([Int32]) }
                 'PSIZE_T' { $parameterTypes.Add([IntPtr]) }

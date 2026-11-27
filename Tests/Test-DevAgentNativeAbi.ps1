@@ -81,7 +81,7 @@ foreach($apiGroup in $manifest.plannedImports){
 
 # Compute aggregate layouts using the Windows x64 default ABI (pointer size 8, pack 8).
 $typeInfo=@{
-    DWORD=@{Size=4;Alignment=4}; WORD=@{Size=2;Alignment=2}
+    BOOL=@{Size=4;Alignment=4}; DWORD=@{Size=4;Alignment=4}; WORD=@{Size=2;Alignment=2}
     PTR=@{Size=8;Alignment=8}; PTRSIZE=@{Size=8;Alignment=8}
     I64=@{Size=8;Alignment=8}; U64=@{Size=8;Alignment=8}
 }
@@ -112,7 +112,7 @@ $sdkVersions=@(Get-ChildItem -LiteralPath $sdkInclude -Directory | Where-Object 
 Assert-Contract ($sdkVersions.Count -gt 0) 'No versioned Windows SDK include directory was found.'
 $sdkVersion=$sdkVersions[0].Name
 $headerCache=@{}
-$headerPaths=@('um\winnt.h','um\winbase.h','um\processthreadsapi.h','um\userenv.h','um\securitybaseapi.h','um\heapapi.h','um\errhandlingapi.h')
+$headerPaths=@('um\winnt.h','um\winbase.h','um\processthreadsapi.h','um\userenv.h','um\securitybaseapi.h','um\heapapi.h','um\errhandlingapi.h','shared\wtypesbase.h','um\namedpipeapi.h','um\handleapi.h','um\fileapi.h')
 foreach($relative in $headerPaths){
     $full=Join-Path (Join-Path $sdkInclude $sdkVersion) $relative
     Assert-Contract (Test-Path -LiteralPath $full -PathType Leaf) ("Required Windows SDK header is missing: {0}" -f $relative)
@@ -147,6 +147,12 @@ foreach($structure in $manifest.structureLayouts){
     }
 }
 $apiHeaders=@{
+    'CreatePipe'='um\namedpipeapi.h'
+    'SetHandleInformation'='um\handleapi.h'
+    'GetHandleInformation'='um\handleapi.h'
+    'ReadFile'='um\fileapi.h'
+    'PeekNamedPipe'='um\namedpipeapi.h'
+    'GetProcessHandleCount'='um\processthreadsapi.h'
     'InitializeProcThreadAttributeList'='um\processthreadsapi.h'
     'UpdateProcThreadAttribute'='um\processthreadsapi.h'
     'DeleteProcThreadAttributeList'='um\processthreadsapi.h'
@@ -222,12 +228,47 @@ $alreadyExistsHresult = [string]$manifest.constants.HRESULT_FROM_WIN32_ERROR_ALR
 Assert-Contract ($alreadyExistsHresult -ceq '0x800700B7') 'HRESULT_FROM_WIN32(ERROR_ALREADY_EXISTS) value mismatch.'
 Assert-Contract ((Convert-HexToInt ([string]$manifest.constants.S_OK)) -eq 0) 'S_OK value mismatch.'
 
+# The Phase 2B.5 bindings are test-fixture-only: verify their SDK prototype
+# parameter order without adding them to the production compiler PE import map.
+foreach($api in $manifest.phase2B5Apis){
+    $expectedHeader=([string]$api.header).Replace('/','\')
+    Assert-Contract ($apiHeaders[[string]$api.name] -ceq $expectedHeader) ("Phase 2B.5 SDK header mapping differs for {0}" -f $api.name)
+    $header=$headerCache[$expectedHeader]
+    $prototypeMatch=[regex]::Match($header,'\b'+[regex]::Escape([string]$api.name)+'\s*\(')
+    Assert-Contract $prototypeMatch.Success ("Phase 2B.5 SDK prototype not found for {0}" -f $api.name)
+    $declarationStart=$header.LastIndexOf(';',[int]$prototypeMatch.Index)
+    $declarationPrefixStart=[Math]::Max(0,$declarationStart+1)
+    $declarationPrefix=$header.Substring($declarationPrefixStart,[int]$prototypeMatch.Index-$declarationPrefixStart)
+    Assert-Contract ([regex]::IsMatch($declarationPrefix,'\b'+[regex]::Escape([string]$api.returnType)+'\b')) ("Phase 2B.5 SDK return type mismatch for {0}" -f $api.name)
+    $openParen=$header.IndexOf('(',[int]$prototypeMatch.Index)
+    $depth=0; $closeParen=-1
+    for($scan=$openParen;$scan -lt $header.Length;$scan++){
+        if($header[$scan] -eq '('){$depth++}
+        elseif($header[$scan] -eq ')'){
+            $depth--
+            if($depth -eq 0){$closeParen=$scan;break}
+        }
+    }
+    Assert-Contract ($closeParen -gt $openParen) ("Phase 2B.5 SDK parameter list is unterminated for {0}" -f $api.name)
+    $parameterText=$header.Substring($openParen+1,$closeParen-$openParen-1)
+    $normalizedParameters=[regex]::Replace($parameterText,'\s+','')
+    $parameterCursor=0
+    foreach($parameterType in $api.parameters){
+        $normalizedType=[regex]::Replace([string]$parameterType,'\s+','')
+        $parameterIndex=$normalizedParameters.IndexOf($normalizedType,$parameterCursor,[StringComparison]::Ordinal)
+        Assert-Contract ($parameterIndex -ge $parameterCursor) ("Phase 2B.5 SDK parameter type/order mismatch for {0}: expected {1}" -f $api.name,$parameterType)
+        $parameterCursor=$parameterIndex+$normalizedType.Length
+    }
+}
+
+
 Write-Host 'Windows SDK ABI contract: PASS'
 Write-Host ("Windows SDK version: {0}" -f $sdkVersion)
 Write-Host ("x64 structure fields/offsets checked: {0}" -f $layoutCount)
 Write-Host ("x64 aggregate structures checked: {0}" -f @($manifest.structureLayouts).Count)
 Write-Host ("Existing PE import groups checked: {0}" -f $actualGroups.Count)
 Write-Host ("Existing IAT entries checked: {0}" -f $actualIat.Count)
-Write-Host ("Planned API declarations checked: {0}" -f $apiHeaders.Count)
+Write-Host ("SDK API declarations mapped: {0}" -f $apiHeaders.Count)
+Write-Host ("Phase 2B.5 test-only API declarations checked: {0}" -f @($manifest.phase2B5Apis).Count)
 Write-Host 'Token information classes checked: 3'
 Write-Host 'Evidence boundary: declaration/layout contract only; no native process or executable was created.'
