@@ -266,3 +266,38 @@ Required workflow for a hard defect:
 Provider consultation is an escalation channel, not a prerequisite for every task. Sharnou must continue safe local/offline work when providers are unavailable. The compiler generates the agent executable; configured AI services provide model reasoning. Neither should be described as the other.
 
 Implementation dependency: complete the safe native runtime transport/JSON/secret boundary, durable task/evidence journal, typed broker, isolated patch workflow, and Windows verification gates before enabling model-facing source modification. This research capability is REQUIRED in the final autonomous agent definition of done, but remains NOT IMPLEMENTED until code, tests, provider contracts, and end-to-end evidence exist.
+
+## 12. User-approved compiler and Engine delivery scope - 2026-11-27
+
+The user has explicitly confirmed the following milestones as required delivery scope. This supersedes earlier historical notes that described 7B as unaccepted scope. This is approval of the deliverables, not approval of any existing PR, not acceptance of its code, and not evidence that a milestone is complete.
+
+### Compiler language and native ABI gates
+
+- **7B:** Boolean semantics; logical operators with runtime short-circuit behavior; break; continue; nested returns. Tests must include dynamic-variable-left AND/OR skip and evaluate paths, nested loop target behavior, Boolean ABI rejection until supported, and verified branch destinations.
+- **7C:** Primitive types, structs, pointers, arrays, slices, and explicit memory ownership/lifetime rules, with positive, negative, boundary, and verifier tests.
+- **7D:** Typed intermediate representation and a verifier that rejects malformed or invalid IR before code generation.
+- **7E:** Windows x64 ABI correctness, PE hardening, unwind metadata, and stack probing, with runtime and independent-verifier evidence.
+
+The old PR #5 remains only a candidate implementation: it is open/unmerged, stale against the current default branch, and its 32-case 7B suite does not run the frozen 83-case baseline or the additional dynamic-left/branch-target tests. Do not merge or copy it automatically. The accepted 7B scope must be implemented or reconciled on a fresh isolated branch after the baseline and ABI dependencies are verified. Require the frozen 83-case suite, current Stage 7A suite, and expanded 7B suite on the same exact Windows-tested commit before calling 7B accepted.
+
+### Engine and Honour War acceptance gates
+
+- **8 / D3D11 geometry:** Native vertex and index buffers and actual indexed-triangle pixels rendered by the real Sharnou Engine executable.
+- **9:** Runtime shaders, depth buffer, camera, and 3D transformation pipeline.
+- **10:** Runtime textures, PBR materials, lighting, and shadows.
+- **11:** glTF/GLB scene and model loading, KTX2 material textures using KHR_texture_basisu, and skeletal animation.
+- **12:** Terrain, particles, atmosphere, and measured rendering optimization.
+- **13:** Integrated MMORPG camera, characters, combat systems, and world rendering in Honour War.
+
+These are user-approved required outcomes, not currently completed milestones. Source scaffolding, headers, clear/present-only tests, policy checks, and roadmap documents do not satisfy the runtime acceptance criteria. Preserve the runtime asset roles already defined in this plan: glTF/GLB for 3D scenes/models, KTX2 with KHR_texture_basisu for 3D material textures, and AVIF for 2D/UI raster visuals.
+
+### Autonomous Sharnou AI Development Agent
+
+The Sharnou-compiled persistent AI development agent and the advanced bug-research/escalation capability in sections 8 and 11 are also approved required product scope. The final agent must be compiled from Sharnou-language source to a genuine native Windows x64 executable, operate on a configured persistent host, recover durable work after restart, use constrained repository tools, and create evidence-backed pull requests. It must support public Internet research and optional OpenAI and Perplexity developer-API consultations for difficult bugs, with secret redaction, bounded budgets, independent verification, and the same policy gates as local actions.
+
+### Current disposition
+
+- Scope: **USER-APPROVED** for 7B-7E and 8-13, plus the autonomous AI agent and research escalation.
+- Implementation: **PENDING**; no milestone is marked complete by this approval.
+- Existing PRs: remain open/unmerged unless separately reviewed; this automation must not merge them.
+- Dependency order: verify and integrate the frozen M1-M6 baseline/provenance and ABI gates; complete 7B-7E; implement the native runtime and safe process/research interfaces; generate and validate the Sharnou-compiled agent; then complete Engine geometry through world-rendering milestones and integrate Honour War when its prerequisites pass.
