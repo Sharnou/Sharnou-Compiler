@@ -613,6 +613,11 @@ try {
             throw "Broker fixture process exited with code $exitCode. Output=[$actual]."
         }
         if (-not [string]::Equals($actual, $expected, [StringComparison]::Ordinal)) {
+            $rawDiagnostic = ($lines -join [string][char]10)
+            if ($rawDiagnostic.Length -gt 65536) { $rawDiagnostic = $rawDiagnostic.Substring(0, 65536) }
+            Write-Host 'DEVAGENT_BROKER_RAW_OUTPUT_BEGIN|numeric-mismatch'
+            Write-Host $rawDiagnostic
+            Write-Host 'DEVAGENT_BROKER_RAW_OUTPUT_END'
             if (Test-Path -LiteralPath $dpapiStatusPath -PathType Leaf) {
                 $sandboxDpapiStatus = [IO.File]::ReadAllText($dpapiStatusPath, [Text.Encoding]::ASCII).Trim()
                 Write-Host ("DEVAGENT_SANDBOX_DPAPI_STATUS|{0}" -f $sandboxDpapiStatus)
