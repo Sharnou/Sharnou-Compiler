@@ -10,6 +10,36 @@ try {
     $buildMarker = [IO.Path]::Combine($buildRoot, 'sandbox-write-probe.ok')
     $deniedMarker = [IO.Path]::Combine($testToolRoot, 'denied-write-probe.tmp')
     $hostDeniedMarker = [IO.Path]::Combine($hostRoot, 'sandbox-host-write-probe.tmp')
+    $dpapiForgeryPath = [IO.Path]::Combine($buildRoot, 'appcontainer-dpapi-forgery.bin')
+    $dpapiStatusPath = [IO.Path]::Combine($buildRoot, 'appcontainer-dpapi-status.txt')
+
+    # Probe whether a Low-IL AppContainer process can mint a CurrentUser DPAPI
+    # envelope with the same public context entropy as the trusted broker.
+    # The parent test independently attempts to unprotect the result. This
+    # characterizes the real sandbox boundary; it is not a production journal.
+    Remove-Item -LiteralPath $dpapiForgeryPath -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $dpapiStatusPath -Force -ErrorAction SilentlyContinue
+    try {
+        Add-Type -AssemblyName System.Security -ErrorAction Stop
+        $dpapiEntropy = [Text.Encoding]::UTF8.GetBytes('Sharnou.DevAgent.AuthenticatedJournal.v2|user-scope')
+        $dpapiPayload = [Text.Encoding]::ASCII.GetBytes('appcontainer-created-dpapi-record-v1')
+        $dpapiEnvelope = [Security.Cryptography.ProtectedData]::Protect(
+            $dpapiPayload,
+            $dpapiEntropy,
+            [Security.Cryptography.DataProtectionScope]::CurrentUser)
+        if ($dpapiEnvelope.Length -lt 32 -or $dpapiEnvelope.Length -gt 65536) {
+            throw 'DPAPI returned an envelope outside the bounded test range.'
+        }
+        [IO.File]::WriteAllBytes($dpapiForgeryPath, $dpapiEnvelope)
+        [IO.File]::WriteAllText($dpapiStatusPath, 'PROTECT_SUCCESS', [Text.Encoding]::ASCII)
+        [Console]::WriteLine(('SANDBOX_DPAPI_PROTECT_SUCCESS|bytes={0}' -f $dpapiEnvelope.Length))
+    }
+    catch {
+        $baseException = $_.Exception.GetBaseException()
+        $status = 'PROTECT_FAILURE|{0}|0x{1:X8}' -f $baseException.GetType().FullName, $baseException.HResult
+        [IO.File]::WriteAllText($dpapiStatusPath, $status, [Text.Encoding]::ASCII)
+        [Console]::WriteLine(('SANDBOX_DPAPI_PROTECT_FAILURE|{0}' -f $status))
+    }
 
     try {
         [IO.File]::WriteAllText($buildMarker, 'appcontainer-build-write-ok')
