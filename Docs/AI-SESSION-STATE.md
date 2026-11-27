@@ -2225,3 +2225,8 @@ Code-bearing commit: `907281187ffdf9223d4b345a2847c2a1feb883cf`.
 - DPAPI user-scope envelope is NOT a trusted writer identity when other same-user processes are in the threat model. The new `Docs/PHASE-2B8-JOURNAL-TRUST-BOUNDARY.md` requires an independently protected writer-authentication trust anchor before native profile metadata is persisted/used for cleanup.
 - No production compiler-emitted broker/journal code has changed. Production still uses stable AppContainer profile and v1 ACL journal. Phase 2B.8 remains NOT SECURITY ACCEPTED.
 - Model-facing/autonomous process execution remains DISABLED.
+
+
+### Latest exact-head journal threat-boundary test - 2026-11-27
+
+Dedicated Windows run [46022134602](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/46022134602) passed on code commit `a64b81def96b22315b8ab8034bb60c4af1870e32`. The v2 parser now also rejects empty execution ID, malformed SID, descriptor count/length mismatch and unsupported security policy version. A same-user re-protection demonstration passes and confirms that the same-user process can create a different valid DPAPI envelope with the same public optional entropy. This confirms DPAPI is not writer-process authentication. The trust-boundary design gate remains unresolved until a separate service/key identity is approved.
