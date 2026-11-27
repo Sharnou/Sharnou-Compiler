@@ -427,14 +427,28 @@ namespace Sharnou
                     new UIntPtr((uint)Marshal.SizeOf(typeof(SECURITY_CAPABILITIES))), IntPtr.Zero, IntPtr.Zero))
                     throw new Win32Exception(Marshal.GetLastWin32Error(), "Security-capabilities process attribute failed.");
 
-                // A two-WCHAR empty block is explicit and terminated; do not inherit
-                // the broker/test runner environment into this identity probe.
-                environment = Marshal.AllocHGlobal(4);
-                Marshal.WriteInt16(environment, 0, 0);
-                Marshal.WriteInt16(environment, 2, 0);
-
                 string systemDirectory = Environment.SystemDirectory;
                 string application = System.IO.Path.Combine(systemDirectory, "cmd.exe");
+
+                // Win32 error 203 is the required regression here: an empty
+                // Unicode environment is rejected by this Windows process-start
+                // path. Supply a deterministic allowlist, not lpEnvironment=NULL.
+                string systemRoot = Environment.GetEnvironmentVariable("SystemRoot");
+                if (String.IsNullOrEmpty(systemRoot))
+                    throw new InvalidOperationException("SystemRoot is required to build the explicit child environment.");
+                string[] allowedEnvironment = new string[] {
+                    "ComSpec=" + application,
+                    "PATH=" + systemDirectory,
+                    "SystemRoot=" + systemRoot,
+                    "windir=" + systemRoot
+                };
+                Array.Sort(allowedEnvironment, StringComparer.OrdinalIgnoreCase);
+                string environmentText = String.Join("\\0", allowedEnvironment) + "\\0\\0";
+                char[] environmentChars = environmentText.ToCharArray();
+                environment = Marshal.AllocHGlobal(checked(environmentChars.Length * 2));
+                for (int environmentIndex = 0; environmentIndex < environmentChars.Length; environmentIndex++)
+                    Marshal.WriteInt16(environment, environmentIndex * 2, (short)environmentChars[environmentIndex]);
+
                 StringBuilder commandLine = new StringBuilder("\"" + application + "\" /c exit 0");
                 STARTUPINFOEXW startup = new STARTUPINFOEXW();
                 startup.StartupInfo.cb = (uint)Marshal.SizeOf(typeof(STARTUPINFOEXW));
@@ -494,7 +508,8 @@ namespace Sharnou
 
                     return "AppContainer=1;PackageSID=" + actualSidText +
                         ";IntegrityRID=0x" + integrityRid.ToString("X") +
-                        ";Capabilities=" + capabilityCount.ToString();
+                        ";Capabilities=" + capabilityCount.ToString() +
+                        ";Environment=ComSpec,PATH,SystemRoot,windir";
                 }
                 finally
                 {
