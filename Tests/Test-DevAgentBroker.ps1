@@ -57,6 +57,28 @@ namespace Sharnou {
         private static extern IntPtr CreateFileA(string name, uint access, uint share, IntPtr security, uint disposition, uint flags, IntPtr template);
         [DllImport("kernel32.dll", SetLastError = true)]
         private static extern bool CloseHandle(IntPtr handle);
+        [DllImport("kernel32.dll")]
+        private static extern IntPtr GetCurrentProcess();
+        [DllImport("advapi32.dll", SetLastError = true)]
+        private static extern bool OpenProcessToken(IntPtr process, uint access, out IntPtr token);
+        public static string ProcessTokenSummary() {
+            IntPtr token;
+            if (!OpenProcessToken(GetCurrentProcess(), 0x0008, out token))
+                throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+            try {
+                using (var identity = new System.Security.Principal.WindowsIdentity(token)) {
+                    var groups = new System.Text.StringBuilder();
+                    if (identity.Groups != null) {
+                        foreach (var group in identity.Groups) {
+                            if (groups.Length != 0) groups.Append(',');
+                            groups.Append(group.Value);
+                        }
+                    }
+                    return identity.User.Value + "|" + groups.ToString();
+                }
+            }
+            finally { CloseHandle(token); }
+        }
         public static int Probe(string path, uint access, uint share, uint flags) {
             IntPtr handle = CreateFileA(path, access, share, IntPtr.Zero, 3, flags, IntPtr.Zero);
             if (handle == new IntPtr(-1)) return Marshal.GetLastWin32Error();
@@ -707,8 +729,10 @@ try {
             $currentGroups = @($currentIdentity.Groups | ForEach-Object { $_.Value }) -join ','
             $currentPrincipal = [Security.Principal.WindowsPrincipal]::new($currentIdentity)
             $isBuiltinAdmin = $currentPrincipal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-            Write-Host ("ACL_RECOVERY_JOURNAL_SECURITY|owner={0}|identity={1}|groups={2}|isBuiltinAdmin={3}|sddl={4}" -f
-                $journalSecurity.Owner, $currentIdentity.User.Value, $currentGroups, $isBuiltinAdmin, $journalSecuritySddl)
+            $processTokenSummary = [Sharnou.DevAgentJournalProbe]::ProcessTokenSummary()
+            Write-Host ("ACL_RECOVERY_JOURNAL_SECURITY|owner={0}|effectiveIdentity={1}|effectiveGroups={2}|impersonation={3}|processToken={4}|isBuiltinAdmin={5}|sddl={6}" -f
+                $journalSecurity.Owner, $currentIdentity.User.Value, $currentGroups, $currentIdentity.ImpersonationLevel,
+                $processTokenSummary, $isBuiltinAdmin, $journalSecuritySddl)
         }
         catch {
             Write-Host ("ACL_RECOVERY_JOURNAL_READ_FAIL|{0}" -f $_.Exception.Message)
