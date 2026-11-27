@@ -106,3 +106,24 @@ Model-facing execution: DISABLED.
 Autonomous execution: DISABLED.
 Phase 2B.8 security acceptance: NOT ACCEPTED.
 Production installation/rollout: NOT AUTHORIZED.
+
+
+## R5.1.a - multi-target relocation implementation
+
+The R5.1.a implementation is tracked in PR #33 and is based on this preflight branch. `Tools/SharnouPERelocations.ps1` now provides a shared builder/parser for canonical PE DIR64 base-relocation blocks. It validates 8-byte target alignment, image and approved initialized-data bounds, duplicate targets, page ordering, sorted offsets, DIR64-only entry types, ABS padding rules, bounded directory size and exact expected target sets. The compiler keeps the original one-target 12-byte .rdata anchor directory byte-for-byte stable. The PE verifier now parses the directory from the generated image instead of assuming exactly one block.
+
+## R5.1.b - typed callback pointer and ABI probe implementation
+
+The R5.1.b implementation is tracked in PR #34 (stacked on PR #33). The compiler now has an explicit callback-signature allowlist:
+- `SERVICE_MAIN_FUNCTIONW`: `VOID WINAPI(DWORD, LPWSTR*)`.
+- `HANDLER_FUNCTION_EX`: `DWORD WINAPI(DWORD, DWORD, LPVOID, LPVOID)`.
+
+The code generator registers internal code labels in 8-byte .rdata pointer slots, aligns each slot, emits RIP-relative indirect calls through those slots, resolves each code-label VA after final code layout, writes the 64-bit VA into .rdata, and adds the pointer slot's RVA to the multi-target DIR64 relocation set. Unknown callback types, data-key collisions, unresolved labels, invalid pointer slot sizes, and out-of-range references fail compilation.
+
+The test-only builtin `sh_win64_callback_abi_probe()` emits two compiler-owned leaf callbacks with the exact service-main and HandlerEx register widths. It exercises the callback addresses through the relocated pointer table, checks DWORD arguments and full-width pointer arguments in RDX/R8/R9, and fails the executable with a nonzero exit if any check fails. The callback leaf stubs modify only volatile registers and flags, do not allocate stack, and do not require unwind rows. The test additionally inspects the actual PE relocation targets and checks that both callback VAs point into .text, while preserving the original .rdata entry-point anchor.
+
+This probe qualifies the pointer relocation and those two callback ABIs only. It does not start SCM, register a service, provide a production service-main routine, install a Windows service, add a named pipe, or enable execution authority.
+
+## Current exact-head qualification
+
+R5.1.a and R5.1.b have separate exact-head Windows workflows. Their acceptance state must be taken from the matching workflow run and inspected evidence bundle on the exact PR head. Do not infer a pass from successful file creation or a pending workflow.
