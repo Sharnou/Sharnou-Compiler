@@ -10,6 +10,9 @@ try {
     $relocationTest = Join-Path $PSScriptRoot 'Tests\Test-PEBaseRelocations.ps1'
     if (-not (Test-Path -LiteralPath $relocationTest -PathType Leaf)) { throw "PE relocation test is missing: $relocationTest" }
     & $relocationTest
+    $callbackAbiTest = Join-Path $PSScriptRoot 'Tests\Test-Win64CallbackABI.ps1'
+    if (-not (Test-Path -LiteralPath $callbackAbiTest -PathType Leaf)) { throw "Win64 callback ABI test is missing: $callbackAbiTest" }
+    & $callbackAbiTest
     $collectionTest = Join-Path $PSScriptRoot 'Tests\Test-Stage5CollectionImport.ps1'
     if (-not (Test-Path -LiteralPath $collectionTest -PathType Leaf)) { throw "Stage 5 collection regression is missing: $collectionTest" }
     & $collectionTest
