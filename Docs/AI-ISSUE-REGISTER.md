@@ -562,3 +562,10 @@ Acceptance requires: repair and adversarially validate journal recovery; unique 
 - Run [46022134602](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/46022134602) passed the latest dedicated Windows identity/journal primitive suite on `a64b81def96b22315b8ab8034bb60c4af1870e32`.
 - The fixture explicitly demonstrates same-user DPAPI re-protection: a different valid v2 payload can be protected with the same public optional entropy and unprotected. DPAPI user scope is therefore not sufficient writer-process authentication when malicious same-user processes are in scope.
 - The native journal/profile integration gate remains blocked until a separate trust anchor and recovery authority are selected and reviewed. See `Docs/PHASE-2B8-JOURNAL-TRUST-BOUNDARY.md`.
+
+
+### Phase 2B.8 latest hardening awaiting CI
+
+- Changed the synthetic workspace identity to `FILE_ID_INFO` semantics (64-bit volume serial + 128-bit `FILE_ID_128`) and added an all-zero file-ID rejection case.
+- Changed the same-user DPAPI forge test to spawn a distinct Windows PowerShell process; parent then decrypts the child-created envelope. This explicitly proves cross-process same-user minting rather than same-process API reuse.
+- Exact-head CI for this revision is pending; do not count these latest changes as verified until the run passes.
