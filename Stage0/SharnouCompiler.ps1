@@ -3022,6 +3022,7 @@ function Emit-DevRunTool {
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x85, 0xC0))
     Emit-JumpConditional -ConditionCode 0x84 -Label $outputFail
     Emit-StoreRaxFrame -SlotPosition $outputFileHandleSlot
+    Emit-DevBrokerDebugMarker -Marker 'CAPTURE:handle-created' -HandleSlot ($scratch + 0xFB0) -WrittenSlot ($scratch + 0xFB8)
     for ($i = 0; $i -lt 7; $i++) { Emit-StoreZero64Frame -SlotPosition ($outputFileInfoSlot + ($i * 8)) }
     Emit-LoadRcxFrame -SlotPosition $outputFileHandleSlot
     Emit-LeaRaxFrame -SlotPosition $outputFileInfoSlot
@@ -3029,12 +3030,14 @@ function Emit-DevRunTool {
     Emit-Win64CallIat -TargetRva ([UInt32]0x3208) -StackArguments @() # GetFileInformationByHandle
     Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
     Emit-JumpConditional -ConditionCode 0x84 -Label $outputFail
+    Emit-DevBrokerDebugMarker -Marker 'CAPTURE:file-info-ok' -HandleSlot ($scratch + 0xFB0) -WrittenSlot ($scratch + 0xFB8)
     Emit-LoadEaxFrame -SlotPosition $outputFileInfoSlot
     Emit-Bytes -Bytes ([byte[]]@(0xA9, 0x10, 0x04, 0x00, 0x00))
     Emit-JumpConditional -ConditionCode 0x85 -Label $outputFail # reject directory and reparse-point attributes
     Emit-LoadEaxFrame -SlotPosition ($outputFileInfoSlot + 40)
     Emit-Bytes -Bytes ([byte[]]@(0x3D, 0x01, 0x00, 0x00, 0x00))
     Emit-JumpConditional -ConditionCode 0x85 -Label $outputFail # a fresh capture file must have exactly one link
+    Emit-DevBrokerDebugMarker -Marker 'CAPTURE:metadata-ok' -HandleSlot ($scratch + 0xFB0) -WrittenSlot ($scratch + 0xFB8)
 
     # Build a restricted primary token and a no-capability AppContainer SECURITY_CAPABILITIES.
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0xC7, 0xC1, 0xFF, 0xFF, 0xFF, 0xFF)) # GetCurrentProcess()
@@ -3105,6 +3108,7 @@ function Emit-DevRunTool {
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x85, 0xC0))
     Emit-JumpConditional -ConditionCode 0x84 -Label $outputFail
     Emit-StoreRaxFrame -SlotPosition $outputBufferSlot
+    Emit-DevBrokerDebugMarker -Marker 'CAPTURE:buffer-allocated' -HandleSlot ($scratch + 0xFB0) -WrittenSlot ($scratch + 0xFB8)
 
     # Query the exact size required for two process attributes. The documented
     # first call uses a NULL list and must fail with ERROR_INSUFFICIENT_BUFFER (122).
@@ -3137,6 +3141,7 @@ function Emit-DevRunTool {
     Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
     Emit-JumpConditional -ConditionCode 0x84 -Label $attributeFail
     Emit-StoreBits32Frame -SlotPosition $attributeListReadySlot -Value 1
+    Emit-DevBrokerDebugMarker -Marker 'CAPTURE:attribute-list-ok' -HandleSlot ($scratch + 0xFB0) -WrittenSlot ($scratch + 0xFB8)
 
     # PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES: AppContainer SID and zero capabilities.
     Emit-LoadRaxFrame -SlotPosition $appContainerSidSlot
