@@ -254,7 +254,7 @@ try {
         throw 'Per-execution identity must use the system-preferred CNG random generator.'
     }
     if (-not $compilerSource.Contains('Sharnou.DevAgent.') -or
-        -not $compilerSource.Contains('0x3328') -or
+        -not $compilerSource.Contains('0x3330') -or
         -not $compilerSource.Contains('DeleteAppContainerProfile') -or
         -not $compilerSource.Contains('TokenAppContainerSid = 31') -or
         -not $compilerSource.Contains('EqualSid')) {
@@ -281,7 +281,7 @@ try {
     $profileCleanupSource = $compilerSource.Substring($profileCleanupStart, $profileCleanupEnd - $profileCleanupStart)
     if (-not $profileCleanupSource.Contains('$ChildActiveSlot') -or
         -not $profileCleanupSource.Contains('$TransactionActiveSlot') -or
-        -not $profileCleanupSource.Contains('TargetRva ([UInt32]0x3338)')) {
+        -not $profileCleanupSource.Contains('TargetRva ([UInt32]0x3340)')) {
         throw 'Profile deletion must be gated on Job Object emptiness and completed ACL transaction rollback.'
     }
 
