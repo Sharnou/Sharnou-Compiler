@@ -569,3 +569,11 @@ Acceptance requires: repair and adversarially validate journal recovery; unique 
 - Changed the synthetic workspace identity to `FILE_ID_INFO` semantics (64-bit volume serial + 128-bit `FILE_ID_128`) and added an all-zero file-ID rejection case.
 - Changed the same-user DPAPI forge test to spawn a distinct Windows PowerShell process; parent then decrypts the child-created envelope. This explicitly proves cross-process same-user minting rather than same-process API reuse.
 - Exact-head CI for this revision is pending; do not count these latest changes as verified until the run passes.
+
+
+### Latest Phase 2B.8 fixture evidence - 2026-11-27
+
+- Run [46024410650](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/46024410650) passed the new FILE_ID_INFO schema and separate-process DPAPI writer proof on code commit `fc479378a818bc759f298361c6a298e6c143118e`.
+- The v2 test schema uses 64-bit volume serial + full 128-bit FILE_ID_128. A separate same-user PowerShell child minted a different valid DPAPI envelope with public entropy; the parent unprotected it. DPAPI CurrentUser is therefore definitively not per-process writer authentication.
+- M1-M6 83/83 passed on latest head `cb0551dd1d272deb3c12aab9b5131cc3fb6ed2fb`, run [46024435843](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/46024435843).
+- Full Stage 7A combined test run [46024435792](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/46024435792) remained in progress at last inspection, including a new actual AppContainer child DPAPI characterization probe.
