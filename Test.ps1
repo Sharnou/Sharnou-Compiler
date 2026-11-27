@@ -25,6 +25,9 @@ try {
     $journalTest = Join-Path $PSScriptRoot 'Tests\Test-DevAgentAuthenticatedJournal.ps1'
     if (-not (Test-Path -LiteralPath $journalTest -PathType Leaf)) { throw "DevAgent authenticated-journal test is missing: $journalTest" }
     & $journalTest
+    $environmentTest = Join-Path $PSScriptRoot 'Tests\Test-DevAgentEnvironmentBlock.ps1'
+    if (-not (Test-Path -LiteralPath $environmentTest -PathType Leaf)) { throw "DevAgent explicit environment test is missing: $environmentTest" }
+    & $environmentTest
     $baselineTest = Join-Path $PSScriptRoot 'Tests\BaselineM6\Test-Milestone6Baseline.ps1'
     if (-not (Test-Path -LiteralPath $baselineTest -PathType Leaf)) { throw "Frozen M1-M6 baseline regression is missing: $baselineTest" }
     & $baselineTest
