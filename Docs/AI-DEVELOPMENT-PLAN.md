@@ -286,3 +286,28 @@ The failing run returned -2685 for each broker invocation after WAIT_ABANDONED. 
 The milestone also requires a unique AppContainer identity per execution, a versioned recovery journal that can retire a crashed profile after ACL restoration, a deterministic explicit Unicode environment (never lpEnvironment=NULL), production integration of the Phase 2B.5 two-stream handle allowlist, child loader/DLL-search hardening, and same-head crash/adversarial Windows acceptance. New native APIs must be represented in the generated PE import table and checked by the PE verifier; the final executable import table, not a planned manifest, is authoritative.
 
 Model-facing process execution and autonomous execution remain DISABLED.
+
+
+## Phase 2B.8 implementation sequencing update - 2026-11-27
+
+The Phase 2B.8 specification and acceptance gates are in `Docs/PHASE-2B8-CRASH-SAFE-EXECUTION-LIFECYCLE.md`; the reconciliation and code-increment record are in `Docs/PHASE-2B8-IMPLEMENTATION-LOG.md`.
+
+Current PR #24 head `6344632746cd0666025a0beb0d31f4752d6480f6` has targeted Windows evidence for journal recovery, exact ACL/label rollback and Job Object child termination (run 46003358917), plus companion M1-M6 83/83 evidence (run 46003358930). PR #24 remains the Phase 2B.6 integration parent and is not security accepted. The reviewed repository does not establish a separately completed Phase 2B.7 lifecycle implementation.
+
+Draft PR #28 starts Phase 2B.8 on an isolated branch stacked on that exact PR #24 head. Its first code increment adds a Windows CNG/AppContainer identity primitive test to the combined test suite. It is **NOT YET WINDOWS-CI-VERIFIED** and does not change the production broker or its stable profile behavior.
+
+Next dependencies: verify the identity fixture on Windows; implement actual unique identity creation in the emitted broker; design authenticated journal metadata before recording profile names for restart cleanup; integrate idempotent profile deletion with normal and crash recovery; then implement clean environment, separate bounded streams, DLL hardening and exhaustive lifecycle qualification. Model-generated execution remains disabled until all same-commit security gates and human review pass.
+
+
+## Phase 2B.8 engineering status - 2026-11-27
+
+The first Windows identity and journal-schema primitives are independently tested. On code-bearing commit `907281187ffdf9223d4b345a2847c2a1feb883cf`, Windows run [46021589016](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/46021589016) passed: eight fresh CNG/AppContainer identities, exact child package-SID checks on suspended children, Low IL and zero capabilities, normal profile delete/recreate/delete, DPAPI user-scope envelope protection/tamper checks, and strict v2 fixture schema rejection tests. M1-M6 83/83 passed in [46021589107](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/46021589107). Stage 7A combined test run 46021589123 was still in progress at the last status check.
+
+The DPAPI result is deliberately classified as a user-scope protection primitive, not process-writer authentication. A same-user process can use the same DPAPI context and optional entropy to produce a different valid blob. The writer-authentication trust boundary must be decided and reviewed before native v2 journal integration or privileged profile cleanup. See `Docs/PHASE-2B8-JOURNAL-TRUST-BOUNDARY.md`.
+
+No code in the compiler-emitted broker or its v1 journal has yet been changed. Unique per-execution profile creation, persisted authenticated identity, restart-time profile cleanup, explicit Unicode environment, separate streams, child DLL loader policy, cancellation/concurrency and crash-cut qualification remain pending. Model-facing/autonomous execution remains disabled.
+
+
+### Latest Phase 2B.8 identity/journal evidence - 2026-11-27
+
+The latest dedicated Windows test [46022134602](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/46022134602) passed on `a64b81def96b22315b8ab8034bb60c4af1870e32`, including 8 real suspended child-token inspections, distinct AppContainer identities/SIDs, Low IL and zero capabilities, verified normal profile deletion, strict v2 schema negatives, DPAPI tamper/wrong-context checks and an explicit same-user re-protection proof. That last test demonstrates why DPAPI alone does not authenticate the writer process. The production trust anchor remains unresolved; native broker integration must not consume profile cleanup authority from DPAPI-only metadata until this decision is reviewed.

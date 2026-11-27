@@ -2187,3 +2187,73 @@ Phase 2B.6 acceptance work:
 7. Pass same-head native ABI, M6 baseline, Stage 7A, AppContainer, ACL crash/recovery, environment, output, loader and cleanup tests.
 
 The existing PR #24 candidate contains real native AppContainer/ACL/job/pipe/journal emitter code but is not production-accepted while crash recovery fails. No model-facing or autonomous execution permission is enabled.
+
+
+## Phase 2B.8 implementation start - 2026-11-27
+
+### Reconciliation
+
+- Current PR #24 exact head: `6344632746cd0666025a0beb0d31f4752d6480f6` on `devagent-acl-transaction-recovery-20261126`.
+- Exact-head Windows run [46003358917](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/46003358917) passed Stage 7A 24/24, Runtime ABI, native broker phase-1, targeted crash recovery, exact DACL/mandatory-label restoration, host/child integrity separation, malformed-journal rejection, abandoned-journal recovery and combined result. Companion run [46003358930](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/46003358930) passed the M1-M6 baseline 83/83.
+- PR #24 remains a large diverged candidate and was not changed, merged or rebased. Phase 2B.7 does not have a separately recorded/accepted complete lifecycle implementation in the reviewed candidate docs; do not mark it complete by inference. PR #24 is treated as the Phase 2B.6 broker/journal integration parent.
+
+### Code-bearing Phase 2B.8 increment
+
+- Isolated stacked branch: `phase-2b8-identity-profile-qualification-20261127`, based exactly on PR #24 head above.
+- Draft implementation PR #28 targets PR #24's branch; it is separate from PR #24 and the Phase 2B.8 specification PR #26.
+- Added `Tests/Test-DevAgentExecutionIdentity.ps1` and integrated it into root `Test.ps1`.
+- The fixture calls CNG `BCryptGenRandom` using the system-preferred RNG, creates uniquely named zero-capability AppContainer profiles, checks SID/name derivation, rejects pre-existing profile adoption, and verifies deletion by successful recreation followed by deletion.
+- Added `Docs/PHASE-2B8-CRASH-SAFE-EXECUTION-LIFECYCLE.md` and `Docs/PHASE-2B8-IMPLEMENTATION-LOG.md` to the stacked branch.
+
+### Evidence and limitations
+
+- The new identity fixture is NOT YET WINDOWS-CI-VERIFIED; no assistant-executed Windows test is available in this session. Do not call the increment passed until an exact-head Windows run reports the fixture results.
+- This is a test-only API qualification increment. The compiler-emitted broker still uses the stable profile identity; no production broker code, journal format, process launch behavior, or generated executable was changed.
+- Before profile name metadata is consumed during restart recovery, design and validate an authenticated journal/key boundary. Do not add unauthenticated profile names to a journal and use them for profile deletion.
+- Clean Unicode environment, separate stdout/stderr, child DLL policy, comprehensive crash cut-points and concurrency acceptance remain open.
+- Model-facing process execution remains DISABLED. Phase 2B.8 remains NOT SECURITY ACCEPTED.
+
+
+## Phase 2B.8 Windows evidence update - 2026-11-27
+
+Code-bearing commit: `907281187ffdf9223d4b345a2847c2a1feb883cf`.
+
+- Dedicated Windows run [46021589016](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/46021589016): **PASS**. Eight unique CNG-generated AppContainer profile identities/SIDs; eight real suspended child-token inspections (AppContainer=1, expected package SID, Low integrity RID 0x1000, zero capabilities); eight profile delete/recreate/delete verifications. DPAPI user-scope journal-envelope round-trip/tamper/wrong-entropy/cleartext tests pass. Strict v2 fixture parser accepted canonical schema and rejected unsupported version, truncation, trailing byte, profile length overflow and missing workspace identity.
+- Frozen M1-M6 baseline [46021589107](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/46021589107): **PASS 83/83**.
+- Stage 7A/combined run [46021589123](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/46021589123): encoding gate PASS; full run still in progress at this note. Earlier exact baseline revision bfb7f573... passed Stage7A combined run 46020834321.
+- Identity child-token fixture uses inherited environment while suspended and never resumed; clean Unicode environment is NOT qualified. Attempts to create a custom block hit Win32 203 and were removed from the token test rather than silently treating them as a pass.
+- DPAPI user-scope envelope is NOT a trusted writer identity when other same-user processes are in the threat model. The new `Docs/PHASE-2B8-JOURNAL-TRUST-BOUNDARY.md` requires an independently protected writer-authentication trust anchor before native profile metadata is persisted/used for cleanup.
+- No production compiler-emitted broker/journal code has changed. Production still uses stable AppContainer profile and v1 ACL journal. Phase 2B.8 remains NOT SECURITY ACCEPTED.
+- Model-facing/autonomous process execution remains DISABLED.
+
+
+### Latest exact-head journal threat-boundary test - 2026-11-27
+
+Dedicated Windows run [46022134602](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/46022134602) passed on code commit `a64b81def96b22315b8ab8034bb60c4af1870e32`. The v2 parser now also rejects empty execution ID, malformed SID, descriptor count/length mismatch and unsupported security policy version. A same-user re-protection demonstration passes and confirms that the same-user process can create a different valid DPAPI envelope with the same public optional entropy. This confirms DPAPI is not writer-process authentication. The trust-boundary design gate remains unresolved until a separate service/key identity is approved.
+
+
+### Phase 2B.8 schema precision update
+
+The journal-v2 test schema was corrected to use Windows `FILE_ID_INFO`: 64-bit volume serial plus the complete 128-bit `FILE_ID_128`. The DPAPI writer-boundary negative/positive characterization now uses a separate PowerShell process running as the same Windows user, rather than protecting the forged record inside the same process. Awaiting exact-head Windows CI before claiming these two latest refinements pass.
+
+
+### 2026-11-27 exact Windows verification: FILE_ID_INFO + separate-process DPAPI
+
+- Dedicated Windows workflow [46024410650](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/46024410650) passed on code commit `fc479378a818bc759f298361c6a298e6c143118e`. It verified eight actual suspended child tokens per generated AppContainer profile (exact SID, AppContainer flag, Low IL 0x1000, zero capabilities), normal profile deletion, strict v2 negatives, 128-bit FILE_ID_INFO workspace identity, and a separate same-user PowerShell process successfully creating a DPAPI envelope that the parent unprotected.
+- M1-M6 baseline [46024435843](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/46024435843) passed 83/83 on latest workflow head `cb0551dd1d272deb3c12aab9b5131cc3fb6ed2fb`.
+- Full combined Stage 7A run [46024435792](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/46024435792) was in progress at last inspection. It includes the new sandbox-child DPAPI mint/decrypt characterization. This result is not yet claimed.
+
+
+### Explicit environment builder primitive - 2026-11-27
+
+- Added `Tests/Test-DevAgentEnvironmentBlock.ps1` to the combined suite and dedicated Windows workflow.
+- Run [46025925905](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/46025925905) completed **SUCCESS** on `6277f28123b28b56e2710f50d7197239fd034529`: non-NULL Unicode block, 9 entries / 354 UTF-16 code units, SystemRoot/windir/SystemDrive/PATH present, validated hidden drive-current-directory entries preserved, ordinary parent vars discarded, unique parent secret absent.
+- Run [46025925771](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/46025925771) passed frozen M1-M6 baseline 83/83 on the same commit.
+- Limitation: test uses ordinary `CreateProcessW`, not the broker's `CreateProcessAsUserW` + AppContainer security-capability launch. No production broker environment change is made; `lpEnvironment=NULL` remains in the emitted candidate and Win32 203 remains a blocker to integrate until AppContainer-specific proof passes.
+
+## Writer authority and environment qualification update - 2026-11-27
+
+- Added Docs/PHASE-2B8-WRITER-AUTHORITY-SERVICE-DESIGN.md: recommended design is a dedicated Windows service SID owning its non-exportable key and the entire journal/ACL/profile transaction. A generic "sign arbitrary bytes" service is explicitly prohibited. Service installation/upgrade/key-loss recovery is an owner deployment decision; no service has been implemented.
+- Added Tests/Test-DevAgentEnvironmentBlock.ps1. Dedicated Windows run 46025925905 passed a bounded 9-entry/354-WCHAR Unicode environment and CreateProcessW launch; required Windows values were correct and a parent secret was absent. This does not qualify the emitted broker's CreateProcessAsUserW AppContainer path.
+- Latest combined Stage 7A run 46025926233 includes the built-in SecureString AppContainer DPAPI probe; final job/log result had not yet been inspected when this record was appended.
+- Production broker remains unchanged: stable profile identity, v1 journal, lpEnvironment=NULL, merged stdout/stderr. Model-facing execution remains disabled.
