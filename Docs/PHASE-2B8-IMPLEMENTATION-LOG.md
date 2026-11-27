@@ -134,3 +134,22 @@ A separately approved writer-authentication trust anchor is now an explicit prer
 - Separate stdout/stderr, child DLL loader policy, exhaustive crash cut points, cancellation/concurrency and same-head full acceptance remain open.
 
 Model-facing and autonomous process execution remain DISABLED.
+
+
+## 2026-11-27 trust-boundary adversarial proof update
+
+Latest fixture code commit: `a64b81def96b22315b8ab8034bb60c4af1870e32`.
+
+Windows Server 2025 dedicated run [46022134602](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/46022134602) completed **SUCCESS**. In addition to prior profile-token and strict schema checks, the journal fixture now:
+- rejects empty execution GUID, malformed AppContainer package SID, descriptor-count mismatch, too-short descriptor, unsupported policy version, unsupported journal version, truncation, trailing data, invalid profile-name length and missing workspace volume identity;
+- demonstrates the key threat-model limitation by creating a different structurally valid v2 record in the same user context, protecting it with the same public optional entropy using DPAPI, and successfully unprotecting it again.
+
+This is an expected PASS and a security warning: the same-user principal can mint a different valid DPAPI envelope. Therefore this DPAPI mechanism alone cannot authenticate which broker process wrote the journal. The trust-boundary document prohibits production use as writer authentication until a distinct writer trust anchor is chosen.
+
+At this run:
+- Eight AppContainer identities/SIDs were pairwise distinct.
+- Each corresponding suspended child token had the exact package SID, AppContainer flag, Low IL RID 0x1000 and zero capability groups.
+- All eight normal profile deletions passed delete/recreate/delete verification.
+- DPAPI tamper, wrong entropy, cleartext absence, same-user re-protection and strict v2 schema tests passed.
+
+The fixture remains non-production: no compiler-emitted broker integration, no crash-profile cleanup and no complete journal recovery path has been changed.
