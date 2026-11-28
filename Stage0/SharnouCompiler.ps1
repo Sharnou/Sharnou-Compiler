@@ -3968,6 +3968,7 @@ function Emit-NativeScmCallbacks {
         throw 'Native SCM callback data was not registered by the Sharnou service-host intrinsic.'
     }
     $script:NativeScmRuntimeFunctionSpecs = [System.Collections.Generic.List[object]]::new()
+    $script:NativeScmCallbackStartOffset = [int]$script:Code.Count
 
     # SERVICE_MAIN_FUNCTIONW(DWORD, LPWSTR*) -> VOID. HandlerEx receives a
     # pointer to EventSlot, whose lifetime is the service-main callback lifetime.
@@ -5083,6 +5084,8 @@ foreach ($functionObject in ($script:Functions.Values | Sort-Object Index)) {
 # Windows x64 stack-probe helper. This is a leaf routine using only R10/R11
 # and flags; RAX (the requested allocation size), argument registers, RSP, and
 # all nonvolatile registers are preserved. Leaf routines require no .pdata row.
+if ($script:NativeScmServiceMode) { Emit-NativeScmCallbacks }
+
 $stackProbeOffset = [int]$script:Code.Count
 Mark-CodeLabel -Label '__sharnou_chkstk'
 Emit-Bytes -Bytes ([byte[]]@(0x49, 0x89, 0xE2)) # mov r10,rsp (includes the call return address)
@@ -5110,8 +5113,6 @@ Emit-Bytes -Bytes ([byte[]]@(0xC3)) # ret; RAX is deliberately unchanged
 $workerOffset = [int]$script:Code.Count
 Mark-CodeLabel -Label '__sharnou_worker'
 Emit-Bytes -Bytes ([byte[]]@(0x31, 0xC0, 0xC3)) # return DWORD 0
-
-if ($script:NativeScmServiceMode) { Emit-NativeScmCallbacks }
 
 # Explicit Win64 callback ABI probes are leaf functions. The first probe uses
 # the exact SERVICE_MAIN_FUNCTIONW parameter widths; the second uses the exact
@@ -5155,12 +5156,13 @@ if ($EnableWin64CallbackTests) {
 # need no RUNTIME_FUNCTION rows. Frame-owning functions retain x64 unwind data.
 $orderedFunctions = @($script:Functions.Values | Sort-Object Index)
 $runtimeFunctionSpecs = [System.Collections.Generic.List[object]]::new()
-$entryEndOffset = if ($orderedFunctions.Count -gt 0) { [int]$script:CodeLabels[$orderedFunctions[0].Label] } else { $stackProbeOffset }
+$managedCodeEndOffset = if ($script:NativeScmServiceMode) { [int]$script:NativeScmCallbackStartOffset } else { [int]$stackProbeOffset }
+$entryEndOffset = if ($orderedFunctions.Count -gt 0) { [int]$script:CodeLabels[$orderedFunctions[0].Label] } else { $managedCodeEndOffset }
 $runtimeFunctionSpecs.Add([pscustomobject]@{ StartOffset = [int]$script:CodeLabels['__entry']; EndOffset = $entryEndOffset; Context = $script:MainContext; UnwindBytes = $null; UnwindOffset = 0 })
 for ($functionIndex = 0; $functionIndex -lt $orderedFunctions.Count; $functionIndex++) {
     $functionObject = $orderedFunctions[$functionIndex]
     $startOffset = [int]$script:CodeLabels[$functionObject.Label]
-    $endOffset = if (($functionIndex + 1) -lt $orderedFunctions.Count) { [int]$script:CodeLabels[$orderedFunctions[$functionIndex + 1].Label] } else { $stackProbeOffset }
+    $endOffset = if (($functionIndex + 1) -lt $orderedFunctions.Count) { [int]$script:CodeLabels[$orderedFunctions[$functionIndex + 1].Label] } else { $managedCodeEndOffset }
     if ($endOffset -le $startOffset) { throw "Invalid generated function range for '$($functionObject.Name)'." }
     $runtimeFunctionSpecs.Add([pscustomobject]@{ StartOffset = $startOffset; EndOffset = $endOffset; Context = $functionObject.Context; UnwindBytes = $null; UnwindOffset = 0 })
 }
