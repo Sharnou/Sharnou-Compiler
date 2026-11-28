@@ -2,7 +2,8 @@
 param(
     [Parameter(Mandatory = $true, Position = 0)]
     [string] $Path,
-    [switch] $NativeScmServiceHost
+    [switch] $NativeScmServiceHost,
+    [switch] $NativeScmServiceTestImage
 )
 
 Set-StrictMode -Version Latest
@@ -16,6 +17,9 @@ if (-not (Test-Path -LiteralPath $relocationModulePath -PathType Leaf)) {
 function Fail-PE {
     param([string] $Message)
     throw "PE verification failed: $Message"
+}
+if ($NativeScmServiceTestImage -and -not $NativeScmServiceHost) {
+    Fail-PE 'The test-image profile requires the native SCM service profile.'
 }
 function Read-U16 {
     param([byte[]] $Bytes, [int] $Offset)
@@ -347,10 +351,13 @@ while ($true) {
 }
 if ($NativeScmServiceHost) {
     $expectedServiceDlls = @('KERNEL32.dll', 'ADVAPI32.dll')
-    $expectedServiceApis = @(
+    $expectedKernel32Apis = @(
         'ExitProcess', 'GetLastError', 'CreateEventW', 'SetEvent',
-        'WaitForSingleObject', 'CloseHandle', 'StartServiceCtrlDispatcherW',
-        'RegisterServiceCtrlHandlerExW', 'SetServiceStatus'
+        'WaitForSingleObject', 'CloseHandle'
+    )
+    if ($NativeScmServiceTestImage) { $expectedKernel32Apis += 'Sleep' }
+    $expectedServiceApis = @($expectedKernel32Apis) + @(
+        'StartServiceCtrlDispatcherW', 'RegisterServiceCtrlHandlerExW', 'SetServiceStatus'
     )
     if ($foundDlls.Count -ne $expectedServiceDlls.Count -or $observedImportDescriptors.Count -ne 2) { Fail-PE 'Native SCM service image must contain exactly two import descriptors: KERNEL32.dll and ADVAPI32.dll.' }
     if ($observedImportDescriptors[0].Dll -cne 'KERNEL32.dll' -or
@@ -371,7 +378,7 @@ if ($NativeScmServiceHost) {
     $expectedServiceImportGroups = @(
         [pscustomobject]@{
             Dll = 'KERNEL32.dll'
-            Names = @('ExitProcess', 'GetLastError', 'CreateEventW', 'SetEvent', 'WaitForSingleObject', 'CloseHandle')
+            Names = $expectedKernel32Apis
         },
         [pscustomobject]@{
             Dll = 'ADVAPI32.dll'
@@ -449,6 +456,18 @@ if ($NativeScmServiceHost) {
     if (-not $runtimeFunctionStartRvas.Contains([UInt32]($handlerVa - [UInt64]$imageBase))) { Fail-PE 'HandlerEx pointer does not target a registered .pdata function entry.' }
     if (-not $runtimeFunctionStartRvas.Contains([UInt32]($serviceMainVa - [UInt64]$imageBase))) { Fail-PE 'ServiceMain pointer does not target a registered .pdata function entry.' }
     if ($terminatorName -ne 0 -or $terminatorProc -ne 0) { Fail-PE 'SERVICE_TABLE_ENTRYW array is missing its all-zero terminator.' }
+
+    $testMarker = 'SHARNOU_R5_1_D_TEST_ONLY_V1'
+    $rdataAscii = [Text.Encoding]::ASCII.GetString($bytes, [int]$rdata.RawPointer, [int]$rdata.RawSize)
+    $testMarkerIndex = $rdataAscii.IndexOf($testMarker, [StringComparison]::Ordinal)
+    if ($NativeScmServiceTestImage) {
+        if ($testMarkerIndex -ne [int]($tableOffset + 32) -or
+            $rdataAscii.IndexOf($testMarker, $testMarkerIndex + $testMarker.Length, [StringComparison]::Ordinal) -ge 0) {
+            Fail-PE 'Test-only SCM image marker is missing, duplicated, or not located after the service table.'
+        }
+    } elseif ($testMarkerIndex -ge 0) {
+        Fail-PE 'Production SCM verifier rejected an image carrying the R5.1.d test-only marker.'
+    }
 
     $expectedServiceRelocs = [UInt32[]]@(
         [UInt32]$rdata.Rva,
