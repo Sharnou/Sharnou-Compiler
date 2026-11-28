@@ -81,6 +81,13 @@ $badInputTypeJson = ConvertTo-Json -InputObject $badInputType -Depth 100 -Compre
 Invoke-ExpectedFailure -Name 'reject mismatched load-input interface type' -Json $badInputTypeJson -ExpectedCode 'V018'
 
 
+
+$longSemantic = ConvertFrom-SgirJsonText -Json $fixture
+$longSemanticVertex = @($longSemantic.entryPoints)[0]
+$longSemanticVertex.inputs[0].semantic = 'S' * 65
+$longSemanticJson = ConvertTo-Json -InputObject $longSemantic -Depth 100 -Compress
+Invoke-ExpectedFailure -Name 'reject overlong stage semantic names' -Json $longSemanticJson -ExpectedCode 'S015'
+
 $oversizedTypes = ConvertFrom-SgirJsonText -Json $fixture
 $extraTypes = @()
 for ($i = 0; $i -lt 63; $i++) {
