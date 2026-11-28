@@ -1,0 +1,79 @@
+name: SharnouDevAgent DGA-GFX-0.5A Local Inference Contract
+
+on:
+  push:
+    branches:
+      - devagent-gfx-local-inference-contract-20261128
+  pull_request:
+    branches:
+      - devagent-gfx-readonly-github-adapter-20261128
+    paths:
+      - 'Schemas/DevAgent/GfxLocalModel.v1.schema.json'
+      - 'Projects/DevAgent/Models/SmolLM2-135M-Instruct.profile.v1.json'
+      - 'Tools/DevAgent/GfxLocalInferenceContract.psm1'
+      - 'Tools/DevAgent/Invoke-GfxLocalInferenceContract.ps1'
+      - 'Tests/Test-GfxLocalInferenceContract.ps1'
+      - '.github/workflows/devagent-gfx-local-inference-contract.yml'
+      - 'Docs/DGA-GFX-0.5-LOCAL-INFERENCE.md'
+      - 'Docs/AI-SESSION-STATE.md'
+      - 'Docs/AI-ISSUE-REGISTER.md'
+      - 'README.md'
+  workflow_dispatch:
+
+jobs:
+  local-inference-contract:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Enforce ASCII source and documentation
+        shell: powershell
+        run: |
+          $paths = @(
+            'Schemas/DevAgent/GfxLocalModel.v1.schema.json',
+            'Projects/DevAgent/Models/SmolLM2-135M-Instruct.profile.v1.json',
+            'Tools/DevAgent/GfxLocalInferenceContract.psm1',
+            'Tools/DevAgent/Invoke-GfxLocalInferenceContract.ps1',
+            'Tests/Test-GfxLocalInferenceContract.ps1',
+            'Docs/DGA-GFX-0.5-LOCAL-INFERENCE.md',
+            'Docs/AI-SESSION-STATE.md',
+            'Docs/AI-ISSUE-REGISTER.md',
+            'README.md'
+          )
+          foreach ($path in $paths) {
+            $bytes = [IO.File]::ReadAllBytes((Join-Path $PWD $path))
+            if ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF) { throw "UTF-8 BOM: $path" }
+            foreach ($byte in $bytes) { if ($byte -gt 127) { throw "Non-ASCII byte: $path" } }
+          }
+          Write-Host 'PASS: source encoding and BOM policy.'
+
+      - name: Validate local model schema and profile
+        shell: powershell
+        run: |
+          $schema = Get-Content -Raw -LiteralPath 'Schemas/DevAgent/GfxLocalModel.v1.schema.json' | ConvertFrom-Json -ErrorAction Stop
+          if ($schema.'$id' -ne 'https://sharnou.dev/schemas/devagent/gfx-local-model/v1.json') { throw 'Model schema identity mismatch.' }
+          if ($schema.additionalProperties -ne $false) { throw 'Model schema must reject additional properties.' }
+          $profile = Get-Content -Raw -LiteralPath 'Projects/DevAgent/Models/SmolLM2-135M-Instruct.profile.v1.json' | ConvertFrom-Json -ErrorAction Stop
+          if ($profile.status -ne 'CANDIDATE_NOT_ACTIVATABLE') { throw 'Reference profile was unexpectedly activated.' }
+          Write-Host 'PASS: model schema and candidate profile parse.'
+
+      - name: Run DGA-GFX-0.5A contract tests under Windows PowerShell 5.1
+        shell: powershell
+        run: .\Tests\Test-GfxLocalInferenceContract.ps1
+
+      - name: Run inherited DGA-GFX-0.3 task-journal regression
+        shell: powershell
+        run: .\Tests\Test-GfxTaskJournal.ps1
+
+      - name: Run inherited DGA-GFX-0.4 adapter regression
+        shell: powershell
+        run: .\Tests\Test-GfxGitHubAdapter.ps1
+
+      - name: Confirm readiness remains blocked
+        shell: powershell
+        run: |
+          $result = .\Tools\DevAgent\Invoke-GfxLocalInferenceContract.ps1 | ConvertFrom-Json
+          if ($result.valid -ne $true -or $result.readiness -ne 'BLOCKED') { throw 'DGA-GFX-0.5A must validate the contract and remain blocked.' }
+          if ($result.blockers.Count -lt 7) { throw 'Expected all unresolved inference blockers to be explicit.' }
+          Write-Host ('PASS: contract valid; native inference readiness=' + $result.readiness)

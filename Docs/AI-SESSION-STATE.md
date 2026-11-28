@@ -1197,3 +1197,34 @@ After the prior session record, one more isolated diagnostic commit was added to
 - Credential protection remains CurrentUser DPAPI with a local owner-only ACL, not a service-SID broker. DGA task-journal hash chaining is not authentication. Phase 2B.8/R5 service identity, key and ACL gates remain separate prerequisites.
 - No process execution, inference, source generation, research daemon, worker, GitHub mutation, workflow dispatch/rerun, merge or release was enabled.
 - Next DevAgent increment: DGA-GFX-0.5, genuine Sharnou-owned in-process local inference runtime design/implementation, with no child-process fallback and no authority to write the repository or launch arbitrary commands.- The final documentation sync tip is subject to the same branch-push and pull-request Windows workflow; only those results at the resulting exact SHA are the final PR-head qualification anchor.
+
+
+## DGA-GFX-0.5A - local inference model contract - 2026-11-28
+
+- **Starting repository state:** DGA-GFX-0.4 draft PR #45 exact head `485481364d57153b16e340d7333a9bf6f4a94e0c`, stacked on DGA-GFX-0.3 PR #44. New isolated branch: `devagent-gfx-local-inference-contract-20261128`.
+- **Scope implemented in this slice:** versioned strict model profile schema, candidate model metadata, fail-closed profile/readiness validator, CLI and Windows PowerShell 5.1 qualification workflow. This is DGA-GFX-0.5A, not the complete DGA-GFX-0.5 runtime.
+- **Initial reference model:** HuggingFaceTB/SmolLM2-135M-Instruct, config revision `02e84e7cc564d9c3ca090f978a4da4698ccaac29`. The candidate profile records the declared Apache-2.0 model-card license and BF16 Llama architecture as reference metadata. Only the configuration revision is pinned; weight, tokenizer and chat-template artifacts remain explicitly UNPINNED/UNVERIFIED. No model artifact was downloaded or hashed.
+- **New paths:** `Docs/DGA-GFX-0.5-LOCAL-INFERENCE.md`; `Schemas/DevAgent/GfxLocalModel.v1.schema.json`; `Projects/DevAgent/Models/SmolLM2-135M-Instruct.profile.v1.json`; `Tools/DevAgent/GfxLocalInferenceContract.psm1`; `Tools/DevAgent/Invoke-GfxLocalInferenceContract.ps1`; `Tests/Test-GfxLocalInferenceContract.ps1`; `.github/workflows/devagent-gfx-local-inference-contract.yml`.
+- **Policy:** in-process Sharnou CPU runtime only; networking off during inference; no process launch, shell, dynamic library, repository write, model-issued tool calls, external inference runtime, or policy/acceptance authority. The validator returns `BLOCKED` while artifacts, license file, golden vectors and native runtime evidence are missing.
+- **Critical compiler prerequisite:** the current documented Sharnou language/ABI does not yet establish all FP32 arithmetic, BF16 conversion, tensor-memory and floating-point Windows x64 ABI rules needed by this BF16/FP32 model. These must be specified and qualified before tensor/transformer kernels are generated; no external compiler or numerical runtime may be used to bypass them.
+- **Execution evidence:** repository content was created through Git object operations. Windows PowerShell 5.1 tests, YAML/workflow execution, tokenizer vectors, tensor kernels and native inference are **NOT RUN** at this point. CI is required on the resulting exact PR head. No SharnouDevAgent executable or model inference was built or run.
+- **Activation:** campaign remains BLOCKED. DGA-GFX-0.5 is not complete; only its 0.5A contract/readiness slice is proposed for review. DGA-GFX-0.6+ and model-facing process execution remain gated by their own dependencies and Phase 2B.8/R5.
+- **Next bounded action:** qualify the 0.5A contract on Windows, then reconcile the compiler's floating-point/array/pointer/heap/ABI prerequisites and pin actual model/tokenizer/license artifacts before implementing the safe model-container reader.
+
+### DGA-GFX-0.5A draft PR opened - 2026-11-28
+
+- Draft PR: [#46 - DGA-GFX-0.5A: define native local-inference model contract](https://github.com/Sharnou/Sharnou-Compiler/pull/46), stacked on DGA-GFX-0.4 PR #45. It remains OPEN / DRAFT / UNMERGED.
+- Initial code-bearing commit: `f445706d604381b0b116b907b3ce8f63264338f5`. A static review then corrected the profile-reader return to use an explicit variable for PowerShell 5.1 compatibility; updated source/test head: `123264b133f6147520084ddccab7801617cf9510`.
+- Changed paths total: 10 (seven new contract/profile/test/workflow files plus the session-state, issue-register and README updates).
+- Windows Actions run `46170545017` started on the corrected source/test head; its status at this documentation update is **IN PROGRESS**, so no Windows test result is claimed. A later documentation synchronization will require its own exact-head run.
+- The earlier run on pre-correction head `f445706d604381b0b116b907b3ce8f63264338f5` is not qualification evidence for the updated branch tip.
+- The branch remains based on PR #45's exact head and no default-branch changes or merges were performed.
+
+
+### DGA-GFX-0.5A Windows qualification update - 2026-11-28
+
+- Corrected code/test head `123264b133f6147520084ddccab7801617cf9510`: PR run [46170550007](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/46170550007) and push run [46170545017](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/46170545017) both completed SUCCESS.
+- Documentation-synchronized head `a0f4fcdb78e2e68a3830e6fc6bb32942e64a42fd`: PR run [46170595343](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/46170595343) and push run [46170590806](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/46170590806) both completed SUCCESS.
+- Exact a0f4 head Windows PowerShell 5.1 results: DGA-GFX-0.5A contract 30/30; inherited DGA-GFX-0.3 journal 30/30; inherited DGA-GFX-0.4 adapter 49/49. Total 109 passed, 0 failed across these three suites. ASCII/no-BOM, strict profile checks, CLI, and explicit readiness=BLOCKED checks passed.
+- This qualifies the contract/readiness slice only. It does not qualify model parsing, tokenizer, numeric kernels, transformer inference, offline generation, or a native DevAgent executable.
+- The final state/README synchronization in this commit will trigger another exact-tip Windows run; results must be inspected before the new PR tip is treated as qualified.
