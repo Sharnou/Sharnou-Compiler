@@ -111,3 +111,6 @@ DGA-GFX-0.3 adds an append-only task journal, hash-bound checkpoint store and re
 
 
 DGA-GFX-0.3 has passed Windows PowerShell 5.1 qualification: 30 tests, 0 failures, plus CLI and source-encoding checks. It adds an append-only task journal, hash-bound checkpoint chain and restart recovery; it does not enable autonomous execution or background research.
+
+
+DGA-GFX-0.4 adds a read-only GitHub REST adapter for source and Actions provenance. It resolves branch references to exact commits, verifies source-file Git blob hashes and captures workflow-run and artifact metadata. Credentials are current-user DPAPI-protected. Exact-head Windows PowerShell 5.1 qualification is pending; no autonomous execution is enabled.
