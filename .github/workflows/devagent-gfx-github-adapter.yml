@@ -1,0 +1,69 @@
+name: SharnouDevAgent DGA-GFX-0.4 Read-Only GitHub Adapter Qualification
+
+on:
+  push:
+    branches:
+      - devagent-gfx-readonly-github-adapter-20261128
+  pull_request:
+    branches:
+      - devagent-gfx-task-journal-20261128
+    paths:
+      - 'Tools/DevAgent/GfxGitHubAdapter.psm1'
+      - 'Tools/DevAgent/Invoke-GfxGitHubAdapter.ps1'
+      - 'Schemas/DevAgent/GfxGitHubEvidence.v1.schema.json'
+      - 'Tests/Test-GfxGitHubAdapter.ps1'
+      - '.github/workflows/devagent-gfx-github-adapter.yml'
+      - 'Docs/DEVAGENT-GFX-MILESTONE-AUTOMATION.md'
+      - 'Docs/AI-SESSION-STATE.md'
+      - 'Docs/AI-DEVELOPMENT-PLAN.md'
+      - 'Docs/AI-ISSUE-REGISTER.md'
+      - 'README.md'
+  workflow_dispatch:
+
+jobs:
+  readonly-github-adapter:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Enforce ASCII source and documentation
+        shell: powershell
+        run: |
+          $paths = @(
+            'Tools/DevAgent/GfxGitHubAdapter.psm1',
+            'Tools/DevAgent/Invoke-GfxGitHubAdapter.ps1',
+            'Schemas/DevAgent/GfxGitHubEvidence.v1.schema.json',
+            'Tests/Test-GfxGitHubAdapter.ps1',
+            'Docs/DEVAGENT-GFX-MILESTONE-AUTOMATION.md',
+            'Docs/AI-SESSION-STATE.md',
+            'Docs/AI-DEVELOPMENT-PLAN.md',
+            'Docs/AI-ISSUE-REGISTER.md',
+            'README.md'
+          )
+          foreach ($path in $paths) {
+            $bytes = [IO.File]::ReadAllBytes((Join-Path $PWD $path))
+            if ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF) { throw "UTF-8 BOM: $path" }
+            foreach ($byte in $bytes) { if ($byte -gt 127) { throw "Non-ASCII byte: $path" } }
+          }
+          Write-Host 'PASS: source encoding and BOM policy.'
+
+      - name: Parse strict evidence schema
+        shell: powershell
+        run: |
+          $schema = Get-Content -Raw -LiteralPath 'Schemas/DevAgent/GfxGitHubEvidence.v1.schema.json' | ConvertFrom-Json -ErrorAction Stop
+          if ($schema.'$id' -ne 'https://sharnou.dev/schemas/devagent/gfx-github-evidence/v1.json') { throw 'Schema identity mismatch.' }
+          if ($schema.additionalProperties -ne $false) { throw 'Evidence schema must reject additional properties.' }
+          Write-Host 'PASS: evidence schema JSON and identity.'
+
+      - name: Run adapter tests under Windows PowerShell 5.1
+        shell: powershell
+        run: .\Tests\Test-GfxGitHubAdapter.ps1
+
+      - name: Exercise credential status CLI without configuring credentials
+        shell: powershell
+        run: |
+          $result = .\Tools\DevAgent\Invoke-GfxGitHubAdapter.ps1 -Action CredentialStatus | ConvertFrom-Json
+          if ($result.status -notin @('NOT_CONFIGURED','CONFIGURED')) { throw 'Unexpected credential status.' }
+          if ($result.PSObject.Properties.Name -contains 'token') { throw 'Credential CLI leaked token material.' }
+          Write-Host ('PASS: credential status=' + $result.status)
