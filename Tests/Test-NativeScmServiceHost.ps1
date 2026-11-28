@@ -113,8 +113,15 @@ try {
     $observations.ExecutablePath = $output
 
     Write-Host 'R5.1.c: create a uniquely named disposable own-process service.'
-    $binPath = 'binPath= "' + $output + '"'
-    $create = Invoke-ScCommand -Arguments @('create', $serviceName, $binPath, 'start= demand', 'type= own', 'DisplayName= ' + $serviceName)
+    # sc.exe requires each key and value as separate arguments; a single
+    # "start= demand" argument is parsed as an invalid start field.
+    $create = Invoke-ScCommand -Arguments @(
+        'create', $serviceName,
+        'binPath=', $output,
+        'start=', 'demand',
+        'type=', 'own',
+        'DisplayName=', $serviceName
+    )
     $serviceCreated = $true
     $observations.ServiceCreate = $create.Output
     $observations.ServiceConfig = (Invoke-ScCommand -Arguments @('qc', $serviceName)).Output
