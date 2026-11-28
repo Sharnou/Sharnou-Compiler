@@ -462,7 +462,7 @@ function Stop-And-Observe {
             $stopped = $snapshot
             break
         } elseif ($snapshot.StateCode -eq 2) {
-            Assert-PendingSnapshot -Snapshot $snapshot -PendingState 2
+            throw "Service '$Name' unexpectedly returned to START_PENDING while STOP was being observed. $($snapshot.Raw)"
         }
         Start-Sleep -Milliseconds 60
     } while ([DateTime]::UtcNow -lt $deadline)
