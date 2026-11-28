@@ -527,3 +527,24 @@ Static checks confirmed both JSON documents parse, all eleven milestone IDs exis
 - Campaign test suite: 47 passed, 0 failed; encoding/BOM gate and planner CLI also passed.
 - Readiness output correctly keeps GFX milestones blocked while DevAgent prerequisites and explicit predecessor acceptance remain unresolved.
 - DGA-0.2 candidate is technically qualified on this exact head, pending review/acceptance. No autonomous source generation or research daemon is enabled.
+
+
+## DGA-GFX-0.3 implementation candidate
+
+- Added a durable local task journal and checkpoint store candidate on devagent-gfx-task-journal-20261128, stacked on qualified DGA-GFX-0.2 PR #43.
+- Record storage uses immutable sequence files with exact-body SHA-256, previous-record chaining, a writer mutex, flush-to-disk and same-directory rename. Replay rejects tampering, sequence gaps, duplicate idempotency keys and invalid state transitions.
+- Checkpoints carry task/journal identity, sequence, predecessor hash and payload digest. Journal events bind the checkpoint filename and digests. Orphans are reported and never treated as committed.
+- Recovery marks in-flight tasks INTERRUPTED exactly once. Resume must bind to the last verified checkpoint. Duplicate operations are no-ops only when the original content matches; conflicting reuse fails closed.
+- Windows PowerShell 5.1 workflow is included; exact-head qualification is pending.
+- No process/network/model inference, repository mutation, autonomous research or worker scheduling is enabled. Hash chains are integrity checks, not authentication. Service-owned ACL and Phase 2B.8/R5 gates remain.
+
+
+## DGA-GFX-0.3 qualification result
+
+- Implemented in draft PR #44, stacked on DGA-GFX-0.2 PR #43.
+- Qualified head: 847e9e7c3c5b07d02ce2cb21aa56caac1293e4fa.
+- Windows PowerShell 5.1 push run #46159857700 and pull-request run #46159863463 both PASS.
+- 30 tests passed, 0 failed. Source encoding/BOM and CLI Initialize/Inspect gates passed.
+- Tests cover immutable record hash-chain replay, deterministic task identity, idempotency conflicts/no-ops, checkpoint chain sequence 1 and 2, restart interruption, repeated recovery, resume gating, completion/failure/cancellation, tampered checkpoint and journal data, missing interior sequence, relative/UNC root rejection, and absence of process/network execution.
+- Local named mutex coordination is scoped to one Windows logon session. SHA-256 provides integrity detection, not authentication. Protected ACLs and the separate Phase 2B.8/R5 security boundary remain prerequisites.
+- No model inference, research daemon, code generation or model-facing process execution is enabled.
