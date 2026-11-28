@@ -10,6 +10,7 @@ function Assert-GfxAdapter {
  param([bool]$Condition,[string]$Name)
  if($Condition){$script:Passed++;Write-Host "PASS: $Name"}else{$script:Failed++;Write-Host "FAIL: $Name"}
 }
+function Copy-Object {param($Value);return (ConvertFrom-Json -InputObject (ConvertTo-Json -InputObject $Value -Depth 32))}
 function New-MockResponse {
  param([int]$Status=200,$Object,[string]$Location='')
  $bytes=New-Object byte[] 0
@@ -167,7 +168,7 @@ $moduleText=[IO.File]::ReadAllText((Join-Path $root 'Tools\DevAgent\GfxGitHubAda
 $cliText=[IO.File]::ReadAllText((Join-Path $root 'Tools\DevAgent\Invoke-GfxGitHubAdapter.ps1'))
 Assert-GfxAdapter ($moduleText -match "Method='GET'" -and $moduleText -match 'AllowAutoRedirect=\$false') 'network transport is explicit GET-only and disables automatic redirects'
 Assert-GfxAdapter ($moduleText -notmatch '(?i)Start-Process|Invoke-Expression|cmd\.exe|powershell\.exe|git\.exe|curl\.exe|wget\.exe') 'adapter does not launch processes, shells or external tools'
-Assert-GfxAdapter ($moduleText -notmatch '(?i)POST|PATCH|PUT|DELETE') 'adapter source contains no write-method capability'
+Assert-GfxAdapter ($moduleText -notmatch '(?i)\b(POST|PATCH|PUT|DELETE)\b') 'adapter source contains no write-method capability'
 Assert-GfxAdapter ($cliText -notmatch '(?i)Start-Process|Invoke-Expression|Invoke-WebRequest|Invoke-RestMethod') 'CLI has no shell or alternate network execution path'
 
 Clear-MockTransport
@@ -176,4 +177,3 @@ Write-Host ("DGA-GFX-0.4 tests: {0} passed; {1} failed; {2} total." -f $script:P
 if($script:Failed -ne 0){exit 1}
 exit 0
 
-function Copy-Object {param($Value);return (ConvertFrom-Json -InputObject (ConvertTo-Json -InputObject $Value -Depth 32))}
