@@ -294,6 +294,10 @@ function Get-GfxGitHubPullRequestEvidence {
  if(-not $validation.valid){throw ('Pull request evidence failed self-validation: '+($validation.errors -join '; '))}
  return $evidence
 }
+function Test-GfxInt {
+ param($Value)
+ return ($Value -is [byte] -or $Value -is [int16] -or $Value -is [int32] -or $Value -is [int64] -or $Value -is [uint16] -or $Value -is [uint32] -or $Value -is [uint64])
+}
 function Add-GfxEvidencePropertyErrors {
  param($Object,[string[]]$Expected,[string]$Path,[Collections.ArrayList]$Errors)
  if($null -eq $Object -or $Object -is [string] -or $Object -is [Array]){
