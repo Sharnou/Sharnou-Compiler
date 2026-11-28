@@ -301,3 +301,17 @@ The Sharnou-compiled persistent AI development agent and the advanced bug-resear
 - Implementation: **PENDING**; no milestone is marked complete by this approval.
 - Existing PRs: remain open/unmerged unless separately reviewed; this automation must not merge them.
 - Dependency order: verify and integrate the frozen M1-M6 baseline/provenance and ABI gates; complete 7B-7E; implement the native runtime and safe process/research interfaces; generate and validate the Sharnou-compiled agent; then complete Engine geometry through world-rendering milestones and integrate Honour War when its prerequisites pass.
+
+
+## Phase 2B.8 R5.1 qualification status - 2026-11-28
+
+R5.1.a and R5.1.b have passed their bounded exact-head Windows qualification on stacked draft feature branches; neither is integrated into the default branch and neither establishes a running SCM authority service.
+
+- **R5.1.a relocation primitive:** PR #33, exact head `2583faec76d5e469962756d17d2ffabecd6fcd98`; Windows run [46066382172](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/46066382172) SUCCESS; relocation suite 21/21, Stage 7A 24/24, frozen M1-M6 83/83, combined PASS. Evidence artifact 15231785189, SHA-256 `698ebd55dfb66b529cd8b001aa986e4832e995e8f37a68f7906c7db19546b725`.
+- **R5.1.b typed callback pointers/Win64 ABI:** PR #35, exact head `ab00219f1aa9783c148035b754eebce7269f6fbb`; Windows run [46070065850](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/46070065850) SUCCESS; focused callback ABI probe PASS, Stage 7A 24/24, frozen M1-M6 83/83, exact-head manifest PASS. Evidence artifact 15232513039, SHA-256 `b246b9e588d06c956ce59ea6583b7da99f1d9a02f3e35df50e8a5fc9a99ed10f`.
+- The R5.1.b manifest states `native_scm_service_implemented=false`. The callback intrinsic remains test-only and opt-in; no native SCM service executable has been generated or run.
+- **Next required implementation:** R5.1.c, a genuine inert SCM service image compiled from Sharnou source. It must use exact typed callback signatures, bounded lifecycle state, a verified final PE import table/relocation/exception directory, and disposable Windows SCM installation/start/stop tests. No pipe, key, journal, profile mutation, or child execution belongs in R5.1.c.
+- **Next qualification:** R5.1.d must test actual SCM start, SERVICE_RUNNING, STOP/SHUTDOWN/INTERROGATE, STOP_PENDING/STOPPED, initialization failure injection, repeated stop/start, forced termination, process exit, and handle cleanup. R5.2 service SID/CNG key implementation must wait until R5.1.c and R5.1.d pass; R5.3 transport must wait until R5.2 passes.
+- PR #36 records R5.2/R5.3 design only and does not waive R5.1.c/.d. The Low-IL AppContainer DPAPI subtest remains INCONCLUSIVE because the Windows PowerShell runner could not load `System.Security`; it is not accepted evidence.
+
+This status overlay changes no milestone scope and does not approve merging any PR, installing a persistent service, enabling model-facing execution, or deploying an autonomous agent. Model-facing and autonomous execution remain DISABLED; Phase 2B.8 remains NOT SECURITY ACCEPTED.
