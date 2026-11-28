@@ -1,0 +1,163 @@
+name: Phase 2B.8 R5.1.d Exact-Head SCM Lifecycle Gate
+
+on:
+  push:
+    branches:
+      - phase-2b8-r5-1d-scm-lifecycle-20261128
+  pull_request:
+    branches:
+      - phase-2b8-r5-1c-native-scm-host-20261128
+    types:
+      - opened
+      - synchronize
+      - reopened
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: phase-2b8-r5-1d-scm-lifecycle
+  cancel-in-progress: false
+
+jobs:
+  r51d-scm-lifecycle:
+    name: Exact-head Windows SCM lifecycle and failure qualification
+    runs-on: windows-2025
+    timeout-minutes: 120
+    env:
+      EXPECTED_TESTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - name: Checkout exact PR source head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Initialize exact-head evidence
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $evidence = Join-Path $env:GITHUB_WORKSPACE 'r51d-evidence'
+          New-Item -ItemType Directory -Path $evidence -Force | Out-Null
+          $actualHead = (& git rev-parse HEAD).Trim()
+          if ($LASTEXITCODE -ne 0 -or $actualHead -cne $env:EXPECTED_TESTED_SHA) {
+            throw "Checkout head mismatch: expected=$env:EXPECTED_TESTED_SHA actual=$actualHead"
+          }
+          $metadata = @(
+            "repository=$env:GITHUB_REPOSITORY",
+            "event=$env:GITHUB_EVENT_NAME",
+            "event_sha=$env:GITHUB_SHA",
+            "tested_commit=$actualHead",
+            "workflow=$env:GITHUB_WORKFLOW",
+            "run_id=$env:GITHUB_RUN_ID",
+            "run_attempt=$env:GITHUB_RUN_ATTEMPT",
+            "runner_os=$env:RUNNER_OS",
+            "runner_arch=$env:RUNNER_ARCH",
+            "windows=$([Environment]::OSVersion.VersionString)",
+            "powershell=$($PSVersionTable.PSVersion.ToString())"
+          )
+          [IO.File]::WriteAllLines((Join-Path $evidence 'metadata.txt'), $metadata, [Text.Encoding]::ASCII)
+          $tracked = @(& git ls-files)
+          if ($LASTEXITCODE -ne 0 -or $tracked.Count -eq 0) { throw 'Could not enumerate tracked repository files.' }
+          $hashLines = foreach ($relativePath in $tracked) {
+            if (-not (Test-Path -LiteralPath $relativePath -PathType Leaf)) {
+              throw "Tracked file missing: $relativePath"
+            }
+            $item = Get-FileHash -LiteralPath $relativePath -Algorithm SHA256
+            "{0}  {1}" -f $item.Hash.ToLowerInvariant(), $relativePath
+          }
+          [IO.File]::WriteAllLines((Join-Path $evidence 'tracked-files.sha256'), [string[]]$hashLines, [Text.Encoding]::ASCII)
+
+      - name: Verify repository source encoding
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $tracked = @(& git ls-files)
+          if ($LASTEXITCODE -ne 0) { throw 'Could not enumerate tracked source files.' }
+          $files = foreach ($relativePath in $tracked) {
+            if ([IO.Path]::GetExtension($relativePath) -in @('.ps1', '.sharnou', '.yml', '.json', '.b64')) {
+              Get-Item -LiteralPath $relativePath -ErrorAction Stop
+            }
+          }
+          foreach ($file in $files) {
+            $bytes = [IO.File]::ReadAllBytes($file.FullName)
+            if ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF) {
+              throw "UTF-8 BOM is not allowed: $($file.FullName)"
+            }
+            foreach ($byte in $bytes) {
+              if ($byte -gt 127) { throw "Non-ASCII byte found: $($file.FullName)" }
+            }
+          }
+          Write-Host 'PASS: source encoding gate.'
+
+      - name: Execute R5.1.d native SCM lifecycle qualification
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & .\Tests\Test-NativeScmServiceLifecycle.ps1
+
+      - name: Execute complete inherited regression suite
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $log = Join-Path $env:GITHUB_WORKSPACE 'r51d-evidence\combined-Test.ps1.log'
+          Start-Transcript -LiteralPath $log -Force
+          try { & .\Test.ps1 } finally { Stop-Transcript }
+
+      - name: Write exact-head R5.1.d qualification manifest
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $actualHead = (& git rev-parse HEAD).Trim()
+          if ($LASTEXITCODE -ne 0 -or $actualHead -cne $env:EXPECTED_TESTED_SHA) {
+            throw 'Checkout head changed during R5.1.d qualification.'
+          }
+          $focusedPath = Join-Path $env:GITHUB_WORKSPACE 'Build\R51D\Evidence\r5-1d-evidence.json'
+          if (-not (Test-Path -LiteralPath $focusedPath -PathType Leaf)) {
+            throw 'Focused R5.1.d evidence manifest is missing.'
+          }
+          $focused = Get-Content -LiteralPath $focusedPath -Raw -Encoding ASCII | ConvertFrom-Json
+          if ($focused.acceptance -cne 'PASS' -or $focused.tested_commit -cne $actualHead) {
+            throw 'Focused R5.1.d evidence is not PASS for the exact checked-out source head.'
+          }
+          $result = [ordered]@{
+            acceptance = 'PASS_FOR_DECLARED_SCOPE'
+            scope = 'R5.1.d native SCM lifecycle/failure evidence plus full inherited regression'
+            tested_commit = $actualHead
+            event = $env:GITHUB_EVENT_NAME
+            event_sha = $env:GITHUB_SHA
+            workflow_run = $env:GITHUB_RUN_ID
+            runner = $env:RUNNER_OS
+            windows = [Environment]::OSVersion.VersionString
+            focused_evidence = 'Build/R51D/Evidence/r5-1d-evidence.json'
+            system_shutdown_delivery = 'NOT_TESTED_REQUIRES_DISPOSABLE_VM'
+            r5_1d_fully_accepted = $false
+            r5_2_authorized = $false
+            model_facing_execution = 'DISABLED'
+            autonomous_execution = 'DISABLED'
+            phase_2b8_security_acceptance = 'NOT ACCEPTED'
+          }
+          $result | ConvertTo-Json -Depth 6 |
+            Set-Content -LiteralPath (Join-Path $env:GITHUB_WORKSPACE 'r51d-evidence\exact-head-acceptance.json') -Encoding ASCII
+          Write-Host 'R5.1.d exact-head Windows lifecycle qualification: PASS for declared scope; OS shutdown delivery remains unqualified.'
+
+      - name: Collect exact-head lifecycle and native executable evidence
+        if: always()
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Continue'
+          $destination = Join-Path $env:GITHUB_WORKSPACE 'r51d-evidence'
+          New-Item -ItemType Directory -Path $destination -Force | Out-Null
+          $build = Join-Path $env:GITHUB_WORKSPACE 'Build\R51D'
+          if (Test-Path -LiteralPath $build -PathType Container) {
+            Copy-Item -Path (Join-Path $build '*') -Destination $destination -Recurse -Force
+          }
+
+      - name: Upload R5.1.d exact-head Windows evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: r5-1d-scm-lifecycle-evidence
+          path: r51d-evidence/
+          if-no-files-found: warn
+          retention-days: 14
