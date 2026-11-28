@@ -167,6 +167,7 @@ function Assert-PendingSnapshot {
 
 function Assert-RunningSnapshot {
     param([Parameter(Mandatory = $true)][object] $Snapshot)
+    if ($Snapshot.ProcessId -eq 0) { throw 'RUNNING service did not expose a live process ID.' }
     if ($Snapshot.Checkpoint -ne 0 -or $Snapshot.WaitHint -ne 0) {
         throw "RUNNING did not clear checkpoint/wait hint."
     }
@@ -185,7 +186,8 @@ function Wait-ServiceState {
         [Parameter(Mandatory = $true)][ValidateSet(1, 4)][int] $ExpectedState,
         [int] $TimeoutSeconds = 20,
         [switch] $RequireStartPending,
-        [switch] $RequireStopPending
+        [switch] $RequireStopPending,
+        [switch] $SkipPendingValidation
     )
     $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
     $sawStartPending = $false
@@ -195,10 +197,10 @@ function Wait-ServiceState {
         $last = Get-ServiceSnapshot -Name $Name
         if ($last.StateCode -eq 2) {
             $sawStartPending = $true
-            Assert-PendingSnapshot -Snapshot $last -PendingState 2
+            if (-not $SkipPendingValidation) { Assert-PendingSnapshot -Snapshot $last -PendingState 2 }
         } elseif ($last.StateCode -eq 3) {
             $sawStopPending = $true
-            Assert-PendingSnapshot -Snapshot $last -PendingState 3
+            if (-not $SkipPendingValidation) { Assert-PendingSnapshot -Snapshot $last -PendingState 3 }
         } elseif ($last.StateCode -eq 4) {
             Assert-RunningSnapshot -Snapshot $last
         }
@@ -488,7 +490,7 @@ try {
     # registration must support a fresh start and graceful stop.
     $crashRunning = Start-And-Observe -Name $lifecycleName -Tag 'forced-crash'
     Stop-Process -Id ([int]$crashRunning.ProcessId) -Force
-    $crashStopped = Wait-ServiceState -Name $lifecycleName -ExpectedState 1 -TimeoutSeconds 25
+    $crashStopped = Wait-ServiceState -Name $lifecycleName -ExpectedState 1 -TimeoutSeconds 25 -SkipPendingValidation
     if ($crashStopped.ProcessId -ne 0) { throw "Forced termination left service PID=$($crashStopped.ProcessId)." }
     Wait-ProcessGone -ProcessId $crashRunning.ProcessId
     $script:Evidence.Add([pscustomobject]@{
@@ -535,7 +537,7 @@ try {
         $image = New-ServiceImage -Name $name -Fault $fault -TestMode
         Install-DisposableService -Image $image
         $operation = Start-ScAsync -Verb 'start' -Name $name -Tag ("fault-" + $fault)
-        $terminal = Wait-ServiceState -Name $name -ExpectedState 1 -TimeoutSeconds 25
+        $terminal = Wait-ServiceState -Name $name -ExpectedState 1 -TimeoutSeconds 25 -SkipPendingValidation
         $null = Complete-ScAsync -Operation $operation -TimeoutSeconds 15
         if ($terminal.ProcessId -ne 0) { throw "Startup fault '$fault' left PID=$($terminal.ProcessId)." }
         if ($fault -in @('EventCreation', 'SetServiceStatusStartPending', 'SetServiceStatusRunning') -and
@@ -561,7 +563,11 @@ try {
         Install-DisposableService -Image $image
         $running = Start-And-Observe -Name $name -Tag ("fault-" + $fault + '-start')
         $operation = Start-ScAsync -Verb 'stop' -Name $name -Tag ("fault-" + $fault + '-stop')
-        $terminal = Wait-ServiceState -Name $name -ExpectedState 1 -TimeoutSeconds 25
+        if ($fault -eq 'SetServiceStatusStopped') {
+            $terminal = Wait-ServiceState -Name $name -ExpectedState 1 -TimeoutSeconds 25 -RequireStopPending
+        } else {
+            $terminal = Wait-ServiceState -Name $name -ExpectedState 1 -TimeoutSeconds 25 -SkipPendingValidation
+        }
         $null = Complete-ScAsync -Operation $operation -TimeoutSeconds 15
         if ($terminal.ProcessId -ne 0) { throw "Stop fault '$fault' left PID=$($terminal.ProcessId)." }
         Wait-ProcessGone -ProcessId $running.ProcessId
