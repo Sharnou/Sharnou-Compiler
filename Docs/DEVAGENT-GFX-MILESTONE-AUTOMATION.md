@@ -1,4 +1,4 @@
-# SharnouDevAgent — Automatic GFX Milestone Campaign
+# SharnouDevAgent - Automatic GFX Milestone Campaign
 
 **Document:** DGA-GFX-0.1  
 **Date:** 2026-11-28 (Africa/Cairo)  
@@ -10,17 +10,17 @@
 
 The requested outcome is for SharnouDevAgent itself to generate, validate, repair, and submit the complete Sharnou graphics compiler and analysis program:
 
-- GFX-0.1 — graphics compiler architecture;
-- GFX-0.2 — SGIR/1 schema and verifier;
-- GFX-0.3 — shader lexer, parser and typed AST;
-- GFX-0.4 — shader semantic and static analysis;
-- GFX-0.5 — D3D11 lowering and reflection;
-- GFX-0.6 — actual shader execution and indexed 3D mesh;
-- GFX-A.1 — glTF/GLB geometry analyzer;
-- GFX-A.2 — KTX2 and PBR material analyzer;
-- GFX-A.3 — skeleton and animation analyzer;
-- GFX-0.7 — Sharnou IDE graphics workbench;
-- GFX-0.8 — GPU profiling and optimization.
+- GFX-0.1 - graphics compiler architecture;
+- GFX-0.2 - SGIR/1 schema and verifier;
+- GFX-0.3 - shader lexer, parser and typed AST;
+- GFX-0.4 - shader semantic and static analysis;
+- GFX-0.5 - D3D11 lowering and reflection;
+- GFX-0.6 - actual shader execution and indexed 3D mesh;
+- GFX-A.1 - glTF/GLB geometry analyzer;
+- GFX-A.2 - KTX2 and PBR material analyzer;
+- GFX-A.3 - skeleton and animation analyzer;
+- GFX-0.7 - Sharnou IDE graphics workbench;
+- GFX-0.8 - GPU profiling and optimization.
 
 The authoritative, machine-readable plan is:
 
@@ -32,7 +32,7 @@ Schemas/DevAgent/GfxCampaign.v1.schema.json
 
 The manifest records the actual draft status of PR #39 and PR #41, dependency edges, specialist roles, permitted source paths, deliverables, acceptance gates, hard stops, and owner decisions. It is not an executable code generator by itself.
 
-## 2. Current reality — why automatic generation is not active yet
+## 2. Current reality - why automatic generation is not active yet
 
 The current default branch does not contain a production SharnouDevAgent that can autonomously generate and validate source changes.
 
