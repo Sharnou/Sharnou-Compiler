@@ -5442,7 +5442,8 @@ $verifierPath = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\Tools
 try {
     [System.IO.File]::WriteAllBytes($outputFullPath, $image)
     if (-not (Test-Path -LiteralPath $verifierPath -PathType Leaf)) { throw "PE verifier is missing: $verifierPath" }
-    & $verifierPath -Path $outputFullPath
+    if ($script:NativeScmServiceMode) { & $verifierPath -Path $outputFullPath -NativeScmServiceHost }
+    else { & $verifierPath -Path $outputFullPath }
 } catch {
     if (Test-Path -LiteralPath $outputFullPath) { Remove-Item -LiteralPath $outputFullPath -Force -ErrorAction SilentlyContinue }
     throw ("Linked image failed post-write validation: {0}" -f $_.Exception.Message)
@@ -5450,6 +5451,10 @@ try {
 $sha256 = (Get-FileHash -LiteralPath $outputFullPath -Algorithm SHA256).Hash
 Write-Host "Created native x64 PE32+ executable: $outputFullPath"
 Write-Host ("Link result: modules={0}, functions={1}, codeBytes={2}, dataBytes={3}" -f $script:Modules.Count, $script:Functions.Count, $codeBytes.Length, $dataBytes.Length)
-Write-Host 'Sections: .text, .rdata, .idata, .reloc, .pdata, .xdata; imports: KERNEL32.dll, USER32.dll, D3D11.dll, and DXGI.dll'
+if ($script:NativeScmServiceMode) {
+    Write-Host 'Native SCM service image: exact KERNEL32.dll / ADVAPI32.dll imports; SCM callbacks and relocated service table verified.'
+} else {
+    Write-Host 'Sections: .text, .rdata, .idata, .reloc, .pdata, .xdata; imports: KERNEL32.dll, USER32.dll, D3D11.dll, and DXGI.dll'
+}
 Write-Host "SHA-256: $sha256"
 Write-Warning 'Milestone 6 adds a native D3D11/DXGI solid-clear demo and runtime frame timing. Native rendering must be validated on an interactive Windows desktop. Shader/geometry rendering, device-loss recovery, resize handling, and persistent window/event loops remain unsupported.' 
