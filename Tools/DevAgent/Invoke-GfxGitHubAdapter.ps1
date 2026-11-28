@@ -7,10 +7,13 @@ param(
  [string]$Path='',
  [int]$PullRequestNumber=0,
  [string]$CommitSha='',
- [long]$RunId=0
+ [long]$RunId=0,
+ [switch]$PersistEvidence,
+ [string]$StateDirectory=''
 )
 $ErrorActionPreference='Stop'
 Set-StrictMode -Version 2.0
+if($PersistEvidence -and $Action -notin @('CommitEvidence','PullRequestEvidence')){throw 'PersistEvidence is valid only for CommitEvidence or PullRequestEvidence.'}
 Import-Module (Join-Path $PSScriptRoot 'GfxGitHubAdapter.psm1') -Force
 try{
  switch($Action){
@@ -28,7 +31,16 @@ try{
   'PullRequests' {$result=Get-GfxGitHubPullRequests}
   'WorkflowRuns' {if($CommitSha -notmatch '^[0-9a-f]{40}$'){throw 'CommitSha must be a full SHA.'};$result=Get-GfxGitHubWorkflowRuns -CommitSha $CommitSha}
   'RunArtifacts' {if($RunId -lt 1){throw 'RunId is required.'};$result=Get-GfxGitHubRunArtifacts -RunId $RunId}
-  'CommitEvidence' {if($CommitSha -notmatch '^[0-9a-f]{40}$'){throw 'CommitSha must be a full SHA.'};$result=Get-GfxGitHubCommitEvidence -CommitSha $CommitSha}
+  'CommitEvidence' {if($CommitSha -notmatch '^[0-9a-f]{40}
+  'PullRequestEvidence' {if($PullRequestNumber -lt 1){throw 'PullRequestNumber is required.'};$result=Get-GfxGitHubPullRequestEvidence -PullRequestNumber $PullRequestNumber;if($PersistEvidence){$persist=Save-GfxGitHubEvidenceCheckpoint -Evidence $result -StateDirectory $StateDirectory;$result=[pscustomobject][ordered]@{evidence=$result;persistence=$persist}}}
+ }
+ $result|ConvertTo-Json -Depth 24
+ exit 0
+}catch{
+ [Console]::Error.WriteLine($_.Exception.Message)
+ exit 10
+}
+){throw 'CommitSha must be a full SHA.'};$result=Get-GfxGitHubCommitEvidence -CommitSha $CommitSha;if($PersistEvidence){$persist=Save-GfxGitHubEvidenceCheckpoint -Evidence $result -StateDirectory $StateDirectory;$result=[pscustomobject][ordered]@{evidence=$result;persistence=$persist}}}
   'PullRequestEvidence' {if($PullRequestNumber -lt 1){throw 'PullRequestNumber is required.'};$result=Get-GfxGitHubPullRequestEvidence -PullRequestNumber $PullRequestNumber}
  }
  $result|ConvertTo-Json -Depth 24
