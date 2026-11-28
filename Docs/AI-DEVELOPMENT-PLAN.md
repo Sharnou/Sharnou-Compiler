@@ -341,3 +341,10 @@ R5.1.a is accepted for its relocation primitive scope on exact Windows source he
 R5.1.b callback ABI implementation passed on predecessor head `beb7f47989b1180dcc83c916422cee5123ce58d2`, run 46066393744, artifact 15230738893 (SHA-256 `90a45413274ff3f86d665fb0ecdf90a03071cc81ca30da076eef139a7317bed1`). That run verifies actual relocated ServiceMain/HandlerEx callback pointers and runtime ABI probes, but the old PR base was stale. The correctly stacked replacement is draft PR #35 (base R5.1.a accepted head); its exact-head run 46067337857 is pending and must pass before PR #35 can be accepted.
 
 Next: R5.1.c actual Sharnou-generated SCM service host and disposable Windows SCM lifecycle tests. These primitive passes do not equal a service implementation or full Phase 2B.8 acceptance. Keep model-facing and autonomous execution disabled.
+
+
+## R5.1.c implementation candidate - 2026-11-28
+
+The current R5.1.c candidate is isolated on `phase-2b8-r5-1c-native-scm-host-20261128`, stacked directly on the corrected R5.1.b exact source head `ab00219f1aa9783c148035b754eebce7269f6fbb`. It adds a genuine Sharnou-generated Windows SCM executable path, typed relocated service-table/callback pointers, a service-specific exact import profile and PE verification, real disposable Windows SCM smoke tests, and an exact-head Windows Server 2025 workflow. The candidate is **not accepted** until that workflow and its evidence artifact pass on the exact source head.
+
+The focused R5.1.c smoke does not replace R5.1.d. R5.1.d must qualify actual SCM startup/shutdown/failure handling/cleanup and adversarial failure cases before R5.2 can begin. Then and only then: R5.2 service identity/protected CNG key -> R5.3 authenticated local named-pipe IPC -> R5.4 service-owned authenticated durable journal. Model-facing and autonomous execution remain disabled; full Phase 2B.8 is not accepted.
