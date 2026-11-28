@@ -249,7 +249,7 @@ function Get-GfxTaskJournalStatus {
 function New-GfxPlannedTask {
  [CmdletBinding()]param([Parameter(Mandatory=$true)][string]$StateDirectory,[Parameter(Mandatory=$true)][string]$MilestoneId,[Parameter(Mandatory=$true)][ValidateSet('research','design','implementation','validation','qualification','review','documentation')][string]$TaskKind,[Parameter(Mandatory=$true)][string]$InputSha256,[Parameter(Mandatory=$true)][string]$ScopeSha256,[Parameter(Mandatory=$true)][string]$IdempotencyKey,[int]$Attempt=1)
  if(-not(Test-GfxSha256 $InputSha256) -or -not(Test-GfxSha256 $ScopeSha256)){throw 'Input/scope must be lowercase SHA-256.'}
- if($MilestoneId -cnotmatch '^GFX-(0\.[1-8]|A\.[1-3]|EVOL-[A-Za-z0-9.-]{1,32})$'){throw 'Milestone ID invalid.'}
+  if($MilestoneId -cnotmatch '^(GFX-(0\.[1-8]|A\.[1-3]|EVOL-[A-Za-z0-9.-]{1,32})|DGA-GFX-0\.[1-8])$'){throw 'Milestone ID invalid.'}
  if($Attempt -lt 1 -or $Attempt -gt 3){throw 'Attempt must be 1-3.'}
  Assert-GfxIdempotencyKey $IdempotencyKey;$taskId=Get-GfxStableId 't' $IdempotencyKey
  $payload=[pscustomobject][ordered]@{milestoneId=$MilestoneId;taskKind=$TaskKind;inputSha256=$InputSha256;scopeSha256=$ScopeSha256;attempt=$Attempt}
