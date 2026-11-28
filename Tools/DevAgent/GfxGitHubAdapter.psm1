@@ -34,7 +34,7 @@ function Test-GfxPrivateAcl {
   if(($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0){return $false}
   $acl=Get-Acl -LiteralPath $Path -ErrorAction Stop;$sid=Get-GfxCurrentSid
   if($acl.GetOwner([Security.Principal.SecurityIdentifier]).Value -ne $sid.Value){return $false}
-  foreach($rule in $acl.GetAccessRules($true,$false,[Security.Principal.SecurityIdentifier))){
+  foreach($rule in $acl.GetAccessRules($true,$false,[Security.Principal.SecurityIdentifier])){
    if($rule.IdentityReference.Value -ne $sid.Value -or $rule.AccessControlType -ne [Security.AccessControl.AccessControlType]::Allow -or (($rule.FileSystemRights -band [Security.AccessControl.FileSystemRights]::FullControl) -ne [Security.AccessControl.FileSystemRights]::FullControl)){return $false}
   }
   return $true
