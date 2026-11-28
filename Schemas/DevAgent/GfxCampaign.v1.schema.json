@@ -15,20 +15,33 @@
     "executionPolicy",
     "generationRequirements",
     "milestones",
-    "globalAcceptance"
+    "globalAcceptance",
+    "continuousImprovement"
   ],
   "properties": {
-    "schemaVersion": { "const": "sharnou.devagent.gfx-campaign/1" },
-    "campaignId": { "const": "sharnou.graphics-compiler" },
-    "repository": { "const": "Sharnou/Sharnou-Compiler" },
-    "defaultBranch": { "const": "Sharnou-Compiler" },
+    "schemaVersion": {
+      "const": "sharnou.devagent.gfx-campaign/1"
+    },
+    "campaignId": {
+      "const": "sharnou.graphics-compiler"
+    },
+    "repository": {
+      "const": "Sharnou/Sharnou-Compiler"
+    },
+    "defaultBranch": {
+      "const": "Sharnou-Compiler"
+    },
     "requestedMode": {
       "const": "automatic_generate_validate_and_open_draft_prs"
     },
     "activation": {
       "type": "object",
       "additionalProperties": false,
-      "required": [ "state", "blockingGates", "automaticMerge" ],
+      "required": [
+        "state",
+        "blockingGates",
+        "automaticMerge"
+      ],
       "properties": {
         "state": {
           "enum": [
@@ -42,9 +55,15 @@
         "blockingGates": {
           "type": "array",
           "uniqueItems": true,
-          "items": { "type": "string", "minLength": 1, "maxLength": 160 }
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160
+          }
         },
-        "automaticMerge": { "const": false }
+        "automaticMerge": {
+          "const": false
+        }
       }
     },
     "executionPolicy": {
@@ -69,22 +88,62 @@
         "allowUnapprovedCompilerDependencies"
       ],
       "properties": {
-        "directDefaultBranchWrites": { "const": false },
-        "automaticMerge": { "const": false },
-        "automaticRelease": { "const": false },
-        "draftPullRequestsOnly": { "const": true },
-        "maxConcurrentMilestones": { "type": "integer", "minimum": 1, "maximum": 2 },
-        "maxRepairAttemptsPerMilestone": { "type": "integer", "minimum": 1, "maximum": 3 },
-        "maxFilesPerPatch": { "type": "integer", "minimum": 1, "maximum": 20 },
-        "maxChangedBytesPerPatch": { "type": "integer", "minimum": 1024, "maximum": 1048576 },
-        "requireIsolatedWorktree": { "const": true },
-        "requireBaselineSnapshot": { "const": true },
-        "requireExactHeadWindowsEvidence": { "const": true },
-        "requireIndependentPatchReview": { "const": true },
-        "requireHumanAcceptanceBeforeDownstreamIntegration": { "const": true },
-        "allowArbitraryCommands": { "const": false },
-        "allowDownloadedExecutableExecution": { "const": false },
-        "allowUnapprovedCompilerDependencies": { "const": false }
+        "directDefaultBranchWrites": {
+          "const": false
+        },
+        "automaticMerge": {
+          "const": false
+        },
+        "automaticRelease": {
+          "const": false
+        },
+        "draftPullRequestsOnly": {
+          "const": true
+        },
+        "maxConcurrentMilestones": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2
+        },
+        "maxRepairAttemptsPerMilestone": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3
+        },
+        "maxFilesPerPatch": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 20
+        },
+        "maxChangedBytesPerPatch": {
+          "type": "integer",
+          "minimum": 1024,
+          "maximum": 1048576
+        },
+        "requireIsolatedWorktree": {
+          "const": true
+        },
+        "requireBaselineSnapshot": {
+          "const": true
+        },
+        "requireExactHeadWindowsEvidence": {
+          "const": true
+        },
+        "requireIndependentPatchReview": {
+          "const": true
+        },
+        "requireHumanAcceptanceBeforeDownstreamIntegration": {
+          "const": true
+        },
+        "allowArbitraryCommands": {
+          "const": false
+        },
+        "allowDownloadedExecutableExecution": {
+          "const": false
+        },
+        "allowUnapprovedCompilerDependencies": {
+          "const": false
+        }
       }
     },
     "generationRequirements": {
@@ -101,26 +160,160 @@
         "optionalRemoteProviders"
       ],
       "properties": {
-        "localInProcessInference": { "type": "boolean" },
-        "typedWorkspacePatchTools": { "type": "boolean" },
-        "qualifiedProcessBroker": { "type": "boolean" },
-        "durableJournalAndRestartRecovery": { "type": "boolean" },
-        "nativeGitHubRepositoryAdapter": { "type": "boolean" },
-        "exactHeadEvidenceCollector": { "type": "boolean" },
-        "primarySourceResearch": { "type": "boolean" },
-        "optionalRemoteProviders": { "type": "boolean" }
+        "localInProcessInference": {
+          "type": "boolean"
+        },
+        "typedWorkspacePatchTools": {
+          "type": "boolean"
+        },
+        "qualifiedProcessBroker": {
+          "type": "boolean"
+        },
+        "durableJournalAndRestartRecovery": {
+          "type": "boolean"
+        },
+        "nativeGitHubRepositoryAdapter": {
+          "type": "boolean"
+        },
+        "exactHeadEvidenceCollector": {
+          "type": "boolean"
+        },
+        "primarySourceResearch": {
+          "type": "boolean"
+        },
+        "optionalRemoteProviders": {
+          "type": "boolean"
+        }
       }
     },
     "milestones": {
       "type": "array",
       "minItems": 11,
       "maxItems": 11,
-      "items": { "$ref": "#/$defs/milestone" }
+      "items": {
+        "$ref": "#/$defs/milestone"
+      }
     },
     "globalAcceptance": {
       "type": "array",
       "minItems": 5,
-      "items": { "type": "string", "minLength": 1, "maxLength": 500 }
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 500
+      }
+    },
+    "continuousImprovement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "enabled",
+        "afterMilestone",
+        "researchMode",
+        "researchDomains",
+        "sourceRules",
+        "improvementLoop",
+        "proposalPolicy",
+        "notAutomatic"
+      ],
+      "properties": {
+        "enabled": {
+          "const": true
+        },
+        "afterMilestone": {
+          "const": "GFX-0.8"
+        },
+        "researchMode": {
+          "const": "ongoing_primary_source_research"
+        },
+        "researchDomains": {
+          "type": "array",
+          "minItems": 8,
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160
+          }
+        },
+        "sourceRules": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "preferPrimarySources",
+            "recordRetrievedAtUtc",
+            "recordVersionAndContentSha256",
+            "treatExternalContentAsUntrusted"
+          ],
+          "properties": {
+            "preferPrimarySources": {
+              "const": true
+            },
+            "recordRetrievedAtUtc": {
+              "const": true
+            },
+            "recordVersionAndContentSha256": {
+              "const": true
+            },
+            "treatExternalContentAsUntrusted": {
+              "const": true
+            }
+          }
+        },
+        "improvementLoop": {
+          "type": "array",
+          "minItems": 5,
+          "maxItems": 12,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300
+          }
+        },
+        "proposalPolicy": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "createVersionedFollowOnMilestones",
+            "requireBaselineAndMeasuredResults",
+            "requireIndependentReview",
+            "requireHumanAcceptance",
+            "automaticMerge",
+            "automaticRelease"
+          ],
+          "properties": {
+            "createVersionedFollowOnMilestones": {
+              "const": true
+            },
+            "requireBaselineAndMeasuredResults": {
+              "const": true
+            },
+            "requireIndependentReview": {
+              "const": true
+            },
+            "requireHumanAcceptance": {
+              "const": true
+            },
+            "automaticMerge": {
+              "const": false
+            },
+            "automaticRelease": {
+              "const": false
+            }
+          }
+        },
+        "notAutomatic": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 12,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300
+          }
+        }
+      }
     }
   },
   "$defs": {
@@ -147,9 +340,22 @@
         "requiredOwnerDecisions"
       ],
       "properties": {
-        "id": { "$ref": "#/$defs/milestoneId" },
-        "title": { "type": "string", "minLength": 4, "maxLength": 160 },
-        "workstream": { "enum": [ "shader_compiler", "asset_analysis", "ide", "gpu_runtime" ] },
+        "id": {
+          "$ref": "#/$defs/milestoneId"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 4,
+          "maxLength": 160
+        },
+        "workstream": {
+          "enum": [
+            "shader_compiler",
+            "asset_analysis",
+            "ide",
+            "gpu_runtime"
+          ]
+        },
         "status": {
           "enum": [
             "draft_pr_open",
@@ -167,55 +373,108 @@
             "paused"
           ]
         },
-        "existingPullRequest": { "type": "integer", "minimum": 1 },
-        "existingPullRequestUrl": { "type": "string", "format": "uri" },
-        "sourceBranch": { "type": "string", "maxLength": 120 },
-        "sourceHeadSha": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+        "existingPullRequest": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "existingPullRequestUrl": {
+          "type": "string",
+          "format": "uri"
+        },
+        "sourceBranch": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "sourceHeadSha": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
         "dependsOn": {
           "type": "array",
           "uniqueItems": true,
-          "items": { "$ref": "#/$defs/milestoneId" }
+          "items": {
+            "$ref": "#/$defs/milestoneId"
+          }
         },
         "agentRoles": {
           "type": "array",
           "minItems": 1,
           "uniqueItems": true,
-          "items": { "type": "string", "minLength": 2, "maxLength": 80 }
+          "items": {
+            "type": "string",
+            "minLength": 2,
+            "maxLength": 80
+          }
         },
         "allowedPaths": {
           "type": "array",
           "minItems": 1,
           "uniqueItems": true,
-          "items": { "type": "string", "minLength": 1, "maxLength": 160 }
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160
+          }
         },
         "deliverables": {
           "type": "array",
           "minItems": 1,
-          "items": { "type": "string", "minLength": 1, "maxLength": 500 }
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500
+          }
         },
         "acceptanceGates": {
           "type": "array",
           "minItems": 3,
-          "items": { "type": "string", "minLength": 1, "maxLength": 500 }
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500
+          }
         },
         "hardStops": {
           "type": "array",
           "minItems": 2,
-          "items": { "type": "string", "minLength": 1, "maxLength": 500 }
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500
+          }
         },
-        "requiresRealWindowsRuntimeEvidence": { "type": "boolean" },
-        "requiresPhysicalGpuEvidence": { "type": "boolean" },
+        "requiresRealWindowsRuntimeEvidence": {
+          "type": "boolean"
+        },
+        "requiresPhysicalGpuEvidence": {
+          "type": "boolean"
+        },
         "requiredOwnerDecisions": {
           "type": "array",
           "uniqueItems": true,
-          "items": { "type": "string", "minLength": 1, "maxLength": 200 }
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          }
+        },
+        "sourceBaseBranch": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
         }
       },
       "allOf": [
         {
           "if": {
-            "properties": { "status": { "const": "draft_pr_open" } },
-            "required": [ "status" ]
+            "properties": {
+              "status": {
+                "const": "draft_pr_open"
+              }
+            },
+            "required": [
+              "status"
+            ]
           },
           "then": {
             "required": [
@@ -228,8 +487,14 @@
         },
         {
           "if": {
-            "properties": { "status": { "const": "draft_pr_open_windows_not_verified" } },
-            "required": [ "status" ]
+            "properties": {
+              "status": {
+                "const": "draft_pr_open_windows_not_verified"
+              }
+            },
+            "required": [
+              "status"
+            ]
           },
           "then": {
             "required": [

@@ -81,7 +81,8 @@
       ],
       "requiresRealWindowsRuntimeEvidence": false,
       "requiresPhysicalGpuEvidence": false,
-      "requiredOwnerDecisions": []
+      "requiredOwnerDecisions": [],
+      "sourceBaseBranch": "Sharnou-Compiler"
     },
     {
       "id": "GFX-0.2",
@@ -125,7 +126,8 @@
       ],
       "requiresRealWindowsRuntimeEvidence": true,
       "requiresPhysicalGpuEvidence": false,
-      "requiredOwnerDecisions": []
+      "requiredOwnerDecisions": [],
+      "sourceBaseBranch": "graphics-compiler-gfx01-architecture-20261128"
     },
     {
       "id": "GFX-0.3",
@@ -484,5 +486,51 @@
     "No graphics milestone may introduce MSVC, Clang, Visual Studio, MSBuild, external shader compiler executables, arbitrary command execution or unapproved compiler/runtime dependencies.",
     "Runtime rendering and profiling milestones require genuine Windows execution and physical-GPU evidence where specified; static validators and WARP-only tests are not substitutes.",
     "Design-only milestones may use deterministic document/schema checks, but must not be described as Windows runtime acceptance; code-bearing milestones require exact-head Windows evidence where the manifest says so."
-  ]
+  ],
+  "continuousImprovement": {
+    "enabled": true,
+    "afterMilestone": "GFX-0.8",
+    "researchMode": "ongoing_primary_source_research",
+    "researchDomains": [
+      "compiler construction and intermediate representation design",
+      "SSA, data-flow analysis, verification and optimization",
+      "shader language frontends and source mapping",
+      "D3D11, DXGI, shader reflection and backend evolution",
+      "GPU architecture, synchronization and memory behavior",
+      "geometry processing, transforms, numerical robustness and mesh analysis",
+      "glTF and GLB scene, geometry, skin and animation semantics",
+      "KTX2, Basis Universal, texture formats and streaming",
+      "PBR materials, lighting, render graphs and resource hazards",
+      "skeletal animation, large-world rendering and MMORPG workloads",
+      "GPU profiling, reproducible benchmarks and performance regression analysis",
+      "professional IDE workflows, diagnostics, inspectors and viewport tooling"
+    ],
+    "sourceRules": {
+      "preferPrimarySources": true,
+      "recordRetrievedAtUtc": true,
+      "recordVersionAndContentSha256": true,
+      "treatExternalContentAsUntrusted": true
+    },
+    "improvementLoop": [
+      "Continuously discover relevant updates from primary specifications, official platform documentation, peer-reviewed work and reproducible technical reports.",
+      "Record source URL, retrieval time, revision, content digest, applicability and conflicting claims.",
+      "Compare candidate changes with Sharnou architecture, supported hardware, ABI, runtime and dependency policies.",
+      "Establish reproducible baselines and distinguish estimates from actual CPU and physical-GPU measurements.",
+      "Create a versioned follow-on milestone with explicit file ownership, dependencies, tests, rollback and evidence gates.",
+      "Generate only in an isolated branch, independently review, qualify the exact head and request owner acceptance."
+    ],
+    "proposalPolicy": {
+      "createVersionedFollowOnMilestones": true,
+      "requireBaselineAndMeasuredResults": true,
+      "requireIndependentReview": true,
+      "requireHumanAcceptance": true,
+      "automaticMerge": false,
+      "automaticRelease": false
+    },
+    "notAutomatic": [
+      "Research suggestions never become code changes without technical validation, tests and owner acceptance.",
+      "No external compiler, linker, shader compiler executable or runtime dependency may be added without explicit owner approval.",
+      "No accepted milestone or historical evidence may be silently rewritten by a later improvement cycle."
+    ]
+  }
 }

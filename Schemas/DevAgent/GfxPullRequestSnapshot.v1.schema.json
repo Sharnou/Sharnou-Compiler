@@ -1,0 +1,187 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sharnou.dev/schemas/devagent/gfx-pr-snapshot/v1.json",
+  "title": "SharnouDevAgent live graphics PR snapshot v1",
+  "description": "Bounded read-only PR and exact-head evidence snapshot.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "repository",
+    "capturedAtUtc",
+    "pullRequests"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "sharnou.devagent.gfx-pr-snapshot/1"
+    },
+    "repository": {
+      "const": "Sharnou/Sharnou-Compiler"
+    },
+    "capturedAtUtc": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "pullRequests": {
+      "type": "array",
+      "maxItems": 11,
+      "items": {
+        "$ref": "#/$defs/pullRequest"
+      }
+    }
+  },
+  "$defs": {
+    "nullableSha1": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "nullableSha256": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "windowsEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "testedHeadSha",
+        "passedTests",
+        "failedTests",
+        "skippedTests",
+        "artifactSha256"
+      ],
+      "properties": {
+        "status": {
+          "enum": [
+            "NOT_REQUIRED",
+            "NOT_RUN",
+            "PASS",
+            "FAIL"
+          ]
+        },
+        "testedHeadSha": {
+          "$ref": "#/$defs/nullableSha1"
+        },
+        "passedTests": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "failedTests": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "skippedTests": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "artifactSha256": {
+          "$ref": "#/$defs/nullableSha256"
+        }
+      }
+    },
+    "gpuEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "testedHeadSha",
+        "adapterName",
+        "driverVersion",
+        "captureSha256"
+      ],
+      "properties": {
+        "status": {
+          "enum": [
+            "NOT_REQUIRED",
+            "NOT_RUN",
+            "PASS",
+            "FAIL"
+          ]
+        },
+        "testedHeadSha": {
+          "$ref": "#/$defs/nullableSha1"
+        },
+        "adapterName": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 160
+        },
+        "driverVersion": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 80
+        },
+        "captureSha256": {
+          "$ref": "#/$defs/nullableSha256"
+        }
+      }
+    },
+    "pullRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "number",
+        "state",
+        "draft",
+        "merged",
+        "baseBranch",
+        "headBranch",
+        "headSha",
+        "ownerAccepted",
+        "windowsEvidence",
+        "physicalGpuEvidence"
+      ],
+      "properties": {
+        "number": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "state": {
+          "enum": [
+            "open",
+            "closed"
+          ]
+        },
+        "draft": {
+          "type": "boolean"
+        },
+        "merged": {
+          "type": "boolean"
+        },
+        "baseBranch": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "headBranch": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "headSha": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "ownerAccepted": {
+          "type": "boolean"
+        },
+        "windowsEvidence": {
+          "$ref": "#/$defs/windowsEvidence"
+        },
+        "physicalGpuEvidence": {
+          "$ref": "#/$defs/gpuEvidence"
+        }
+      }
+    }
+  }
+}
