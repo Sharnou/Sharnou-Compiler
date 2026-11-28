@@ -5188,17 +5188,28 @@ $dataRva = [UInt32]([long]$textRva + [long]$textVirtualSpan)
 $relocationImageBoundary = [UInt32]([long]$dataRva + [long]$dataVirtualSpan)
 $relocationTargets = [System.Collections.Generic.List[UInt32]]::new()
 $relocationTargets.Add($dataRva) # Existing .rdata absolute entry-point anchor.
-foreach ($callbackFixup in $script:DataPointerFixups) {
-    if (-not $script:CodeLabels.ContainsKey([string]$callbackFixup.Label)) {
-        throw "Unresolved typed callback code label: $($callbackFixup.Label)"
+foreach ($pointerFixup in $script:DataPointerFixups) {
+    if ($pointerFixup.TargetKind -eq 'Code') {
+        if (-not $script:CodeLabels.ContainsKey([string]$pointerFixup.Label)) {
+            throw "Unresolved typed callback code label: $($pointerFixup.Label)"
+        }
+        $targetOffset = [Int64]$script:CodeLabels[[string]$pointerFixup.Label]
+        if ($targetOffset -lt 0 -or $targetOffset -ge $codeBytes.Length) {
+            throw "Typed callback target is outside .text: $($pointerFixup.Label)"
+        }
+        $pointerFixup.TargetRva = [UInt32]([Int64]$textRva + $targetOffset)
+    } elseif ($pointerFixup.TargetKind -eq 'Data') {
+        if ($null -eq $pointerFixup.TargetItem -or
+            $pointerFixup.TargetItem.Offset -lt 0 -or
+            ($pointerFixup.TargetItem.Offset + $pointerFixup.TargetItem.Bytes.Length) -gt $script:DataLength) {
+            throw "Typed data pointer target is outside initialized .rdata: $($pointerFixup.Key)"
+        }
+        $pointerFixup.TargetRva = [UInt32]([UInt64]$dataRva + [UInt64]$pointerFixup.TargetItem.Offset)
+    } else {
+        throw "Unknown typed data-pointer target kind: $($pointerFixup.TargetKind)"
     }
-    $callbackOffset = [Int64]$script:CodeLabels[[string]$callbackFixup.Label]
-    if ($callbackOffset -lt 0 -or $callbackOffset -ge $codeBytes.Length) {
-        throw "Typed callback target is outside .text: $($callbackFixup.Label)"
-    }
-    $callbackFixup.TargetRva = [UInt32]([Int64]$textRva + $callbackOffset)
-    $pointerRva = [UInt64]$dataRva + [UInt64]$callbackFixup.DataItem.Offset
-    if ($pointerRva -gt [UInt32]::MaxValue) { throw 'Typed callback pointer data RVA exceeds the PE RVA range.' }
+    $pointerRva = [UInt64]$dataRva + [UInt64]$pointerFixup.DataItem.Offset + [UInt64]$pointerFixup.SlotOffset
+    if ($pointerRva -gt [UInt32]::MaxValue) { throw "Typed pointer slot RVA exceeds the PE RVA range: $($pointerFixup.Key)" }
     $relocationTargets.Add([UInt32]$pointerRva)
 }
 $script:ExpectedRelocationTargetRvas = [UInt32[]]@($relocationTargets)
@@ -5242,12 +5253,12 @@ $codeBytes = $script:Code.ToArray()
 $dataBytes = [byte[]]::new([Math]::Max(8, $script:DataLength))
 # Relocated pointer used by the linker's relocation/verification self-check.
 Set-U64 -Buffer $dataBytes -Offset 0 -Value ([UInt64]([Int64]0x140001000))
-foreach ($callbackFixup in $script:DataPointerFixups) {
-    if ($callbackFixup.DataItem.Bytes.Length -ne 8 -or $callbackFixup.TargetRva -eq 0) {
-        throw "Typed callback pointer fixup is incomplete: $($callbackFixup.Key)"
+foreach ($pointerFixup in $script:DataPointerFixups) {
+    if (($pointerFixup.SlotOffset + 8) -gt $pointerFixup.DataItem.Bytes.Length -or $pointerFixup.TargetRva -eq 0) {
+        throw "Typed data-pointer fixup is incomplete: $($pointerFixup.Key)"
     }
-    $callbackVa = [UInt64]([UInt64]0x140000000 + [UInt64]$callbackFixup.TargetRva)
-    Set-U64 -Buffer $callbackFixup.DataItem.Bytes -Offset 0 -Value $callbackVa
+    $targetVa = [UInt64]([UInt64]0x140000000 + [UInt64]$pointerFixup.TargetRva)
+    Set-U64 -Buffer $pointerFixup.DataItem.Bytes -Offset $pointerFixup.SlotOffset -Value $targetVa
 }
 foreach ($item in $script:DataItems) { if ($item.Bytes.Length -gt 0) { Set-Bytes -Buffer $dataBytes -Offset $item.Offset -Bytes $item.Bytes } }
 
