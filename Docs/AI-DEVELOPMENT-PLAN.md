@@ -348,3 +348,18 @@ Next: R5.1.c actual Sharnou-generated SCM service host and disposable Windows SC
 The current R5.1.c candidate is isolated on `phase-2b8-r5-1c-native-scm-host-20261128`, stacked directly on the corrected R5.1.b exact source head `ab00219f1aa9783c148035b754eebce7269f6fbb`. It adds a genuine Sharnou-generated Windows SCM executable path, typed relocated service-table/callback pointers, a service-specific exact import profile and PE verification, real disposable Windows SCM smoke tests, and an exact-head Windows Server 2025 workflow. The candidate is **not accepted** until that workflow and its evidence artifact pass on the exact source head.
 
 The focused R5.1.c smoke does not replace R5.1.d. R5.1.d must qualify actual SCM startup/shutdown/failure handling/cleanup and adversarial failure cases before R5.2 can begin. Then and only then: R5.2 service identity/protected CNG key -> R5.3 authenticated local named-pipe IPC -> R5.4 service-owned authenticated durable journal. Model-facing and autonomous execution remain disabled; full Phase 2B.8 is not accepted.
+
+
+## Current authoritative execution sequence - 2026-11-28
+
+R5.1.c has passed its declared exact-head qualification:
+- Tested head `85efea1cd17ea03e5040dc6708d0dac1928dcfd5`.
+- Windows Server 2025 run [46122764612](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/46122764612): SUCCESS.
+- Inspected artifact id `15253524806`, SHA-256 `7c4fda351a1fa7f117e6fa1615f5d521b3176d786d0cd2de502be5f20ec85556`.
+- Native service executable SHA-256 `8623ed7fd37153a41b841cad632e30ac6965b5bfee0153a59e0880fb43e43f73`; PE verification and actual disposable SCM lifecycle passed; complete combined regression PASS.
+
+**R5.1.d is now the next authorized milestone.** Implement a separate adversarial Windows SCM lifecycle qualification tranche covering: START_PENDING/RUNNING/STOP_PENDING/STOPPED status and field assertions; SERVICE_CONTROL_SHUTDOWN; test-only failure injection at dispatcher, handler registration, event creation and SetServiceStatus; repeated lifecycle and duplicate controls; start/stop races; timeout and forced termination; process, handle and service-registration orphan checks; crash cleanup and recovery. Ensure the fault injection is absent from normal production builds and verify that absence in the final image/source profile.
+
+Do not begin R5.2 before R5.1.d exact-head acceptance. R5.3 follows R5.2; R5.4 follows R5.3. The inherited Low-IL AppContainer DPAPI protection check remains INCONCLUSIVE because System.Security could not be loaded in the Windows PowerShell test process. It remains a Phase 2B.8 gap even though R5.1.c's scoped gate passed.
+
+Model-facing and autonomous execution remain DISABLED. Phase 2B.8 remains NOT SECURITY ACCEPTED; no production rollout is authorized.
