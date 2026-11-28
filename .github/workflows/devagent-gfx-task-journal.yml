@@ -1,0 +1,52 @@
+name: SharnouDevAgent DGA-GFX-0.3 Task Journal Qualification
+on:
+  push:
+    branches:
+      - devagent-gfx-task-journal-20261128
+  pull_request:
+    branches:
+      - devagent-gfx-campaign-planner-20261128
+    paths:
+      - 'Tools/DevAgent/GfxTaskJournal.psm1'
+      - 'Tools/DevAgent/Invoke-GfxTaskJournal.ps1'
+      - 'Tests/Test-GfxTaskJournal.ps1'
+      - 'Schemas/DevAgent/GfxTaskJournal.v1.schema.json'
+      - 'Schemas/DevAgent/GfxCheckpoint.v1.schema.json'
+      - '.github/workflows/devagent-gfx-task-journal.yml'
+      - 'Docs/DEVAGENT-GFX-MILESTONE-AUTOMATION.md'
+      - 'README.md'
+  workflow_dispatch:
+jobs:
+  gfx-task-journal:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Enforce ASCII source and documentation
+        shell: powershell
+        run: |
+          $paths = @(
+            'Tools/DevAgent/GfxTaskJournal.psm1',
+            'Tools/DevAgent/Invoke-GfxTaskJournal.ps1',
+            'Tests/Test-GfxTaskJournal.ps1',
+            'Schemas/DevAgent/GfxTaskJournal.v1.schema.json',
+            'Schemas/DevAgent/GfxCheckpoint.v1.schema.json',
+            'Docs/DEVAGENT-GFX-MILESTONE-AUTOMATION.md',
+            'README.md'
+          )
+          foreach ($path in $paths) {
+            $bytes = [IO.File]::ReadAllBytes((Join-Path $PWD $path))
+            if ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF) { throw "UTF-8 BOM: $path" }
+            foreach ($byte in $bytes) { if ($byte -gt 127) { throw "Non-ASCII byte: $path" } }
+          }
+          Write-Host 'PASS: source encoding and BOM policy.'
+      - name: Run DGA-GFX-0.3 tests under Windows PowerShell 5.1
+        shell: powershell
+        run: .\Tests\Test-GfxTaskJournal.ps1
+      - name: Exercise journal CLI
+        shell: powershell
+        run: |
+          $state = Join-Path $env:RUNNER_TEMP 'Sharnou-GfxJournal-CI'
+          .\Tools\DevAgent\Invoke-GfxTaskJournal.ps1 -Action Initialize -StateDirectory $state
+          .\Tools\DevAgent\Invoke-GfxTaskJournal.ps1 -Action Inspect -StateDirectory $state
+          Remove-Item -LiteralPath $state -Recurse -Force

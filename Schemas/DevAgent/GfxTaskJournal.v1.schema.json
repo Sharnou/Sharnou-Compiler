@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sharnou.dev/schemas/devagent/gfx-task-journal-record/v1.json",
+  "title": "SharnouDevAgent immutable task journal record envelope",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "body",
+    "recordSha256"
+  ],
+  "properties": {
+    "body": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200000
+    },
+    "recordSha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  }
+}

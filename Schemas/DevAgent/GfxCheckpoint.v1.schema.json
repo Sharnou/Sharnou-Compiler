@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sharnou.dev/schemas/devagent/gfx-task-checkpoint/v1.json",
+  "title": "SharnouDevAgent immutable checkpoint envelope",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "body",
+    "checkpointSha256"
+  ],
+  "properties": {
+    "body": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1000000
+    },
+    "checkpointSha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  }
+}
