@@ -1141,3 +1141,10 @@ After the prior session record, one more isolated diagnostic commit was added to
 - **Next action:** execute the exact-head Windows qualification, repair every first failing diagnostic/test on this same branch, re-run the full workflow, inspect its hash-bound artifact, and only then request architecture/interface review. GFX-0.3 must wait for GFX-0.2 verifier acceptance.
 - **Isolation:** no change to R5.1.c/R5.1.d, CNG, named-pipe, journal or model-facing execution gates. Model-facing and autonomous execution remain DISABLED; Phase 2B.8 is not security accepted.
 
+
+
+### GFX-0.2 verifier hardening follow-up — 2026-11-28
+
+A static code review identified and corrected an important JSON property-access issue: scalar JSON properties must remain scalar while array-valued properties must remain arrays. \`Get-SgirValue\` now preserves only actual arrays as a single pipeline object; a dedicated positive test checks both cases. The negative corpus now has 22 named rejection cases, and the verifier enforces explicit declaration/CFG limits before dominator analysis. The schema and GFX-0.2 design note were updated to reflect those bounds.
+
+Latest substantive verifier/test source commit: \`8edef41f56075fd34210b2840e2d2d31c3779a5b\`. PR #41 tracks the current combined branch head. Static JSON parsing of both the fixture and schema succeeded. These checks do not substitute for Windows PowerShell execution; the qualification status remains **WINDOWS EXECUTION NOT VERIFIED**.
