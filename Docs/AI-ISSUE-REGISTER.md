@@ -634,3 +634,13 @@ Next implementation: R5.1.a multi-target relocation builder and tests; R5.1.b ty
 R5.1.a qualifies bounded multi-target DIR64 relocation generation and parsing. R5.1.b qualifies two callback-pointer ABI contracts. Neither creates an SCM service. R5.1.c is next: genuine Sharnou-generated inert Windows SCM host, SERVICE_TABLE_ENTRYW callback wiring, service status/control lifecycle, actual import-table verification, and disposable Windows service install/start/stop/shutdown/failure-injection tests.
 
 No service SID, production CNG key, named-pipe transport, production signed journal, process execution authority or crash recovery is implemented yet. Full Phase 2B.8 remains NOT SECURITY ACCEPTED. Model-facing and autonomous execution remain DISABLED.
+
+
+## R5.1.c - native Sharnou SCM service candidate (2026-11-28)
+
+- Isolated implementation branch: `phase-2b8-r5-1c-native-scm-host-20261128`, based on the R5.1.b exact-head SHA `ab00219f1aa9783c148035b754eebce7269f6fbb`.
+- Implemented the compiler's opt-in SCM-host emission mode, actual SERVICE_TABLE_ENTRYW pointer data, typed pointer fixups and DIR64 relocations, generated ServiceMain/HandlerEx, minimal KERNEL32/ADVAPI32 import profile and service-aware PE verifier.
+- Added real Windows SCM smoke coverage for compile, PE verification, disposable service create/start/interrogate/stop/delete and PID-zero confirmation. Added exact-head Windows Server 2025 workflow and full combined regression.
+- Status is **PENDING exact-head Windows CI**; no implementation acceptance claim until run results and artifact are inspected.
+- R5.1.d remains mandatory and is not merged into this milestone. R5.2, R5.3 and R5.4 remain blocked by the user's strict dependency order.
+- Model-facing/autonomous execution remain DISABLED; Phase 2B.8 remains NOT SECURITY ACCEPTED.
