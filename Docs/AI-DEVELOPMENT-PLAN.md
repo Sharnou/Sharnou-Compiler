@@ -317,7 +317,7 @@ R5.1.a and R5.1.b have passed their bounded exact-head Windows qualification on 
 This status overlay changes no milestone scope and does not approve merging any PR, installing a persistent service, enabling model-facing execution, or deploying an autonomous agent. Model-facing and autonomous execution remain DISABLED; Phase 2B.8 remains NOT SECURITY ACCEPTED.
 
 
-## SharnouDevAgent automatic GFX campaign — 2026-11-28
+## SharnouDevAgent automatic GFX campaign - 2026-11-28
 
 The user has requested automatic generation, verification, repair and draft-PR submission for all eleven graphics milestones. The machine-readable campaign contract is Projects/DevAgent/GfxCampaign.v1.json, validated against Schemas/DevAgent/GfxCampaign.v1.schema.json; the operating contract is Docs/DEVAGENT-GFX-MILESTONE-AUTOMATION.md.
 
@@ -330,6 +330,6 @@ The user has requested automatic generation, verification, repair and draft-PR s
 This approval of the desired campaign outcome does not waive Phase 2B.8, enable model-facing process execution, authorize arbitrary commands, or authorize automatic merges/releases. No campaign milestone is marked complete by the manifest alone.
 
 
-### DGA-GFX-0.1 campaign PR status — 2026-11-28
+### DGA-GFX-0.1 campaign PR status - 2026-11-28
 
 Draft PR #42 is open at exact head 3434994d90f603adf82d8460f0977af8b59eb15a, based on default HEAD 36b07383cb0ee1996298724202454eb8aec57d98. Static JSON and dependency-DAG reconciliation found 11 milestone IDs, no missing dependency references and no cycle. This remains a declarative campaign contract only; its executor is not implemented or activated. DGA-0.2 is next.
