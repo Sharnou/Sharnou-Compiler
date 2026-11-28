@@ -1173,11 +1173,11 @@ After the prior session record, one more isolated diagnostic commit was added to
 
 ### DGA-GFX-0.4 qualification - 2026-11-28
 
-- Feature code/test head: 57054ca03e2119b345621cff22bd7bf31b8a495e.
+- Feature code/test head: bacde01986c701ca8735e0e27591bdba3f3b2235.
 - Draft PR #45: https://github.com/Sharnou/Sharnou-Compiler/pull/45, based on draft PR #44 branch devagent-gfx-task-journal-20261128.
-- Windows PowerShell 5.1 push run #46163913745: PASS.
-- Windows PowerShell 5.1 pull-request run #46163917653: PASS.
-- DGA-GFX-0.4 suite: 43/43 passed; DGA-GFX-0.3 journal suite: 30/30 passed. Schema, ASCII/no-BOM and credential-status checks also passed.
+- Windows PowerShell 5.1 push run #46164326875: PASS.
+- Windows PowerShell 5.1 pull-request run #46164332876: PASS.
+- DGA-GFX-0.4 suite: 44/44 passed; DGA-GFX-0.3 journal suite: 30/30 passed. Schema, ASCII/no-BOM and credential-status checks also passed.
 - Evidence checkpoints are bounded metadata-only snapshots in a distinct DGA-GFX journal. No raw source file content, token or model conversation is persisted.
 - The GitHub artifact digest is not an independently verified archive digest because this milestone does not download artifact ZIP bytes.
 - Current-user DPAPI and local owner ACL are not equivalent to service-owned R5 credentials. No worker, inference, process execution, autonomous source generation, GitHub mutation or background scheduler has been enabled.
