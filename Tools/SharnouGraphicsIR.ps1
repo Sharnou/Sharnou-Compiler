@@ -19,7 +19,7 @@ function Get-SgirPropertyNames {
     if ($Value -isnot [System.Management.Automation.PSCustomObject]) {
         Throw-Sgir 'S001' 'Expected a JSON object.'
     }
-    return ,@($Value.PSObject.Properties | ForEach-Object { [string]$_.Name })
+    return @($Value.PSObject.Properties | ForEach-Object { [string]$_.Name })
 }
 
 function Assert-SgirObject {
@@ -45,7 +45,7 @@ function Assert-SgirObject {
 function Get-SgirValue {
     param([Parameter(Mandatory = $true)][object] $Object, [Parameter(Mandatory = $true)][string] $Name)
     $property = $Object.PSObject.Properties | Where-Object { $_.Name -ceq $Name } | Select-Object -First 1
-    if ($null -eq $property) { return $null }
+    if ($null -ceq $property) { return $null }
     return ,$property.Value
 }
 
@@ -100,7 +100,7 @@ function Assert-SgirSortedStrings {
     param([object[]] $Values, [string] $Where)
     $previous = $null
     foreach ($value in $Values) {
-        if ($null -ne $previous -and [System.StringComparer]::Ordinal.Compare([string]$previous, [string]$value) -ge 0) {
+        if ($null -cne $previous -and [System.StringComparer]::Ordinal.Compare([string]$previous, [string]$value) -ge 0) {
             Throw-Sgir 'S012' ("{0} must be sorted in strictly increasing ordinal order." -f $Where)
         }
         $previous = [string]$value
@@ -236,7 +236,7 @@ function ConvertTo-SgirCanonicalJson {
 function Get-SgirCanonicalHash {
     param([Parameter(Mandatory = $true)][object] $Document)
     $json = ConvertTo-SgirCanonicalJson -Document $Document
-    $encoding = New-Object System.Text.UTF8Encoding($false, $true)
+    $encoding = [System.Text.UTF8Encoding]::new($false, $true)
     $bytes = $encoding.GetBytes($json)
     $sha = [System.Security.Cryptography.SHA256]::Create()
     try {
@@ -249,7 +249,7 @@ function Get-SgirCanonicalHash {
 
 function Get-SgirTypeKind {
     param([string] $TypeId, [System.Collections.IDictionary] $TypeMap)
-    if ($TypeId -in @('bool', 'i32', 'u32', 'f32')) { return 'scalar' }
+    if ($TypeId -cin @('bool', 'i32', 'u32', 'f32')) { return 'scalar' }
     if (-not $TypeMap.Contains($TypeId)) { Throw-Sgir 'T001' ("Unknown type '{0}'." -f $TypeId) }
     return [string](Get-SgirValue $TypeMap[$TypeId] 'kind')
 }
@@ -257,8 +257,37 @@ function Get-SgirTypeKind {
 function Assert-SgirTypeReference {
     param([string] $TypeId, [System.Collections.IDictionary] $TypeMap, [string] $Where)
     Assert-SgirString -Value $TypeId -Where $Where
-    if ($TypeId -notin @('void', 'bool', 'i32', 'u32', 'f32') -and -not $TypeMap.Contains($TypeId)) {
+    if ($TypeId -cnotin @('void', 'bool', 'i32', 'u32', 'f32') -and -not $TypeMap.Contains($TypeId)) {
         Throw-Sgir 'T001' ("{0} references unknown type '{1}'." -f $Where, $TypeId)
+    }
+}
+
+
+function Visit-SgirTypeGraph {
+    param([string] $TypeId, [System.Collections.IDictionary] $TypeMap, [System.Collections.IDictionary] $State)
+    if (-not $TypeMap.Contains($TypeId)) { return }
+    if ($State.Contains($TypeId) -and $State[$TypeId] -eq 1) {
+        Throw-Sgir 'T010' ("Recursive aggregate type cycle reaches '{0}'." -f $TypeId)
+    }
+    if ($State.Contains($TypeId) -and $State[$TypeId] -eq 2) { return }
+    $State[$TypeId] = 1
+    $declaration = $TypeMap[$TypeId]
+    $kind = [string](Get-SgirValue $declaration 'kind')
+    if ($kind -ceq 'struct') {
+        foreach ($field in (Get-SgirValue $declaration 'fields')) {
+            Visit-SgirTypeGraph -TypeId ([string](Get-SgirValue $field 'type')) -TypeMap $TypeMap -State $State
+        }
+    } else {
+        Visit-SgirTypeGraph -TypeId ([string](Get-SgirValue $declaration 'elementType')) -TypeMap $TypeMap -State $State
+    }
+    $State[$TypeId] = 2
+}
+
+function Assert-SgirAcyclicTypeGraph {
+    param([System.Collections.IDictionary] $TypeMap)
+    $state = New-Object 'System.Collections.Generic.Dictionary[string,int]' ([System.StringComparer]::Ordinal)
+    foreach ($typeId in $TypeMap.Keys) {
+        Visit-SgirTypeGraph -TypeId ([string]$typeId) -TypeMap $TypeMap -State $state
     }
 }
 
@@ -292,7 +321,7 @@ function Assert-SgirModule {
     $typeMap = New-Object 'System.Collections.Generic.Dictionary[string,object]' ([System.StringComparer]::Ordinal)
     foreach ($type in $types) {
         $kind = [string](Get-SgirValue $type 'kind')
-        switch ($kind) {
+        switch -CaseSensitive ($kind) {
             'vector' {
                 Assert-SgirObject $type @('id','kind','elementType','lanes') @('id','kind','elementType','lanes') 'type.vector'
                 Assert-SgirId (Get-SgirValue $type 'id') 'type.id'
@@ -338,15 +367,19 @@ function Assert-SgirModule {
     Assert-SgirSortedStrings $typeIds 'module.types'
     foreach ($type in $types) {
         $kind = [string](Get-SgirValue $type 'kind')
-        if ($kind -eq 'vector' -or $kind -eq 'matrix' -or $kind -eq 'array') {
+        if ($kind -ceq 'vector' -or $kind -ceq 'matrix' -or $kind -ceq 'array') {
             Assert-SgirTypeReference ([string](Get-SgirValue $type 'elementType')) $typeMap 'type.elementType'
-        } elseif ($kind -eq 'struct') {
-            foreach ($field in (Get-SgirValue $type 'fields')) {
+            if ($kind -ceq 'array' -and (Get-SgirValue $type 'elementType') -ceq 'void') { Throw-Sgir 'T009' 'Array element type cannot be void.' }
+        } elseif ($kind -ceq 'struct') {
+            $fields = Get-SgirValue $type 'fields'
+            if ($fields.Count -eq 0) { Throw-Sgir 'T009' 'Struct types must contain at least one field.' }
+            foreach ($field in $fields) {
                 Assert-SgirTypeReference ([string](Get-SgirValue $field 'type')) $typeMap 'type.field.type'
                 if ((Get-SgirValue $field 'type') -ceq 'void') { Throw-Sgir 'T009' 'Struct fields cannot have void type.' }
             }
         }
     }
+    Assert-SgirAcyclicTypeGraph -TypeMap $typeMap
 
     $resources = Get-SgirValue $Document 'resources'
     Assert-SgirArray $resources 'module.resources'
@@ -383,6 +416,7 @@ function Assert-SgirModule {
 
     $entryPoints = Get-SgirValue $Document 'entryPoints'
     Assert-SgirArray $entryPoints 'module.entryPoints'
+    if ($entryPoints.Count -eq 0) { Throw-Sgir 'E014' 'A shader module must declare at least one entry point.' }
     $entryNames = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::Ordinal)
     $entryFunctionMap = New-Object 'System.Collections.Generic.Dictionary[string,object]' ([System.StringComparer]::Ordinal)
     $stagesPresent = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::Ordinal)
@@ -438,6 +472,7 @@ function Assert-SgirModule {
 
     $functions = Get-SgirValue $Document 'functions'
     Assert-SgirArray $functions 'module.functions'
+    if ($functions.Count -eq 0) { Throw-Sgir 'F014' 'A shader module must declare at least one function.' }
     $functionMap = New-Object 'System.Collections.Generic.Dictionary[string,object]' ([System.StringComparer]::Ordinal)
     foreach ($function in $functions) {
         Assert-SgirObject $function @('id','returnType','entryBlock','parameters','blocks') @('id','returnType','entryBlock','parameters','blocks') 'function'
@@ -489,7 +524,7 @@ function Assert-SgirModule {
         foreach ($block in $blocks) {
             $terminator = Get-SgirValue $block 'terminator'
             $op = [string](Get-SgirValue $terminator 'op')
-            switch ($op) {
+            switch -CaseSensitive ($op) {
                 'branch' {
                     Assert-SgirObject $terminator @('op','target') @('op','target') 'terminator.branch'
                     $targetBlock = [string](Get-SgirValue $terminator 'target')
@@ -634,6 +669,8 @@ function Assert-SgirModule {
                     $type = [string](Get-SgirValue $instruction 'type')
                     $incoming = Get-SgirValue $instruction 'incoming'
                     Assert-SgirArray $incoming 'phi.incoming'
+                    $incomingBlockIds = @($incoming | ForEach-Object { [string](Get-SgirValue $_ 'block') })
+                    Assert-SgirSortedStrings $incomingBlockIds 'phi.incoming'
                     if ($incoming.Count -ne $predecessors[$blockId].Count) { Throw-Sgir 'V010' 'Phi must contain exactly one incoming value for every predecessor.' }
                     $seenPreds = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::Ordinal)
                     foreach ($edge in $incoming) {
@@ -727,6 +764,15 @@ function Assert-SgirModule {
                     $valueId = [string](Get-SgirValue $terminator 'value')
                     if (-not $definitions.ContainsKey($valueId)) { Throw-Sgir 'V035' 'Return references an undefined value.' }
                     if ($definitions[$valueId].type -cne $returnType) { Throw-Sgir 'V036' 'Return value type does not match function return type.' }
+                    $definition = $definitions[$valueId]
+                    if (-not $definition.parameter) {
+                        $returnPosition = (Get-SgirValue $block 'instructions').Count
+                        if ($definition.block -ceq $blockId) {
+                            if ($definition.position -ge $returnPosition) { Throw-Sgir 'V037' 'Return value is not defined before the terminator.' }
+                        } elseif (-not $dominators[$blockId].Contains([string]$definition.block)) {
+                            Throw-Sgir 'V038' 'Return value definition does not dominate the return terminator.'
+                        }
+                    }
                 }
             }
         }
