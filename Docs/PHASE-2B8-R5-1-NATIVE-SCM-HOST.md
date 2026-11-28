@@ -173,9 +173,48 @@ Implementation added on the isolated branch:
 
 ### R5.1.c qualification boundary
 
-The candidate is NOT ACCEPTED until the exact-head Windows workflow completes successfully and its evidence artifact is inspected. No Windows runner result is asserted by this documentation update.
+R5.1.c is ACCEPTED for its declared implementation scope on exact-head Windows run `46122764612`, tested source head `85efea1cd17ea03e5040dc6708d0dac1928dcfd5`. The generated executable and exact-head evidence artifact were downloaded and inspected; see the authoritative qualification record appended below.
 
 The focused smoke gate is only R5.1.c implementation qualification. R5.1.d remains mandatory for deeper lifecycle/failure qualification: explicit observation of state transitions, shutdown coverage, dispatcher/registration/event/status failure injection, repeated cycles, timeout and forced termination, orphan detection, handle/process cleanup and recovery evidence. R5.2 remains blocked until R5.1.d passes. R5.3 remains blocked until R5.2 passes; R5.4 remains blocked until R5.3 passes.
+
+Model-facing execution: DISABLED.
+Autonomous execution: DISABLED.
+Phase 2B.8 security acceptance: NOT ACCEPTED.
+Production installation/rollout: NOT AUTHORIZED.
+
+
+## R5.1.c exact-head acceptance record - 2026-11-28
+
+### Scoped acceptance
+
+**R5.1.c: ACCEPTED for native SCM image generation, independent PE verification, and the demonstrated Windows SCM lifecycle.**
+
+- Exact tested source head: `85efea1cd17ea03e5040dc6708d0dac1928dcfd5`.
+- Windows Server 2025 exact-head workflow: [46122764612](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/46122764612), SUCCESS. The workflow's exact-head checkout, encoding gate, native service test, full combined regression, acceptance-manifest generation, evidence collection and upload all completed successfully.
+- Evidence artifact: `r5-1c-native-scm-evidence`, artifact id `15253524806`, 27,252 bytes, SHA-256 `7c4fda351a1fa7f117e6fa1615f5d521b3176d786d0cd2de502be5f20ec85556`. The downloaded archive hash was recomputed and matched the Actions artifact digest.
+- Exact-head manifest: `acceptance=PASS`; `tested_commit=85efea1cd17ea03e5040dc6708d0dac1928dcfd5`.
+- Generated `SharnouAuthorityHost.exe`: 8,704 bytes; SHA-256 `8623ed7fd37153a41b841cad632e30ac6965b5bfee0153a59e0880fb43e43f73`. The hash recomputed from the downloaded evidence artifact matched the service evidence JSON.
+- Independent PE verification passed for AMD64 PE32+, the exact two-descriptor/nine-API service import profile, per-DLL API mapping, lookup/IAT terminators, embedded UTF-16 service name, SERVICE_TABLE_ENTRYW and callback pointer targets, the exact DIR64 relocation target set, and x64 unwind information.
+- Actual SCM test passed: a unique disposable own-process service was created; RUNNING was observed; INTERROGATE succeeded; STOP moved through STOP_PENDING to STOPPED; SCM reported PID zero; and the service registration was deleted.
+- The complete inherited combined regression reported `Combined result: PASS`. Focused totals in the log include Stage 7A 24/24, relocation 21/21, Stage 5 collection 2/2, stack-probe/unwind 6/6, PE verifier 4/4, Stage 2 25/25, Stage 4 20/20, Stage 5 25/25, and Stage 6 9/9; callback ABI, runtime ABI and DevAgent broker primitive gates reported PASS.
+
+### Explicit residual limitation
+
+The inherited combined regression log records an `INCONCLUSIVE` Low-IL AppContainer DPAPI protection diagnostic because the Windows PowerShell process could not load `System.Security` (FileNotFoundException). This diagnostic did not fail the combined regression or R5.1.c SCM gate, but it is not a pass and remains an outstanding Phase 2B.8 evidence gap. Resolve it in the security milestone that owns that test; do not treat R5.1.c acceptance as closing it.
+
+### Next authorized implementation target: R5.1.d
+
+R5.1.d is now the next authorized target. It must remain separate from the accepted R5.1.c smoke qualification and must include:
+
+1. Explicit observation and assertion of START_PENDING, RUNNING, STOP_PENDING and STOPPED, including status fields, checkpoint and wait-hint bounds.
+2. SERVICE_CONTROL_SHUTDOWN behavior in addition to STOP and INTERROGATE.
+3. Deterministic test-only failure injection for dispatcher startup, HandlerEx registration, event creation, and each SetServiceStatus boundary. Injection controls must not be exposed in the default production compiler/service image.
+4. Repeated start-stop and stop/start cycles, duplicate STOP/SHUTDOWN delivery, start/stop races, bounded timeouts and recovery after failed startup.
+5. Forced termination and service-process crash tests; independently verify no orphan process, leaked event/handle, stale SCM registration, or incorrectly reported terminal state.
+6. Cleanup/recovery tests after interrupted service deletion and after service process exit; retain raw SCM query output, process exit codes, event/fault identifiers and per-case evidence.
+7. An exact-head Windows workflow, focused R5.1.d test report, complete inherited regression, and inspected evidence artifact.
+
+R5.2 remains blocked until R5.1.d passes its own exact-head qualification. R5.3 remains blocked until R5.2 passes. R5.4 remains blocked until R5.3 passes.
 
 Model-facing execution: DISABLED.
 Autonomous execution: DISABLED.
