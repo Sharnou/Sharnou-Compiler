@@ -5349,7 +5349,6 @@ foreach ($set in $importSets) {
         'DXGI.dll' { $nameOffset = 0xF30 }
         'BCRYPT.dll' { $nameOffset = 0xF40 }
         'USERENV.dll' { $nameOffset = 0xF50 }
-        'ADVAPI32.dll' { $nameOffset = 0xF60 }
         default { throw "Internal linker error: unsupported import DLL '$($set.Dll)'" }
     }
         $descriptorOffset = [int]($descriptorBase + $set.Descriptor)
