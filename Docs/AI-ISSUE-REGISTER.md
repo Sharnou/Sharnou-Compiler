@@ -527,3 +527,8 @@ PR #24 candidate head advanced to bd411c2fc777006f9b1160ab8d3d5992c2a15afa. Stag
 - **Status: REPOSITORY PRESENT / STATIC REVIEWED; WINDOWS EXECUTION NOT VERIFIED.** No exact-head Windows pass, test totals, PowerShell parse report or evidence artifact has been confirmed. The local session container has no PowerShell runtime. Do not mark GFX-0.2 accepted, and do not begin GFX-0.3 until the verifier passes its exact-head Windows gate.
 - No HLSL/DXBC, D3DCompile/D3DReflect, GPU draw, graphics asset parsing or GPU profiling is implemented in this increment. The D3DCompiler dependency remains a separate unapproved decision.
 - The graphics track does not waive any Phase 2B.8 security requirement. Model-facing/autonomous execution remains disabled.
+
+
+#### B4 follow-up — verifier review correction
+
+A static review correction was added to preserve scalar JSON properties as scalar values while preserving only true array properties as arrays. A positive test now covers both property categories. The candidate also applies explicit limits to declaration counts, parameters, stage interfaces, basic blocks and instructions before CFG dominator analysis. The verifier/schema/docs/test files are updated; JSON fixture and schema parse checks succeeded. Exact Windows PowerShell/CI acceptance remains NOT VERIFIED.
