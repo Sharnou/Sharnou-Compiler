@@ -391,7 +391,7 @@ The credential store is DPAPI-protected for the interactive user's Windows ident
 
 ## DGA-GFX-0.4 - qualification and journal persistence
 
-DGA-GFX-0.4 implements a read-only GitHub adapter and a bounded metadata-only evidence checkpoint path through the DGA task journal. It is qualified with Windows PowerShell 5.1 on implementation head 57054ca03e2119b345621cff22bd7bf31b8a495e: the DGA-GFX-0.4 adapter suite passed 43/43, the DGA-GFX-0.3 journal regression suite passed 30/30, the schema/encoding gates passed, and the credential-status CLI returned NOT_CONFIGURED without exposing a secret. Exact-head Windows push run #46163913745 and PR run #46163917653 passed.
+DGA-GFX-0.4 implements a read-only GitHub adapter and a bounded metadata-only evidence checkpoint path through the DGA task journal. It is qualified with Windows PowerShell 5.1 on implementation head bacde01986c701ca8735e0e27591bdba3f3b2235: the DGA-GFX-0.4 adapter suite passed 44/44, the DGA-GFX-0.3 journal regression suite passed 30/30, the schema/encoding gates passed, and the credential-status CLI returned NOT_CONFIGURED without exposing a secret. Exact-head Windows push run #46164326875 and PR run #46164332876 passed.
 
 Example: .\Tools\DevAgent\Invoke-GfxGitHubAdapter.ps1 -Action PullRequestEvidence -PullRequestNumber 45 -PersistEvidence. The default persistence root is %LOCALAPPDATA%\Sharnou\DevAgent\DgaGfxState; -StateDirectory overrides it. A snapshot gets its own DGA campaign journal identity, deterministic task ID, immutable checkpoint and idempotent completion. It contains repository/commit/run/artifact metadata only, is bounded to 240 KiB with at most 250 workflow-run summaries and 500 artifact summaries, and records truncation/omission counts.
 
