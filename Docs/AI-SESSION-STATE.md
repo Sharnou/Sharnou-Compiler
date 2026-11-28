@@ -1182,3 +1182,18 @@ After the prior session record, one more isolated diagnostic commit was added to
 - The GitHub artifact digest is not an independently verified archive digest because this milestone does not download artifact ZIP bytes.
 - Current-user DPAPI and local owner ACL are not equivalent to service-owned R5 credentials. No worker, inference, process execution, autonomous source generation, GitHub mutation or background scheduler has been enabled.
 - The workflow reruns on every tracked docs/source change. Treat the complete PR tip as qualified only when both push and PR Windows PowerShell 5.1 jobs pass; PR #45 description/checks contain the authoritative final SHA and run IDs. Verified totals: 44 adapter tests and 30 journal regression tests passed.
+
+
+### DGA-GFX-0.4 final exact-head qualification after collection edge-case repair - 2026-11-28
+
+- Draft PR #45 remains open and stacked on DGA-GFX-0.3 PR #44. No merge or default-branch update occurred.
+- A post-implementation review found a Windows PowerShell pipeline edge case: a root JSON array returned by the shared API JSON function could be enumerated into zero or one pipeline outputs. That made the PR collection reader reject an empty response or a one-item response even though multi-item responses worked.
+- Fixed the JSON return boundary to preserve the parsed root value as one pipeline object. Added regression tests for empty PR collections, exactly one PR, two-page collection ordering and short-page termination.
+- Final source/test head after this repair: 27257e828cee3cea5a7ae76414d02f9b9ce975a5.
+- Windows PowerShell 5.1 push run #46165497856: PASS. Pull-request run #46165500947: PASS.
+- Exact-head DGA-GFX-0.4 tests: 49 passed, 0 failed. Inherited DGA-GFX-0.3 task-journal tests: 30 passed, 0 failed. Strict evidence-schema, ASCII/no-BOM and credential-status CLI checks passed.
+- Scope remains read-only: fixed-repository metadata/branch/commit/source/PR/Actions/artifact-metadata GETs; exact commit pinning; Git blob SHA-1 verification plus SHA-256; bounded metadata-only journal checkpoints.
+- Qualification is not full live-service acceptance: mocked HTTP transport was used by adapter tests; no live credential/API round-trip or artifact archive download/hash was performed. GitHub artifact digest remains API-reported metadata, not independently verified payload evidence.
+- Credential protection remains CurrentUser DPAPI with a local owner-only ACL, not a service-SID broker. DGA task-journal hash chaining is not authentication. Phase 2B.8/R5 service identity, key and ACL gates remain separate prerequisites.
+- No process execution, inference, source generation, research daemon, worker, GitHub mutation, workflow dispatch/rerun, merge or release was enabled.
+- Next DevAgent increment: DGA-GFX-0.5, genuine Sharnou-owned in-process local inference runtime design/implementation, with no child-process fallback and no authority to write the repository or launch arbitrary commands.

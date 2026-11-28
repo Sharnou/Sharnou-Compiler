@@ -370,3 +370,12 @@ The DGA-GFX-0.4 adapter implementation and journal integration pass Windows Powe
 The milestone supplies read-only repository, branch, commit, file, pull-request, Actions-run and artifact-metadata reads; source reads are commit-pinned and Git-blob-hash verified. Bounded metadata-only snapshots persist as deterministic DGA-GFX-0.4 qualification tasks using the DGA-GFX-0.3 journal. Credential storage is interactive, current-user DPAPI and owner-ACL protected.
 
 Artifact archive bytes are not retrieved or independently hashed; the GitHub API artifact digest is metadata only. Current-user DPAPI is not a service SID broker. The adapter cannot write GitHub data, launch processes or run a worker. Model inference and autonomous source generation remain disabled.
+
+
+## DGA-GFX-0.4 final exact-head qualification - 2026-11-28
+
+The read-only GitHub adapter and DGA journal evidence path are qualified on final source/test head 27257e828cee3cea5a7ae76414d02f9b9ce975a. Windows PowerShell 5.1 push run #46165497856 and pull-request run #46165500947 both passed. The adapter suite passed 49/49; the inherited DGA-GFX-0.3 journal suite passed 30/30. Strict evidence-schema parsing, ASCII/no-BOM enforcement and credential-status CLI checks passed.
+
+The final qualification includes a regression fix for root JSON array preservation in PowerShell. Empty, singleton and multi-page pull-request collection cases are now covered. DGA-GFX-0.4 remains a read-only adapter, not an autonomous executor. Live GitHub credential/API acceptance, artifact archive download and independent digest verification, service-owned credential brokering and authenticated journal storage remain outstanding.
+
+**Next implementation:** DGA-GFX-0.5 - genuine Sharnou-owned in-process local inference. It must load an explicitly versioned/licensed model as data, perform real inference inside the native DevAgent process, enforce bounded context/token/resource limits, expose no unrestricted tool authority, and fail closed without a process-launch fallback. This is not authorization to activate model-facing process execution; Phase 2B.8/R5 remains a separate security gate.

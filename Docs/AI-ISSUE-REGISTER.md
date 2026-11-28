@@ -582,3 +582,16 @@ Static checks confirmed both JSON documents parse, all eleven milestone IDs exis
 ### DGA-GFX-0.4 exact final PR-head confirmation
 
 The final docs-synchronized PR tip is qualified only by its own Windows PowerShell 5.1 push and pull-request runs. The final exact SHA and run IDs are recorded in PR #45's description and checks. The verified suite totals are 44/44 adapter tests and 30/30 DGA-GFX-0.3 journal regression tests. This requirement prevents treating a passing implementation-only commit as evidence for later documentation changes.
+
+
+## DGA-GFX-0.4 final exact-head requalification - 2026-11-28
+
+- Draft PR #45 remains open, unmerged and stacked on PR #44.
+- Review identified a root-JSON-array enumeration edge case in the PowerShell API client. A parsed empty or singleton array could be flattened by the function output pipeline and rejected by the pull-request collection reader.
+- The API JSON return now preserves the root array as a single object. Regression coverage exercises empty, singleton, multi-page ordering and termination on a short page.
+- Final exact source/test head: 27257e828cee3cea5a7ae76414d02f9b9ce975a5.
+- Windows PowerShell 5.1 push run #46165497856 and PR run #46165500947: PASS.
+- Adapter tests: 49 passed, 0 failed. DGA-GFX-0.3 journal regression: 30 passed, 0 failed. Evidence schema, ASCII/no-BOM and no-credential CLI checks: PASS.
+- The adapter remains read-only. Transport qualification is mocked; no live GitHub token round-trip or archive download/re-hash occurred. API-reported artifact digest is metadata only. Current-user DPAPI is not service SID protection; SHA-256 journal chaining is not authentication.
+- No process launch, shell, GitHub writes, inference, autonomous source generation, background worker, merge or release is enabled. R5/Phase 2B.8 remains an independent blocker.
+- Next milestone: DGA-GFX-0.5 genuine in-process local inference, with resource-bounded inference and zero implicit process authority.
