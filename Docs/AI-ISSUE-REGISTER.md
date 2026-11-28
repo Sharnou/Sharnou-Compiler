@@ -577,3 +577,8 @@ Static checks confirmed both JSON documents parse, all eleven milestone IDs exis
 - DPAPI is CurrentUser, not service SID; owner ACL is verified. Phase 2B.8/R5 service-owned identity and protected key lifecycle remain outstanding.
 - No process execution, shell, GitHub write, PR/issue mutation, workflow dispatch/rerun, inference, source generation, background worker or automatic campaign activation.
 - The current docs-only follow-up commit is subjected to the same exact-head workflow; the final PR head and its final run IDs are recorded in the PR/CI result, not retroactively attributed to the pre-doc code/test SHA.
+
+
+### DGA-GFX-0.4 exact final PR-head confirmation
+
+The final docs-synchronized PR head is 2acd3011efdd997d645b38746a9ce7714aaf9e94. Windows PowerShell 5.1 PR run #46164469232 and push run #46164462938 both PASS on that exact head. The adapter suite passed 44/44 and the DGA-GFX-0.3 journal regression suite passed 30/30. The earlier code/test-head record above is retained as provenance; these final runs qualify the complete PR tip including documentation.
