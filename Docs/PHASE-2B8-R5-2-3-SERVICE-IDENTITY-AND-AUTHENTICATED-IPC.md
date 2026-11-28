@@ -168,21 +168,56 @@ All native CNG status values must be captured without lossy conversion to Win32 
 
 ## 1.5 Key startup verification and use boundary
 
-The normal service startup path may:
+### Critical CNG execution-context constraint
 
-- Open the configured KSP.
-- Open the exact configured persisted key.
-- Read and validate the public key, key identifier, algorithm, key size, usage, export policy, machine scope, owner and DACL.
-- Perform the fixed internal self-test.
-- Retain an opaque key handle for later service-owned journal work.
+Microsoft's NCrypt API documentation warns that a service must not call several key-storage operations from its StartService function because a deadlock can occur. This warning is not limited to key creation: it also appears on NCryptOpenKey and NCryptSignHash. Consequently, R5.2 must not place provider calls in ServiceMain or HandlerEx, and must not assume that moving only key creation into the installer is sufficient.
 
-It may not create or replace the key during startup.
+The proposed service-side design is a dedicated, bounded `KeyOpsWorker` thread:
 
-The private operation must remain behind a narrow internal service routine reserved for R5.4 canonical journal signing. That routine accepts a validated service-owned journal transaction object, not arbitrary caller bytes. The named-pipe protocol must not expose a Sign, SignHash, MAC, ExportPrivateKey, DeleteKey, or equivalent operation.
+1. ServiceMain first publishes START_PENDING with a finite checkpoint/wait hint.
+2. ServiceMain starts the worker and waits on a dedicated readiness event with a fixed deadline. ServiceMain performs no NCrypt/KSP calls.
+3. The worker opens the configured provider and exact persisted machine key, reads back and verifies the required properties and security descriptor, and completes the fixed internal signing self-test.
+4. The worker retains ownership of the opaque NCrypt handles. Handles are not copied into caller-controlled state or exposed over IPC.
+5. The worker signals success/failure to ServiceMain. Only after success may ServiceMain publish SERVICE_RUNNING.
+6. A timeout, provider failure, property mismatch, or worker failure causes bounded worker cancellation/join and fail-closed startup. The service must not fall back to a new key, a user-scoped key, or an ephemeral key.
 
-R5.2 may prove the key's signing-only behavior through a fixed internal challenge and external public-key verification. It must not introduce the production journal prematurely.
+This worker-thread pattern is a **design candidate, not an assumed Microsoft guarantee**. Its actual behavior must be qualified inside the real R5.1.c/d own-process SCM service on every supported Windows target. If KSP calls from the worker still block or deadlock while the service is starting, stop and return to architecture review; do not move the calls back into ServiceMain and do not quietly add an alternate helper process or weaken the security boundary.
+
+The worker is also the only place permitted to execute R5.4's future service-owned signing operation. It must accept only a typed, validated, service-owned journal transaction object through a bounded internal queue. The worker must not expose an arbitrary-byte signing, SignHash, MAC, decryption, export, or deletion interface to the named-pipe dispatcher. Before R5.4 exists, R5.2 uses only a fixed internal challenge for the signing self-test.
+
+### Permitted startup responsibilities
+
+The service lifecycle code may:
+
+- Start and stop the worker using bounded events and waits.
+- Publish START_PENDING/RUNNING/STOP_PENDING/STOPPED through the SCM status API.
+- Verify worker readiness and propagate a typed startup failure.
+- Hold an opaque worker-owned readiness result; it must not directly inspect or manipulate a provider handle.
+
+The KeyOpsWorker may:
+
+- Open the configured Microsoft Software KSP.
+- Open only the exact versioned persisted machine key using machine scope and silent operation.
+- Read and validate the public key, key identifier, algorithm, key length, key usage, export policy, owner and DACL.
+- Perform the fixed, domain-separated internal challenge signature and close/reopen verification.
+- Retain the private key handle exclusively within the worker for later service-owned signing.
+
+The service may not create, overwrite, regenerate, or delete the key during startup. Those operations remain in a separate administrator-controlled Sharnou-generated provisioning/maintenance helper, never in ServiceMain or the pipe protocol.
+
+The private operation remains reserved for R5.4 canonical journal signing and accepts a validated service-owned transaction object, not arbitrary caller bytes. The named-pipe protocol must not expose a Sign, SignHash, MAC, ExportPrivateKey, DeleteKey, or equivalent operation.
 
 ## 1.6 Key ACL contract
+
+### Provider access-mask rule
+
+Microsoft documents `NCRYPT_SECURITY_DESCR_PROPERTY` and provider support detection through `NCRYPT_SECURITY_DESCR_SUPPORT_PROPERTY`, but does not publish a Software KSP generic-rights mapping or a complete per-operation ACE access-mask contract. Therefore, the implementation must not infer CNG key rights from file/directory rights. In particular, do not use `FILE_GENERIC_READ`, `FILE_GENERIC_WRITE`, or `FILE_ALL_ACCESS` as an assumed mapping for a persisted KSP key.
+
+R5.2 must:
+- Positively query `NCRYPT_SECURITY_DESCR_SUPPORT_PROPERTY`; fail closed if unsupported or indeterminate.
+- Set and read back the persistent key DACL through `NCRYPT_SECURITY_DESCR_PROPERTY` using the documented security-information selector.
+- Test the exact candidate ACE set against the real restricted service token on Windows Server 2025: provisioner administration, service key-open, service fixed-challenge signing, normal user denial, second same-user non-service process denial, and AppContainer denial.
+- Record the raw NCrypt status, actual security descriptor, provider identity/version, OS build and token identity for every case.
+- Pin the minimum tested ACE mask only after the positive and negative operations pass on the supported Windows builds. Any undocumented/provider-specific behavior remains an explicit compatibility constraint, not a guessed constant.
 
 The key DACL must be:
 
@@ -223,7 +258,8 @@ Tests must use the real SCM service and actual machine-persisted KSP key, not an
 | Protected executable | Image path/final file identity/hash and directory/service-config ACL verified |
 | Key creation | Machine-scope persisted RSA-3072 signing key created only by out-of-process provisioner; existing name is not overwritten |
 | Key properties | Algorithm, length, usage, export policy and provider security-descriptor support queried and checked |
-| Key DACL | Exact owner/DACL read back and compared; inherited/broad ACEs rejected |
+| Key DACL | Exact owner/DACL read back and compared; inherited/broad ACEs rejected; provider-specific access masks experimentally validated without assuming file-object rights |
+| CNG call context | NCryptOpenKey and NCryptSignHash execute only on the dedicated KeyOpsWorker; real SCM startup deadline and no-deadlock test passes |
 | Service private operation | Actual service process signs fixed internal challenge and external verifier validates it |
 | Non-exportability | Private export fails even for the service identity; public export succeeds |
 | Client denial | Normal user, second same-user process, DevAgent broker and Low-IL AppContainer child cannot open/use private key |
@@ -473,7 +509,10 @@ Model-facing process execution remains DISABLED. Autonomous execution remains DI
 
 - [SERVICE_SID_INFO](https://learn.microsoft.com/en-us/windows/win32/api/winsvc/ns-winsvc-service_sid_info)
 - [NCryptCreatePersistedKey](https://learn.microsoft.com/en-us/windows/win32/api/ncrypt/nf-ncrypt-ncryptcreatepersistedkey)
+- [NCryptOpenKey](https://learn.microsoft.com/en-us/windows/win32/api/ncrypt/nf-ncrypt-ncryptopenkey)
+- [NCryptSignHash](https://learn.microsoft.com/en-us/windows/win32/api/ncrypt/nf-ncrypt-ncryptsignhash)
 - [Key Storage Property Identifiers](https://learn.microsoft.com/en-us/windows/win32/seccng/key-storage-property-identifiers)
+- [NCryptSetProperty](https://learn.microsoft.com/en-us/windows/win32/api/ncrypt/nf-ncrypt-ncryptsetproperty)
 - [NCryptSetProperty](https://learn.microsoft.com/en-us/windows/win32/api/ncrypt/nf-ncrypt-ncryptsetproperty)
 - [NCryptGetProperty](https://learn.microsoft.com/en-us/windows/win32/api/ncrypt/nf-ncrypt-ncryptgetproperty)
 - [Named Pipe Security and Access Rights](https://learn.microsoft.com/en-us/windows/win32/ipc/named-pipe-security-and-access-rights)
