@@ -12,6 +12,8 @@ function Assert-GfxThrows{param([scriptblock]$Action,[string]$Name);$threw=$fals
 function Copy-GfxJournal{param($Value);return (ConvertFrom-Json -InputObject (ConvertTo-Json -InputObject $Value -Depth 20))}
 function New-GfxTestTask{return (New-GfxPlannedTask -StateDirectory $script:JournalRootPath -MilestoneId 'GFX-0.3' -TaskKind 'implementation' -InputSha256 ('1'*64) -ScopeSha256 ('2'*64) -IdempotencyKey 'test/dga03/main-task')}
 try{
+ Assert-GfxThrows {Get-GfxTaskJournalStatus -StateDirectory 'relative-gfx-journal'} 'rejects relative journal roots'
+ Assert-GfxThrows {Get-GfxTaskJournalStatus -StateDirectory ([string][char]92+[char]92+'server'+[IO.Path]::DirectorySeparatorChar+'share')} 'rejects UNC journal roots'
  $null=Initialize-GfxTaskJournal -StateDirectory $script:JournalRootPath
  $initial=Get-GfxTaskJournalStatus -StateDirectory $script:JournalRootPath
  Assert-GfxJournal ($initial.initialized -and $initial.recordCount -eq 1 -and $initial.taskCount -eq 0) 'initializes journal with one genesis record'
@@ -57,6 +59,10 @@ try{
  $failedStatus=Get-GfxTaskJournalStatus -StateDirectory $script:JournalRootPath
  $failedTask=@($failedStatus.tasks|Where-Object{$_.taskId -eq $second.taskId})[0]
  Assert-GfxJournal ($failedTask.state -eq 'FAILED') 'records bounded task failure'
+ $noCheckpoint=New-GfxPlannedTask -StateDirectory $script:JournalRootPath -MilestoneId 'GFX-0.5' -TaskKind 'implementation' -InputSha256 ('d'*64) -ScopeSha256 ('e'*64) -IdempotencyKey 'test/dga03/no-checkpoint'
+ $null=Start-GfxTask -StateDirectory $script:JournalRootPath -TaskId $noCheckpoint.taskId -SessionId 'no-checkpoint-session'
+ $null=Recover-GfxTaskJournal -StateDirectory $script:JournalRootPath
+ Assert-GfxThrows {Resume-GfxTask -StateDirectory $script:JournalRootPath -TaskId $noCheckpoint.taskId -SessionId 'must-not-resume'} 'requires a committed durable checkpoint before resume'
  $third=New-GfxPlannedTask -StateDirectory $script:JournalRootPath -MilestoneId 'GFX-A.2' -TaskKind 'research' -InputSha256 ('7'*64) -ScopeSha256 ('8'*64) -IdempotencyKey 'test/dga03/third-task'
  $null=Cancel-GfxTask -StateDirectory $script:JournalRootPath -TaskId $third.taskId -ReasonCode 'OWNER_REQUEST'
  $cancelStatus=Get-GfxTaskJournalStatus -StateDirectory $script:JournalRootPath
