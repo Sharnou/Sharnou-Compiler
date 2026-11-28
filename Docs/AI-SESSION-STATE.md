@@ -1095,3 +1095,15 @@ After the prior session record, one more isolated diagnostic commit was added to
 - **Activation:** BLOCKED until the DevAgent prerequisites are built and qualified. No autonomous source generation, process execution, default-branch write, merge or release occurred in this increment.
 - **Qualification status:** repository files were created and structurally reviewed; Windows PowerShell execution was not run by this environment. The schema/manifest JSON and dependency DAG still require the planned deterministic validator DGA-0.2.
 - **Next DevAgent sequence:** DGA-0.2 manifest validator/dependency planner; DGA-0.3 durable task journal/restart recovery; DGA-0.4 native read-only repository/Actions adapter; DGA-0.5 real local model inference; DGA-0.6 typed patch transaction engine; DGA-0.7 accepted process broker/security gates; DGA-0.8 specialist orchestration/review/repair/evidence; DGA-0.9 campaign runner and draft-PR lifecycle.
+
+
+### DGA-GFX-0.1 pull-request and static reconciliation update — 2026-11-28
+
+- Draft PR: [#42 — DGA-GFX-0.1: define automatic Sharnou graphics milestone campaign](https://github.com/Sharnou/Sharnou-Compiler/pull/42).
+- Exact current PR head: 3434994d90f603adf82d8460f0977af8b59eb15a.
+- Base: default branch HEAD 36b07383cb0ee1996298724202454eb8aec57d98.
+- Changed paths: seven (campaign manifest, campaign schema, automation design, README, master plan, session state and issue register).
+- Static reconciliation: schema and manifest both parse as JSON; manifest contains exactly 11 milestone IDs; all dependency references resolve; custom DAG cycle check found no cycle; schema-required/top-level and milestone property sets have no extra or missing fields.
+- PR #39 is confirmed OPEN/DRAFT/UNMERGED at architecture head da35987afb7db46736b152bc6c249634a886e836. PR #41 is confirmed OPEN/DRAFT/UNMERGED at SGIR candidate head d331970ab3fd463e3977aaba04fccd12bd523dad.
+- No full JSON Schema engine validation, PowerShell execution, Windows CI execution or GPU runtime test was performed in this environment. PR #42 is a contract/documentation PR, not a native DevAgent implementation.
+- Clarification: design-only acceptance is a document/schema gate; it is never labelled Windows runtime PASS. Code-bearing milestones need exact-head Windows evidence where required, and physical-GPU milestones additionally need real adapter captures.
