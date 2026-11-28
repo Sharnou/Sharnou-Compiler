@@ -4047,7 +4047,22 @@ function Emit-NativeScmCallbacks {
     Mark-CodeLabel -Label $skipEventClose
 
     Emit-NativeScmStatusCall -StatusHandleSlot $statusHandleSlot -StatusBase $statusBase -State 1 -ControlsAccepted 0 -ExitCodeSlot $errorSlot -Checkpoint 0 -WaitHint 0
+    Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
+    $stoppedStatusFailed = New-UniqueLabel -Prefix 'r51_stopped_status_failed'
+    Emit-JumpConditional -ConditionCode 0x84 -Label $stoppedStatusFailed
     Emit-Epilogue
+
+    Mark-CodeLabel -Label $stoppedStatusFailed
+    Emit-NativeScmCaptureLastError -ErrorSlot $errorSlot -OnlyIfEmpty
+    Emit-LoadEaxFrame -SlotPosition $errorSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
+    $stoppedStatusHasError = New-UniqueLabel -Prefix 'r51_stopped_status_has_error'
+    Emit-JumpConditional -ConditionCode 0x85 -Label $stoppedStatusHasError
+    Emit-Bytes -Bytes ([byte[]]@(0xB8, 0x01, 0x00, 0x00, 0x00)) # never return success after a failed final status report
+    Mark-CodeLabel -Label $stoppedStatusHasError
+    Emit-Bytes -Bytes ([byte[]]@(0x89, 0xC1)) # ECX = nonzero terminal failure
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3070) # ExitProcess
+    Emit-Epilogue # unreachable safety terminator
 
     Mark-CodeLabel -Label $startStatusFailed
     Emit-NativeScmCaptureLastError -ErrorSlot $errorSlot
@@ -4096,11 +4111,13 @@ function Emit-NativeScmCallbacks {
     Emit-JumpConditional -ConditionCode 0x84 -Label $invalidContext
     Emit-Bytes -Bytes ([byte[]]@(0x49, 0x8B, 0x09)) # RCX = *(HANDLE*)context
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x85, 0xC9))
-    Emit-JumpConditional -ConditionCode 0x84 -Label $invalidContext
+    $alreadyStopping = New-UniqueLabel -Prefix 'r51_handler_already_stopping'
+    Emit-JumpConditional -ConditionCode 0x84 -Label $alreadyStopping
     Emit-Win64CallIat -TargetRva ([UInt32]0x3088) # SetEvent
     Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
     Emit-JumpConditional -ConditionCode 0x84 -Label $signalFailed
-    Emit-Bytes -Bytes ([byte[]]@(0x31, 0xC0))
+    Mark-CodeLabel -Label $alreadyStopping
+    Emit-Bytes -Bytes ([byte[]]@(0x31, 0xC0)) # duplicate STOP/SHUTDOWN after signal is idempotent
     Emit-Jump -Label $handlerDone
     Mark-CodeLabel -Label $signalFailed
     Emit-Win64CallIat -TargetRva ([UInt32]0x3078) # GetLastError -> HandlerEx DWORD
