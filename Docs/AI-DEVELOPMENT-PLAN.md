@@ -363,3 +363,14 @@ R5.1.c has passed its declared exact-head qualification:
 Do not begin R5.2 before R5.1.d exact-head acceptance. R5.3 follows R5.2; R5.4 follows R5.3. The inherited Low-IL AppContainer DPAPI protection check remains INCONCLUSIVE because System.Security could not be loaded in the Windows PowerShell test process. It remains a Phase 2B.8 gap even though R5.1.c's scoped gate passed.
 
 Model-facing and autonomous execution remain DISABLED. Phase 2B.8 remains NOT SECURITY ACCEPTED; no production rollout is authorized.
+
+
+## R5.1.d implementation tranche — 2026-11-28
+
+The next milestone is being implemented on the isolated branch `phase-2b8-r5-1d-scm-lifecycle-20261128`, based on the qualified R5.1.c branch tip. R5.1.c remains accepted for its declared native SCM smoke scope; it is not reopened or modified.
+
+The R5.1.d branch adds opt-in test-only fault generation for dispatcher, HandlerEx registration, event creation and all four `SetServiceStatus` state boundaries; bounded Sleep windows for observing START_PENDING and STOP_PENDING; a marked test PE profile with a verifier-enforced boundary; a native direct HandlerEx callback probe; and a dedicated Windows lifecycle/failure workflow covering repeated cycles, racing controls, forced process termination, restart and interrupted deletion.
+
+Important qualification distinction: the direct HandlerEx SHUTDOWN call proves callback behavior only. It does not prove that the Windows OS shutdown broadcast reached the service. Real `SERVICE_CONTROL_SHUTDOWN` delivery must be tested in a disposable Windows VM/host because ordinary `ControlService` cannot request it. That isolated shutdown test remains outstanding.
+
+Current state: implementation branch created and code-bearing changes committed; exact-head Windows CI and evidence inspection are pending. Do not mark R5.1.d accepted or begin R5.2 yet. R5.2 -> R5.3 -> R5.4 remain strictly blocked behind R5.1.d acceptance. The separate Low-IL AppContainer DPAPI `System.Security` diagnostic remains INCONCLUSIVE. Model-facing and autonomous execution stay DISABLED; Phase 2B.8 remains NOT SECURITY ACCEPTED.
