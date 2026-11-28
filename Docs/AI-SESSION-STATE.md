@@ -1047,3 +1047,37 @@ After the prior session record, one more isolated diagnostic commit was added to
 - Sharnou-Engine: default main HEAD 91f90cf34c081184d54e5d3f71435922679ff5f8; open PR #2 production roadmap and PR #1 compiler C++ target fail-closed gate; latest policy run 44594247991 SUCCESS.
 - Honour-War: default main HEAD 6608c5607e187f05b39b198eeb595c2e89af595b; open PR #15 compiler pin; latest stack validation run 44178026612 SUCCESS.
 - No IDE, Engine, or Honour War files were changed in this session. These policy/roadmap runs are not proof of a native IDE/Engine/game executable or gameplay runtime.
+
+
+## Scheduled compiler and DevAgent qualification - 2026-11-28 08:47 Africa/Cairo
+
+### Live default-branch and compiler audit
+
+- Default branch HEAD at the start of this run: `53e26cca3c4b55865ca595801e09c0d62e61975f`.
+- Compared with the last code-tested default commit `6899a086bb9b212a7a1e714d1e8fba375ae28fb6`, the default branch is 15 commits ahead / 0 behind. The complete comparison contains only `Docs/AI-DEVELOPMENT-PLAN.md`, `Docs/AI-ISSUE-REGISTER.md`, and `Docs/AI-SESSION-STATE.md`; no compiler, verifier, test, workflow, fixture, runtime, Engine, IDE, or game source changed in that interval.
+- Default Stage 7A run [45638680338](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45638680338) completed SUCCESS on code commit `6899a086bb9b212a7a1e714d1e8fba375ae28fb6`: 23/23 (8 positive runtime, 12 negative diagnostics, 3 instruction checks). The current default compiler/test code is unchanged from that tested commit; the later commits are documentation-only. The frozen 83-case suite is still not integrated into default.
+- PR #6 remains OPEN / UNMERGED at `9dfe1bc09685a6f7deb9d29b5192b1aae0686039`, 15 ahead / 67 behind default. Exact-head Windows run [44700641397](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/44700641397) completed SUCCESS (83/83); [44700641419](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/44700641419) completed SUCCESS (Stage 7A 23/23). This is same-head CI evidence for the frozen baseline and Stage 7A, not default-branch integration. Do not merge PR #6 automatically.
+- PR #5 remains OPEN / UNMERGED at `0b8dee87b699eabcaaac37f111686231fb29a82c`; its historical run [44693097619](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/44693097619) passed Stage 7A 23/23 and Stage 7B 32/32, but did not include the 83-case baseline. The candidate remains stale and its previously recorded dynamic-left short-circuit constant-evaluation gap and opcode-only branch checks remain unresolved. 7B scope is user-approved in section 12 of the plan, but this candidate is not accepted implementation.
+
+### Phase 2B.8 R5.1 exact-head Windows qualification
+
+- PR #32 remains OPEN / DRAFT and is the SCM-host design/preflight only; it does not emit or install a service.
+- PR #33 R5.1.a remains OPEN / DRAFT at `2583faec76d5e469962756d17d2ffabecd6fcd98`. Exact-head Windows Server 2025 run [46066382172](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/46066382172) completed SUCCESS: focused PE relocation suite 21/21; Stage 7A 24/24; frozen M1-M6 baseline 83/83; combined result PASS. Artifact 15231785189, SHA-256 `698ebd55dfb66b529cd8b001aa986e4832e995e8f37a68f7906c7db19546b725`.
+- PR #35 R5.1.b remains OPEN / DRAFT at `ab00219f1aa9783c148035b754eebce7269f6fbb`, stacked on PR #33. Exact-head Windows Server 2025 run [46070065850](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/46070065850) completed SUCCESS; focused typed callback-pointer/Win64 ABI probe PASS; Stage 7A 24/24; frozen M1-M6 83/83; combined result PASS; exact-head acceptance manifest PASS. Artifact 15232513039, SHA-256 `b246b9e588d06c956ce59ea6583b7da99f1d9a02f3e35df50e8a5fc9a99ed10f`. Windows log source hashes: Stage0 compiler `ae0af9ead1b06a367b61ece04e6f66da0426a9d7d6787f8eaf5dc91c0b5e1015`; PE verifier `9ee2eaa09f27fdf71df72a3dd6213ab011817221e352101971dc85924879cd27`. The focused callback test does not print a numeric case total; no count is inferred.
+- The R5.1.b exact-head manifest explicitly reports `native_scm_service_implemented=false`. The generated callback probe is not an SCM service. The test-only intrinsic `sh_win64_callback_abi_probe` remains behind `-EnableWin64CallbackTests` and is absent from the default compiler builtin catalog; it is not a production source-level callback facility.
+- Both R5.1.a and R5.1.b qualify only their bounded relocation/callback primitives on draft feature branches. They are not default-branch integration, service-host implementation, or Phase 2B.8 security acceptance.
+
+### Dependency and unresolved evidence
+
+- PR #36 is OPEN / DRAFT and documentation-only for R5.2/R5.3; head `61ab29abec4286dc1a92c3b2f6cdea60f6340e53`, based on the R5.1.b branch. Its contract correctly retains R5.1.c (real Sharnou-generated inert SCM service host) and R5.1.d (actual SCM startup/stop/shutdown/failure/cleanup qualification) as mandatory prerequisites. Do not begin R5.2 implementation before both pass; R5.3 follows accepted R5.2.
+- The R5.1.a/b combined transcripts still mark the Low-IL AppContainer DPAPI protection subtest INCONCLUSIVE because Windows PowerShell could not load `System.Security` (FileNotFoundException). It is not a pass and remains a Phase 2B.8 evidence gap.
+- R5.1.c must compile a genuine service executable from Sharnou source, verify the actual PE import table and exception/relocation directories, and exercise a disposable SCM service. It must remain inert: no pipe listener, key provisioning, journal, profile mutation, or child execution. R5.1.d must independently qualify real SCM state transitions, STOP/SHUTDOWN/INTERROGATE, failure injection, repeated stop/start, process exit, handle cleanup, and forced termination.
+- Model-facing process execution and autonomous execution remain DISABLED. No Sharnou-generated SCM service or complete autonomous SharnouDevAgent executable was produced in this run. No source changes, PR changes, merges, or workflow dispatches were made.
+
+### Evidence classification and next bounded task
+
+- WINDOWS CI PASS: 45638680338 (default Stage 7A 23/23); 44700641397 (PR #6 baseline 83/83); 44700641419 (PR #6 Stage 7A 23/23); 46066382172 (R5.1.a relocation 21/21, Stage 7A 24/24, baseline 83/83); 46070065850 (R5.1.b callback ABI PASS, Stage 7A 24/24, baseline 83/83).
+- REPOSITORY PRESENT / STATIC REVIEWED: current default roadmap/status files, PR #32 SCM-host specification, PR #33 relocation implementation, PR #35 callback ABI implementation/test, and PR #36 R5.2/R5.3 design.
+- NOT RUN: R5.1.c service image, R5.1.d real SCM lifecycle qualification, independent DPAPI fix, R5.2 key provisioning, R5.3 pipe implementation, R25-R4 archive comparison, and expanded same-head 145-case 7B gate.
+- BLOCKED: R5.1.c/.d are not implemented; Low-IL DPAPI subtest is inconclusive; 83-case baseline remains absent from default; PR #6 is stale/diverged; full 7B gate is not yet present on one exact head.
+- Next bounded task: implement R5.1.c on a fresh isolated branch stacked on the qualified R5.1.b head, using the Sharnou compiler to generate the inert SCM service image. Keep R5.1.d as the following separate qualification increment and keep PR #36 design-only until both gates pass.
