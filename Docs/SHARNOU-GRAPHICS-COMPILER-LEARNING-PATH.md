@@ -93,11 +93,13 @@ Build a binding map shared by the compiler, reflection system, material schema a
 
 Understand the difference between a shader source language, a shader intermediate representation, an API bytecode format and final GPU machine instructions.
 
-Sharnou should own its shader language, type rules, SGIR, static analyzer, optimizer, target capability checks, reflection contract, cache identity and package format. The initial D3D11 bridge can lower a restricted SGIR subset to HLSL and call the Microsoft `D3DCompile` API in-process, then use `D3DReflect` to inspect the result. This is a proposed transitional adapter, not proof that the GPU backend is already first-party or that its DLL exists on every Windows installation.
+Sharnou should own its shader language, type rules, SGIR, static analyzer, optimizer, target capability checks, reflection contract, cache identity and package format. The initial D3D11 bridge can lower a restricted SGIR subset to HLSL and call the Microsoft `D3DCompile` API in-process, then use `D3DReflect` to inspect the result. This is a proposed transitional adapter, not proof that the GPU backend is already first-party or that its DLL exists on every Windows installation. `D3DCompile` is the Shader Model 2–5-era D3DCompiler route and requires the `D3DCompiler_47.dll` runtime; `D3DReflect` uses that compiler library as well. Do not treat this path as Shader Model 6 support.
 
 Learn what reflection tells you: vertex input signature, stage outputs, resource bindings, constant-buffer sizes and field offsets. Compare reflection with the expected SGIR interface. If they disagree, reject the shader package.
 
 Portable shader bytecode is not the same as hardware machine code. API-level bytecode/intermediate modules are generally compiled or specialized by the graphics driver for the actual adapter. The final compiler pipeline must include the actual device and driver in runtime compatibility tests.
+
+For a later Direct3D 12 / Shader Model 6 route, study Microsoft's DXC and DXIL. DXC supports Shader Model 6 and can emit DXIL or SPIR-V, but its implementation is based on LLVM/Clang and is distributed as `dxcompiler.dll`/`dxil.dll` plus the `dxc.exe` driver. Under the current Sharnou no-Clang/no-external-compiler rule, it is a reference architecture, not an approved production dependency. A Sharnou-owned SM6/DXIL backend is a substantial, separate compiler project; do not pretend it is a small extension of the D3D11 bytecode path.
 
 ### Practice work
 
@@ -163,7 +165,7 @@ Use the D3D11 debug layer in development, check HRESULTs, label objects, track r
 
 Record CPU submission time separately from GPU execution time. For D3D11, use timestamp queries inside a timestamp-disjoint interval and read results later without stalling the frame. Reject timestamp deltas when the disjoint flag is true. Track frame time, per-pass GPU time, draw calls, primitives, pixel-shader invocations where available, texture/mesh memory estimates and shader/cache counts.
 
-PIX is useful, but current PIX documentation says it does not directly analyze D3D11 applications; D3D11 capture is possible through D3D11On12. Do not make PIX a requirement for the first D3D11 milestone. The initial Sharnou profiler should use D3D11 queries and its own markers. PIX can be studied and added when a validated D3D11On12/D3D12 route exists.
+PIX does not directly analyze native D3D11 applications. D3D11On12 can translate D3D11 work for PIX, but captures show the translated D3D12 work and do not preserve original D3D11 shader source/reflection metadata. Do not make PIX a requirement for the first D3D11 milestone. The initial Sharnou profiler should use timestamp/disjoint queries and its own markers. PIX can be studied and added when a validated D3D11On12/D3D12 route exists and the capture limitations are acceptable.
 
 ### A repeatable diagnosis sequence
 
@@ -198,6 +200,8 @@ Use one compiler/analyzer implementation shared by the IDE and command-line buil
 - Khronos: [SPIR-V specification](https://registry.khronos.org/SPIR-V/specs/unified1/SPIRV.html) for a defined intermediate representation and module model.
 - Slang: [user guide](https://shader-slang.org/slang/user-guide/) for studying shader language design, compilation and reflection; not an approved Sharnou production dependency.
 - Microsoft PIX: [documentation](https://devblogs.microsoft.com/pix/documentation/) and [requirements](https://devblogs.microsoft.com/pix/requirements/); observe the D3D11 capture limitation above.
+- Microsoft PIX: [D3D11On12 capture details](https://learn.microsoft.com/en-us/windows/pix/gpu-captures/capture-d3d11-apps).
+- Microsoft: [DirectX Shader Compiler and SM6/DXIL](https://github.com/microsoft/DirectXShaderCompiler); study its IR and target model, but do not add it as a dependency without an explicit architecture decision.
 
 ## 11. What to build first
 
