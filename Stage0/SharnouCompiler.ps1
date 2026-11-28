@@ -4124,6 +4124,42 @@ function Emit-BuiltinCall {
     $baseDepth = [int]$script:TempDepth
     $argSlots = [System.Collections.Generic.List[int]]::new()
     switch ($Node.Builtin) {
+        'NativeScmServiceHost' {
+            if (-not $script:NativeScmServiceMode -or $Node.Arguments.Count -ne 0) {
+                throw 'The native SCM host intrinsic is only available in the isolated native service compiler mode.'
+            }
+            if ($null -ne $script:NativeScmServiceTableItem) {
+                throw 'The native SCM service table may only be registered once.'
+            }
+            $script:NativeScmServiceNameDataItem = Register-WideDataConstant -Value $script:NativeScmServiceName
+            $script:NativeScmHandlerPointerItem = Register-CodeCallbackPointer -Key 'SCM:HANDLER_FUNCTION_EX' -Label '__r51_handler_ex' -Signature 'HANDLER_FUNCTION_EX'
+            $tablePadding = (8 - ($script:DataLength % 8)) % 8
+            if ($tablePadding -gt 0) {
+                $paddingBytes = [byte[]]::new($tablePadding)
+                $paddingItem = [pscustomobject]@{ Value = 'SCM:SERVICE_TABLE:ALIGN'; Offset = $script:DataLength; Bytes = $paddingBytes }
+                $script:DataItems.Add($paddingItem)
+                $script:DataMap.Add($paddingItem.Value, $paddingItem)
+                $script:DataLength += $tablePadding
+            }
+            $tableBytes = [byte[]]::new(32) # one SERVICE_TABLE_ENTRYW plus the all-zero terminator
+            $script:NativeScmServiceTableItem = Register-ByteDataConstant -Key 'SCM:SERVICE_TABLE' -Bytes $tableBytes
+            Register-DataPointerFixup -Key 'SCM:SERVICE_TABLE_NAME' -DataItem $script:NativeScmServiceTableItem -SlotOffset 0 -TargetKind Data -TargetItem $script:NativeScmServiceNameDataItem
+            Register-DataPointerFixup -Key 'SCM:SERVICE_TABLE_MAIN' -DataItem $script:NativeScmServiceTableItem -SlotOffset 8 -TargetKind Code -Label '__r51_service_main' -Signature 'SERVICE_MAIN_FUNCTIONW'
+
+            Emit-DataAddress -DataItem $script:NativeScmServiceTableItem
+            Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1)) # RCX = SERVICE_TABLE_ENTRYW*
+            Emit-Win64CallIat -TargetRva ([UInt32]0x30A0) # StartServiceCtrlDispatcherW
+            Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
+            $dispatchSucceeded = New-UniqueLabel -Prefix 'r51_dispatch_succeeded'
+            Emit-JumpConditional -ConditionCode 0x85 -Label $dispatchSucceeded
+            Emit-Win64CallIat -TargetRva ([UInt32]0x3078) # GetLastError
+            Emit-Bytes -Bytes ([byte[]]@(0x89, 0xC1)) # ECX = dispatcher failure
+            Emit-Win64CallIat -TargetRva ([UInt32]0x3070) # ExitProcess(error)
+            Emit-Bytes -Bytes ([byte[]]@(0xB8, 0x01, 0x00, 0x00, 0x00)) # unreachable fail-closed return
+            Mark-CodeLabel -Label $dispatchSucceeded
+            $script:TempDepth = $baseDepth
+            return
+        }
         'Win64CallbackProbe' {
             $serviceMainPointer = Register-CodeCallbackPointer -Key 'CALLBACK:SERVICE_MAIN_FUNCTIONW' -Label '__r51_service_main_abi_probe' -Signature 'SERVICE_MAIN_FUNCTIONW'
             $handlerExPointer = Register-CodeCallbackPointer -Key 'CALLBACK:HANDLER_FUNCTION_EX' -Label '__r51_handler_ex_abi_probe' -Signature 'HANDLER_FUNCTION_EX'
@@ -4946,27 +4982,18 @@ if (Test-Path -LiteralPath $outputFullPath) { Remove-Item -LiteralPath $outputFu
 
 $script:Functions = [System.Collections.Generic.Dictionary[string, object]]::new([System.StringComparer]::Ordinal)
 $script:Builtins = [System.Collections.Generic.Dictionary[string, object]]::new([System.StringComparer]::Ordinal)
-$builtinDefinitions = @(
-    [pscustomobject]@{ Name = 'sh_abi_nonvolatile_probe'; Builtin = 'AbiNonvolatileProbe'; ParameterTypes = @(); ReturnType = 'Integer' },
-    [pscustomobject]@{ Name = 'sh_string_length'; Builtin = 'StringLength'; ParameterTypes = @('String'); ReturnType = 'Integer' },
-    [pscustomobject]@{ Name = 'sh_string_equal'; Builtin = 'StringEqual'; ParameterTypes = @('String', 'String'); ReturnType = 'Integer' },
-    [pscustomobject]@{ Name = 'sh_log'; Builtin = 'Log'; ParameterTypes = @('String'); ReturnType = 'Integer' },
-    [pscustomobject]@{ Name = 'sh_memory_fill'; Builtin = 'MemoryFill'; ParameterTypes = @('Integer', 'Integer'); ReturnType = 'Integer' },
-    [pscustomobject]@{ Name = 'sh_memory_byte_at'; Builtin = 'MemoryByteAt'; ParameterTypes = @('Integer'); ReturnType = 'Integer' },
-    [pscustomobject]@{ Name = 'sh_file_exists'; Builtin = 'FileExists'; ParameterTypes = @('String'); ReturnType = 'Integer' },
-    [pscustomobject]@{ Name = 'sh_file_size'; Builtin = 'FileSize'; ParameterTypes = @('String'); ReturnType = 'Integer' },
-    [pscustomobject]@{ Name = 'sh_asset_read_count'; Builtin = 'AssetReadCount'; ParameterTypes = @('String', 'Integer'); ReturnType = 'Integer' },
-    [pscustomobject]@{ Name = 'sh_asset_read_byte'; Builtin = 'AssetReadByte'; ParameterTypes = @('String', 'Integer'); ReturnType = 'Integer' },
-    [pscustomobject]@{ Name = 'sh_window_probe'; Builtin = 'WindowProbe'; ParameterTypes = @('String'); ReturnType = 'Integer' },
-    [pscustomobject]@{ Name = 'sh_window_pump_once'; Builtin = 'WindowPump'; ParameterTypes = @(); ReturnType = 'Integer' },
-    [pscustomobject]@{ Name = 'sh_thread_sync_probe'; Builtin = 'ThreadSyncProbe'; ParameterTypes = @(); ReturnType = 'Integer' },
-    [pscustomobject]@{ Name = 'sh_d3d11_render_demo'; Builtin = 'D3D11RenderDemo'; ParameterTypes = @('String', 'Integer'); ReturnType = 'Integer' }
-)
+if ($script:NativeScmServiceMode) {
+    # A service image has no general-purpose compiler intrinsic surface.
+    $builtinDefinitions = @(
+        [pscustomobject]@{ Name = 'sh_native_scm_service_host'; Builtin = 'NativeScmServiceHost'; ParameterTypes = @(); ReturnType = 'Integer' }
+    )
+} else {
 if ($EnableDevAgentTools) {
     $builtinDefinitions += [pscustomobject]@{ Name = 'sh_dev_run_tool'; Builtin = 'DevRunTool'; ParameterTypes = @('Integer', 'Integer'); ReturnType = 'Integer' }
 }
 if ($EnableWin64CallbackTests) {
     $builtinDefinitions += [pscustomobject]@{ Name = 'sh_win64_callback_abi_probe'; Builtin = 'Win64CallbackProbe'; ParameterTypes = @(); ReturnType = 'Integer' }
+}
 }
 foreach ($definition in $builtinDefinitions) { $script:Builtins.Add($definition.Name, $definition) }
 $script:Modules = [System.Collections.Generic.List[object]]::new()
@@ -4981,6 +5008,19 @@ $script:MainContext = [pscustomobject]@{ Name = '__entry'; SlotCount = 0; TempSl
 $script:Scopes = [System.Collections.Generic.List[object]]::new(); Push-Scope
 $script:ActiveContext = $script:MainContext; $script:CurrentFunction = $null; $script:BlockDepth = 0
 foreach ($module in $script:Modules) { Parse-Module -Module $module }
+
+if ($script:NativeScmServiceMode) {
+    if ($script:Modules.Count -ne 1 -or $script:Functions.Count -ne 0 -or $script:MainStatements.Count -ne 1) {
+        throw 'Native SCM service mode accepts exactly one root module, no user functions, and one top-level host declaration.'
+    }
+    $serviceStatement = $script:MainStatements[0]
+    if ($serviceStatement.Kind -cne 'Let' -or $null -eq $serviceStatement.Expression -or
+        $serviceStatement.Expression.Kind -cne 'Call' -or
+        $serviceStatement.Expression.Builtin -cne 'NativeScmServiceHost' -or
+        $serviceStatement.Expression.Arguments.Count -ne 0) {
+        throw 'Native SCM service source must consist solely of: let serviceHost = sh_native_scm_service_host();'
+    }
+}
 
 Set-FrameSize -Context $script:MainContext -NodeCount (Get-StatementsNodeCount -Statements $script:MainStatements.ToArray())
 foreach ($functionObject in $script:Functions.Values) {
