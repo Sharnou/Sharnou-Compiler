@@ -1,0 +1,183 @@
+{
+  "schema": "SGIR/1",
+  "moduleId": "sharnou.example.triangle",
+  "target": {
+    "api": "d3d11",
+    "featureLevel": "11_0",
+    "shaderModel": "5_0"
+  },
+  "capabilities": [
+    "shader.vertex"
+  ],
+  "types": [
+    {
+      "id": "frame_data",
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "tint",
+          "type": "vec4f",
+          "index": 0
+        }
+      ]
+    },
+    {
+      "id": "vec4f",
+      "kind": "vector",
+      "elementType": "f32",
+      "lanes": 4
+    }
+  ],
+  "resources": [
+    {
+      "id": "r_frame",
+      "name": "FrameData",
+      "kind": "constant_buffer",
+      "set": 0,
+      "binding": 0,
+      "type": "frame_data",
+      "stages": [
+        "vertex"
+      ]
+    }
+  ],
+  "entryPoints": [
+    {
+      "name": "VSMain",
+      "stage": "vertex",
+      "function": "fn_vs",
+      "inputs": [
+        {
+          "id": "in_position",
+          "location": 0,
+          "semantic": "POSITION",
+          "type": "vec4f",
+          "interpolation": "perspective"
+        }
+      ],
+      "outputs": [
+        {
+          "id": "out_position",
+          "location": 0,
+          "semantic": "SV_Position",
+          "type": "vec4f",
+          "interpolation": "perspective"
+        }
+      ]
+    }
+  ],
+  "functions": [
+    {
+      "id": "fn_choose",
+      "returnType": "i32",
+      "entryBlock": "entry",
+      "parameters": [],
+      "blocks": [
+        {
+          "id": "entry",
+          "instructions": [
+            {
+              "op": "const",
+              "result": "condition",
+              "type": "bool",
+              "literal": true
+            }
+          ],
+          "terminator": {
+            "op": "branch_conditional",
+            "condition": "condition",
+            "trueTarget": "left",
+            "falseTarget": "right"
+          }
+        },
+        {
+          "id": "join",
+          "instructions": [
+            {
+              "op": "phi",
+              "result": "selected",
+              "type": "i32",
+              "incoming": [
+                {
+                  "block": "left",
+                  "value": "left_value"
+                },
+                {
+                  "block": "right",
+                  "value": "right_value"
+                }
+              ]
+            }
+          ],
+          "terminator": {
+            "op": "return",
+            "value": "selected"
+          }
+        },
+        {
+          "id": "left",
+          "instructions": [
+            {
+              "op": "const",
+              "result": "left_value",
+              "type": "i32",
+              "literal": 11
+            }
+          ],
+          "terminator": {
+            "op": "branch",
+            "target": "join"
+          }
+        },
+        {
+          "id": "right",
+          "instructions": [
+            {
+              "op": "const",
+              "result": "right_value",
+              "type": "i32",
+              "literal": 22
+            },
+            {
+              "op": "const",
+              "result": "scale_bits",
+              "type": "f32",
+              "literal": "3F800000"
+            }
+          ],
+          "terminator": {
+            "op": "branch",
+            "target": "join"
+          }
+        }
+      ]
+    },
+    {
+      "id": "fn_vs",
+      "returnType": "void",
+      "entryBlock": "entry",
+      "parameters": [],
+      "blocks": [
+        {
+          "id": "entry",
+          "instructions": [
+            {
+              "op": "load_input",
+              "result": "position",
+              "type": "vec4f",
+              "interface": "in_position"
+            },
+            {
+              "op": "store_output",
+              "interface": "out_position",
+              "value": "position"
+            }
+          ],
+          "terminator": {
+            "op": "return"
+          }
+        }
+      ]
+    }
+  ]
+}

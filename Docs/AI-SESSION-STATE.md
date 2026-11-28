@@ -1127,3 +1127,29 @@ After the prior session record, one more isolated diagnostic commit was added to
 - For an eventual SM6/D3D12 renderer, GFX must separately design a Sharnou-owned backend or request an explicit in-process DXC dependency decision; no implicit DXC install or external `dxc.exe` invocation is permitted.
 - PIX D3D11On12 capture sees translated D3D12 calls and does not preserve original D3D11 shader source/reflection metadata. The initial D3D11 profiler remains timestamp/disjoint queries with asynchronous `GetData` and Sharnou CPU markers.
 - Current graphics PR #39 branch head at this follow-up: `9bccd0c03d02acde9941246344e057fbfa8900ec`; PR body records these boundaries. GFX-0.1 remains design-only; GFX-0.2 remains proposed.
+
+## GFX-0.2 SGIR/1 implementation update — 2026-11-28
+
+- **Track:** Sharnou Graphics Compiler and Analysis System, separate from the native CPU compiler and Phase 2B.8 security milestones.
+- **Parent architecture:** draft PR #39, branch `graphics-compiler-gfx01-architecture-20261128`, reviewed head `da35987afb7db46736b152bc6c249634a886e836`.
+- **Implementation PR:** draft PR #41, branch `graphics-compiler-gfx02-sgir-20261128`. The code-bearing branch head before this governance update was `9f763314eed2c502e934cace637cca230cabb562`. Do not merge #41 separately from its architecture dependency or mark the milestone accepted.
+- **Files added:** `Schemas/SGIR/1/sgir.schema.json`; `Tools/SharnouGraphicsIR.ps1`; `Examples/GraphicsIR/triangle-minimal.sgir.json`; `Tests/Test-SharnouGraphicsIR.ps1`; `Docs/GFX-0-2-SGIR-1-SCHEMA-AND-VERIFIER.md`; `.github/workflows/gfx-0-2-sgir-verifier.yml`. README now documents the focused commands and limitations.
+- **Implemented candidate scope:** versioned SGIR/1 D3D11 FL 11_0 / SM 5_0 module contract; strict JSON intake; duplicate-property and unknown-field rejection; integer/scalar/vector/matrix/array/struct typing; resource set/binding collision checks; vertex/pixel entry-point declarations; CFG reachability; Boolean conditional branches; SSA definitions, dominance and phi-edge checks; bounded declaration/instruction counts; canonical UTF-8 JSON and SHA-256 identity; canonical file output; valid fixture and negative/determinism tests.
+- **Focused tests authored:** positive fixture, canonical hash invariance for whitespace/property order, no-BOM canonical round trip and negative cases for malformed/duplicate JSON, unknown fields/version/opcode, invalid types, stage contracts, binding collision, bad branch/unreachable block, malformed/undefined phi inputs, dominance, return typing, cyclic types, and count bounds. These are test definitions, not reported test passes.
+- **Qualification status:** **REPOSITORY PRESENT / STATIC REVIEWED; WINDOWS EXECUTION NOT VERIFIED.** The current container has no PowerShell runtime. A Windows workflow is present on the feature branch, but no exact-head Windows job result and artifact manifest were available through the current Actions query. Do not claim PowerShell 5.1 parsing, Stage 7A regression, SGIR tests or Windows CI passed until the exact branch-head run is inspected.
+- **Scope not implemented:** no .shshader lexer/parser, typed source AST, HLSL/DXBC emission, D3DCompile/D3DReflect dependency, shader package/cache, D3D11 shader object creation, mesh buffers, indexed draw, visual capture, asset parser or GPU profiling. No D3DCompiler dependency was approved; DXC/Clang remain prohibited.
+- **Next action:** execute the exact-head Windows qualification, repair every first failing diagnostic/test on this same branch, re-run the full workflow, inspect its hash-bound artifact, and only then request architecture/interface review. GFX-0.3 must wait for GFX-0.2 verifier acceptance.
+- **Isolation:** no change to R5.1.c/R5.1.d, CNG, named-pipe, journal or model-facing execution gates. Model-facing and autonomous execution remain DISABLED; Phase 2B.8 is not security accepted.
+
+
+
+### GFX-0.2 verifier hardening follow-up — 2026-11-28
+
+A static code review identified and corrected an important JSON property-access issue: scalar JSON properties must remain scalar while array-valued properties must remain arrays. `Get-SgirValue` now preserves only actual arrays as a single pipeline object; a dedicated positive test checks both cases. The negative corpus now has 22 named rejection cases, and the verifier enforces explicit declaration/CFG limits before dominator analysis. The schema and GFX-0.2 design note were updated to reflect those bounds.
+
+Latest substantive verifier/test source commit: `8edef41f56075fd34210b2840e2d2d31c3779a5b`. PR #41 tracks the current combined branch head. Static JSON parsing of both the fixture and schema succeeded. These checks do not substitute for Windows PowerShell execution; the qualification status remains **WINDOWS EXECUTION NOT VERIFIED**.
+
+
+### GFX-0.2 bounded-string follow-up — 2026-11-28
+
+The verifier now caps ordinary non-empty strings at 256 characters, stage semantics at 64, and struct field names at 128 (IDs retain their 128-character grammar bound). Added one negative case for overlong stage semantics. The current authored negative corpus is **23 cases**. Latest substantive files: verifier `6eb33c75058d95b22086a575333eccf6a44a5b49`; tests `d5798174d06630ed99b03a32d91aef8a3075c6fd`; milestone document `d604709b940fa9390428fbfc07581c3650a211c2`. The final PR head also includes the tracker/README updates. Windows qualification remains NOT VERIFIED.

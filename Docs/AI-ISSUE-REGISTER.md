@@ -517,3 +517,23 @@ PR #24 candidate head advanced to bd411c2fc777006f9b1160ab8d3d5992c2a15afa. Stag
 - For an eventual SM6/D3D12 renderer, GFX must separately design a Sharnou-owned backend or request an explicit in-process DXC dependency decision; no implicit DXC install or external `dxc.exe` invocation is permitted.
 - PIX D3D11On12 capture sees translated D3D12 calls and does not preserve original D3D11 shader source/reflection metadata. The initial D3D11 profiler remains timestamp/disjoint queries with asynchronous `GetData` and Sharnou CPU markers.
 - Current graphics PR #39 branch head at this follow-up: `9bccd0c03d02acde9941246344e057fbfa8900ec`; PR body records these boundaries. GFX-0.1 remains design-only; GFX-0.2 remains proposed.
+
+### B4 — GFX-0.2 SGIR/1 verifier candidate lacks exact-head Windows qualification
+
+- Tracking issue: [#40 — GFX-0: Build the Sharnou Graphics Compiler and Analysis System](https://github.com/Sharnou/Sharnou-Compiler/issues/40).
+- Implementation: draft PR [#41](https://github.com/Sharnou/Sharnou-Compiler/pull/41), branch `graphics-compiler-gfx02-sgir-20261128`, stacked on draft architecture PR #39.
+- Repository paths include the SGIR/1 JSON schema, Sharnou-owned PowerShell verifier/canonical serializer, a vertex-stage + SSA fixture, positive/negative/determinism tests, a design/usage note and a Windows qualification workflow.
+- Candidate checks include JSON intake and canonical identity; bounded typed declarations; D3D11 FL 11_0 / SM 5_0 profile; resource binding uniqueness; stage interfaces; CFG reachability; phi and SSA dominance; unsupported-opcode rejection; and no-BOM canonical output.
+- **Status: REPOSITORY PRESENT / STATIC REVIEWED; WINDOWS EXECUTION NOT VERIFIED.** No exact-head Windows pass, test totals, PowerShell parse report or evidence artifact has been confirmed. The local session container has no PowerShell runtime. Do not mark GFX-0.2 accepted, and do not begin GFX-0.3 until the verifier passes its exact-head Windows gate.
+- No HLSL/DXBC, D3DCompile/D3DReflect, GPU draw, graphics asset parsing or GPU profiling is implemented in this increment. The D3DCompiler dependency remains a separate unapproved decision.
+- The graphics track does not waive any Phase 2B.8 security requirement. Model-facing/autonomous execution remains disabled.
+
+
+#### B4 follow-up — verifier review correction
+
+A static review correction was added to preserve scalar JSON properties as scalar values while preserving only true array properties as arrays. A positive test now covers both property categories. The candidate also applies explicit limits to declaration counts, parameters, stage interfaces, basic blocks and instructions before CFG dominator analysis. The verifier/schema/docs/test files are updated; JSON fixture and schema parse checks succeeded. Exact Windows PowerShell/CI acceptance remains NOT VERIFIED.
+
+
+#### B4 follow-up — bounded string validation
+
+Non-empty strings are now bounded (256 characters generally; 64 for stage semantics; 128 for struct field names and IDs). One new negative case rejects an overlong stage semantic. The authored negative corpus is now 23 cases. Exact Windows PowerShell/CI acceptance remains NOT VERIFIED.

@@ -25,6 +25,21 @@ See [Docs/Renderer-Roadmap-3D-MMORPG.md](Docs/Renderer-Roadmap-3D-MMORPG.md) for
 
 The proposed [Sharnou Graphics Compiler and Analysis Architecture](Docs/GFX-0-1-GRAPHICS-COMPILER-ARCHITECTURE.md) defines a separate typed shader IR, shader/static analysis, D3D11 backend adapter, asset analyzer, reflection contract, and IDE workbench. It is design-only until its milestone acceptance tests pass. The [Sharnou graphics compiler learning path](Docs/SHARNOU-GRAPHICS-COMPILER-LEARNING-PATH.md) lays out the concepts and practical sequence for building it.
 
+### GFX-0.2 — SGIR/1 implementation candidate
+
+Draft PR [#41](https://github.com/Sharnou/Sharnou-Compiler/pull/41) adds the first code-bearing graphics compiler increment on top of draft architecture PR #39. It introduces a versioned SGIR/1 JSON schema, Sharnou-owned canonical serializer and SHA-256 identity, a fail-closed type/CFG/SSA verifier, a vertex-stage sample module, and positive/negative/determinism tests.
+
+Run the focused verifier from 64-bit Windows PowerShell 5.1:
+
+    .\Tools\SharnouGraphicsIR.ps1 -Action Verify -InputPath .\Examples\GraphicsIR\triangle-minimal.sgir.json
+    .\Tests\Test-SharnouGraphicsIR.ps1
+
+Write canonical SGIR JSON:
+
+    .\Tools\SharnouGraphicsIR.ps1 -Action Canonicalize -InputPath .\Examples\GraphicsIR\triangle-minimal.sgir.json -OutputPath .\Build\GraphicsIR\triangle.canonical.sgir.json
+
+GFX-0.2 is a draft implementation candidate until exact-head Windows qualification and review pass. It does not yet parse .shshader, emit HLSL/DXBC, compile GPU shaders, load D3D11 shader objects, create mesh buffers, render pixels, or profile GPU work. The initial target profile is explicitly D3D11 Feature Level 11_0 / Shader Model 5.0. No D3DCompiler DLL decision has been made; no DXC/Clang dependency is approved.
+
 ## Milestone 7A - Control flow
 
 Stage 7A adds native if / else, while, and signed integer comparisons.
