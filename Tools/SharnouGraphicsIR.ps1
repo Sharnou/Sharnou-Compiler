@@ -71,9 +71,12 @@ function Assert-SgirCount {
 }
 
 function Assert-SgirString {
-    param([object] $Value, [string] $Where)
+    param([object] $Value, [string] $Where, [int] $MaximumLength = 256)
     if ($Value -isnot [string] -or [string]::IsNullOrWhiteSpace([string]$Value)) {
         Throw-Sgir 'S007' ("{0} must be a non-empty string." -f $Where)
+    }
+    if ($Value.Length -gt $MaximumLength) {
+        Throw-Sgir 'S015' ("{0} exceeds the maximum string length of {1}." -f $Where, $MaximumLength)
     }
 }
 
@@ -359,7 +362,7 @@ function Assert-SgirModule {
                 $fieldNames = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::Ordinal)
                 foreach ($field in $fields) {
                     Assert-SgirObject $field @('name','type','index') @('name','type','index') 'type.field'
-                    Assert-SgirString (Get-SgirValue $field 'name') 'field.name'
+                    Assert-SgirString (Get-SgirValue $field 'name') 'field.name' 128
                     if (-not $fieldNames.Add([string](Get-SgirValue $field 'name'))) { Throw-Sgir 'T005' 'Struct field names must be unique.' }
                     Assert-SgirInteger (Get-SgirValue $field 'index') 'field.index' 0 65535
                     if ((Get-SgirValue $field 'index') -cne $fieldIndex) { Throw-Sgir 'T006' 'Struct field indexes must be contiguous and zero-based.' }
@@ -460,7 +463,7 @@ function Assert-SgirModule {
                 Assert-SgirObject $interface @('id','location','semantic','type','interpolation') @('id','location','semantic','type','interpolation') 'stageInterface'
                 Assert-SgirId (Get-SgirValue $interface 'id') 'interface.id'
                 Assert-SgirInteger (Get-SgirValue $interface 'location') 'interface.location' 0 31
-                Assert-SgirString (Get-SgirValue $interface 'semantic') 'interface.semantic'
+                Assert-SgirString (Get-SgirValue $interface 'semantic') 'interface.semantic' 64
                 Assert-SgirTypeReference ([string](Get-SgirValue $interface 'type')) $typeMap 'interface.type'
                 if ((Get-SgirValue $interface 'type') -ceq 'void') { Throw-Sgir 'E004' 'Stage interface values cannot use void type.' }
                 if ((Get-SgirValue $interface 'interpolation') -cnotin @('perspective','noperspective','flat')) { Throw-Sgir 'E005' 'Invalid interpolation mode.' }
