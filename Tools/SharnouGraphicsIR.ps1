@@ -46,7 +46,9 @@ function Get-SgirValue {
     param([Parameter(Mandatory = $true)][object] $Object, [Parameter(Mandatory = $true)][string] $Name)
     $property = $Object.PSObject.Properties | Where-Object { $_.Name -ceq $Name } | Select-Object -First 1
     if ($null -ceq $property) { return $null }
-    return ,$property.Value
+    $value = $property.Value
+    if ($value -is [System.Array]) { return ,$value }
+    return $value
 }
 
 function Assert-SgirArray {
