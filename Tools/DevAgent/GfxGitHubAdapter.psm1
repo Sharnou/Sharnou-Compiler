@@ -156,7 +156,7 @@ function Invoke-GfxApiJson {
   throw ("GitHub API returned HTTP {0}; requestId={1}. No response body was retained." -f $response.StatusCode,$requestId)
  }
  if($response.BodyBytes.Length -eq 0){throw 'GitHub API returned an empty response.'}
- try{return (ConvertFrom-Json -InputObject ([Text.Encoding]::UTF8.GetString([byte[]]$response.BodyBytes)) -ErrorAction Stop)}
+ try{$parsed=ConvertFrom-Json -InputObject ([Text.Encoding]::UTF8.GetString([byte[]]$response.BodyBytes)) -ErrorAction Stop;return ,$parsed}
  catch{throw 'GitHub API returned malformed JSON.'}
 }
 function Get-GfxGitHubRepository {
