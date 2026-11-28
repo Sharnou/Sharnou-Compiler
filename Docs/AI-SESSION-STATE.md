@@ -1181,4 +1181,4 @@ After the prior session record, one more isolated diagnostic commit was added to
 - Evidence checkpoints are bounded metadata-only snapshots in a distinct DGA-GFX journal. No raw source file content, token or model conversation is persisted.
 - The GitHub artifact digest is not an independently verified archive digest because this milestone does not download artifact ZIP bytes.
 - Current-user DPAPI and local owner ACL are not equivalent to service-owned R5 credentials. No worker, inference, process execution, autonomous source generation, GitHub mutation or background scheduler has been enabled.
-- The subsequent docs-only PR head must pass the same exact-head Windows workflow before the overall PR tip is treated as qualified.
+- Final docs-synchronized PR head 2acd3011efdd997d645b38746a9ce7714aaf9e94: Windows PowerShell 5.1 PR run #46164469232 and push run #46164462938 both PASS; the exact final tip passed 44 adapter tests and 30 journal regression tests.
