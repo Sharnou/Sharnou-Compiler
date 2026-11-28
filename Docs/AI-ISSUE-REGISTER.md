@@ -581,4 +581,4 @@ Static checks confirmed both JSON documents parse, all eleven milestone IDs exis
 
 ### DGA-GFX-0.4 exact final PR-head confirmation
 
-The final docs-synchronized PR head is 2acd3011efdd997d645b38746a9ce7714aaf9e94. Windows PowerShell 5.1 PR run #46164469232 and push run #46164462938 both PASS on that exact head. The adapter suite passed 44/44 and the DGA-GFX-0.3 journal regression suite passed 30/30. The earlier code/test-head record above is retained as provenance; these final runs qualify the complete PR tip including documentation.
+The final docs-synchronized PR tip is qualified only by its own Windows PowerShell 5.1 push and pull-request runs. The final exact SHA and run IDs are recorded in PR #45's description and checks. The verified suite totals are 44/44 adapter tests and 30/30 DGA-GFX-0.3 journal regression tests. This requirement prevents treating a passing implementation-only commit as evidence for later documentation changes.
