@@ -326,7 +326,7 @@ function Install-DisposableService {
         'type=', 'own',
         'DisplayName=', $name
     )
-    $script:Services.Add($name)
+    $null = $script:Services.Add($name)
     $null = Invoke-ScCommand -Arguments @('qc', $name)
 }
 
