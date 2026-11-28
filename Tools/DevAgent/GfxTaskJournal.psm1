@@ -111,7 +111,7 @@ function Assert-GfxTransition {
   if($null -eq $TaskId -or $Store.tasks.ContainsKey([string]$TaskId)){throw 'Task ID is null or already exists.'}
   if($TaskId -cnotmatch '^t[0-9a-f]{32}$'){throw 'Task ID is malformed.'}
   Assert-GfxObject $Payload @('milestoneId','taskKind','inputSha256','scopeSha256','attempt') 'TaskPlanned payload'
-  if([string]$Payload.milestoneId -cnotmatch '^(GFX-(0\.[1-8]|A\.[1-3]|EVOL-[A-Za-z0-9.-]{1,32})|DGA-GFX-0\.[1-8])
+  if([string]$Payload.milestoneId -cnotmatch '^(GFX-(0\.[1-8]|A\.[1-3]|EVOL-[A-Za-z0-9.-]{1,32})|DGA-GFX-0\.[1-8])$'){throw 'Milestone ID is invalid.'}
   if(@('research','design','implementation','validation','qualification','review','documentation') -cnotcontains [string]$Payload.taskKind){throw 'Task kind is invalid.'}
   if(-not(Test-GfxSha256 ([string]$Payload.inputSha256)) -or -not(Test-GfxSha256 ([string]$Payload.scopeSha256))){throw 'Task input/scope digest is invalid.'}
   if($Payload.attempt -isnot [int] -or $Payload.attempt -lt 1 -or $Payload.attempt -gt 3){throw 'Task attempt must be 1-3.'}
