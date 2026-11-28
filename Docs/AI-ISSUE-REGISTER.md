@@ -568,9 +568,9 @@ Static checks confirmed both JSON documents parse, all eleven milestone IDs exis
 ## DGA-GFX-0.4 qualification record
 
 - Implementation branch: devagent-gfx-readonly-github-adapter-20261128; PR #45 is draft and stacked on PR #44.
-- Qualified code/test head: 57054ca03e2119b345621cff22bd7bf31b8a495e.
-- Windows PowerShell 5.1 push run #46163913745: PASS; pull-request run #46163917653: PASS.
-- Adapter test suite: 43 passed, 0 failed. Existing DGA-GFX-0.3 journal regression suite: 30 passed, 0 failed. Strict schema parsing, ASCII/no-BOM gate and no-credential CLI status check passed.
+- Qualified code/test head: bacde01986c701ca8735e0e27591bdba3f3b2235.
+- Windows PowerShell 5.1 push run #46164326875: PASS; pull-request run #46164332876: PASS.
+- Adapter test suite: 44 passed, 0 failed. Existing DGA-GFX-0.3 journal regression suite: 30 passed, 0 failed. Strict schema parsing, ASCII/no-BOM gate and no-credential CLI status check passed.
 - Added bounded, metadata-only evidence checkpoint persistence via the DGA task journal. It creates a distinct sharnou.devagent.graphics-automation journal identity and DGA-GFX-0.4 qualification task; identical evidence replay is idempotent.
 - Source-file evidence is pinned to exact commit SHA and Git blob SHA-1 verified, with independent SHA-256 and byte count. Actions records are bound to exact commit SHA and artifacts to their run IDs.
 - GitHub-provided artifact SHA-256 is metadata only; archives are not downloaded/rehashed. Job logs are not collected by this adapter.
