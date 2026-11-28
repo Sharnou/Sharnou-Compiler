@@ -356,7 +356,9 @@ try {
             throw "Native sandbox security component is missing: $required"
         }
     }
-    $importArrayMatch = [regex]::Match($compilerSource, '\$importSets\s*=\s*@\(([\s\S]*?)\r?\n\)')
+    # Select the ordinary compiler import profile (0x190 bytes), not the new
+    # service-only profile that is intentionally defined before the `else` branch.
+    $importArrayMatch = [regex]::Match($compilerSource, '\$importDirectorySize\s*=\s*0x190[\s\S]*?\$importSets\s*=\s*@\(([\s\S]*?)\r?\n\)')
     if (-not $importArrayMatch.Success) { throw 'Native import-set declarations could not be parsed.' }
     $importRecords = [regex]::Matches($importArrayMatch.Groups[1].Value, "Descriptor = (0x[0-9A-Fa-f]+); Lookup = (0x[0-9A-Fa-f]+); Iat = (0x[0-9A-Fa-f]+); Dll = '([^']+)'; Names = @\(([^)]*)\)")
     if ($importRecords.Count -ne 19) { throw "Expected 19 import descriptors, found $($importRecords.Count)." }
