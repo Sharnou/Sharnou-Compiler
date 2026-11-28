@@ -1081,3 +1081,17 @@ After the prior session record, one more isolated diagnostic commit was added to
 - NOT RUN: R5.1.c service image, R5.1.d real SCM lifecycle qualification, independent DPAPI fix, R5.2 key provisioning, R5.3 pipe implementation, R25-R4 archive comparison, and expanded same-head 145-case 7B gate.
 - BLOCKED: R5.1.c/.d are not implemented; Low-IL DPAPI subtest is inconclusive; 83-case baseline remains absent from default; PR #6 is stale/diverged; full 7B gate is not yet present on one exact head.
 - Next bounded task: implement R5.1.c on a fresh isolated branch stacked on the qualified R5.1.b head, using the Sharnou compiler to generate the inert SCM service image. Keep R5.1.d as the following separate qualification increment and keep PR #36 design-only until both gates pass.
+
+
+## DGA-GFX-0.1 — DevAgent automatic graphics campaign contract — 2026-11-28
+
+- **Request:** user explicitly wants SharnouDevAgent to automatically generate, test, repair and submit the complete GFX-0.1..GFX-0.8 and GFX-A.1..GFX-A.3 program.
+- **Default baseline reviewed:** Sharnou-Compiler, HEAD 36b07383cb0ee1996298724202454eb8aec57d98.
+- **Branch:** devagent-gfx-campaign-automation-20261128.
+- **Contract files:** Projects/DevAgent/GfxCampaign.v1.json, Schemas/DevAgent/GfxCampaign.v1.schema.json, Docs/DEVAGENT-GFX-MILESTONE-AUTOMATION.md; README links were updated.
+- **Campaign content:** all eleven requested milestones, explicit dependency DAG, allowed path sets, specialist roles, deliverables, acceptance gates, hard stops, exact-head Windows/physical-GPU evidence requirements, owner decisions and draft-PR-only execution policy.
+- **Current GFX evidence:** PR #39 is draft architecture only; PR #41 is draft SGIR/1 code candidate and exact-head Windows PowerShell 5.1 qualification is not verified. The campaign does not mark either accepted or duplicate their work.
+- **Current DevAgent reality:** no production local in-process inference, typed source patch/rollback engine, durable restart-safe worker, accepted model-facing process broker, or native GitHub/Actions evidence adapter is present on default. PR #7 must not be reused as a model command runner. Phase 2B.8/R5.1.d remains an independent security gate.
+- **Activation:** BLOCKED until the DevAgent prerequisites are built and qualified. No autonomous source generation, process execution, default-branch write, merge or release occurred in this increment.
+- **Qualification status:** repository files were created and structurally reviewed; Windows PowerShell execution was not run by this environment. The schema/manifest JSON and dependency DAG still require the planned deterministic validator DGA-0.2.
+- **Next DevAgent sequence:** DGA-0.2 manifest validator/dependency planner; DGA-0.3 durable task journal/restart recovery; DGA-0.4 native read-only repository/Actions adapter; DGA-0.5 real local model inference; DGA-0.6 typed patch transaction engine; DGA-0.7 accepted process broker/security gates; DGA-0.8 specialist orchestration/review/repair/evidence; DGA-0.9 campaign runner and draft-PR lifecycle.
