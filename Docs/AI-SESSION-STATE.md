@@ -1100,7 +1100,7 @@ After the prior session record, one more isolated diagnostic commit was added to
 ### DGA-GFX-0.1 pull-request and static reconciliation update — 2026-11-28
 
 - Draft PR: [#42 — DGA-GFX-0.1: define automatic Sharnou graphics milestone campaign](https://github.com/Sharnou/Sharnou-Compiler/pull/42).
-- Exact current PR head: 3434994d90f603adf82d8460f0977af8b59eb15a.
+- Live PR head: use PR #42 metadata as the source of truth; its head advances with status-only commits and must not be copied from a stale session snapshot.
 - Base: default branch HEAD 36b07383cb0ee1996298724202454eb8aec57d98.
 - Changed paths: seven (campaign manifest, campaign schema, automation design, README, master plan, session state and issue register).
 - Static reconciliation: schema and manifest both parse as JSON; manifest contains exactly 11 milestone IDs; all dependency references resolve; custom DAG cycle check found no cycle; schema-required/top-level and milestone property sets have no extra or missing fields.
