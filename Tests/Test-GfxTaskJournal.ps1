@@ -27,9 +27,9 @@ try{
  $startAgain=Start-GfxTask -StateDirectory $script:JournalRootPath -TaskId $taskId -SessionId 'worker-session-01'
  Assert-GfxJournal ($startAgain.status -eq 'DUPLICATE_NOOP') 'replayed start is idempotent'
  $checkpointPayload=[pscustomobject][ordered]@{phase='analysis';completedUnits=7;sourceRevision='9db82798bd3e4f97f16cbfa74baee85687932ce1';findings=@('dependency graph reviewed','resume boundary verified')}
- $cp=Save-GfxTaskCheckpoint -StateDirectory $script:JournalRootPath -TaskId $taskId -CheckpointState $state
+ $cp=Save-GfxTaskCheckpoint -StateDirectory $script:JournalRootPath -TaskId $taskId -CheckpointState $checkpointPayload
  Assert-GfxJournal ($cp.status -eq 'APPENDED' -and $cp.checkpointSequence -eq 1 -and (Test-Path -LiteralPath (Join-Path (Join-Path $script:JournalRootPath 'checkpoints') $cp.checkpointFileName))) 'persists immutable hash-bound checkpoint'
- $cpAgain=Save-GfxTaskCheckpoint -StateDirectory $script:JournalRootPath -TaskId $taskId -CheckpointState $state
+ $cpAgain=Save-GfxTaskCheckpoint -StateDirectory $script:JournalRootPath -TaskId $taskId -CheckpointState $checkpointPayload
  Assert-GfxJournal ($cpAgain.status -eq 'DUPLICATE_NOOP' -and $cpAgain.checkpointSha256 -eq $cp.checkpointSha256) 'checkpoint retry is idempotent'
  $loaded=Get-GfxTaskCheckpoint -StateDirectory $script:JournalRootPath -TaskId $taskId
  Assert-GfxJournal ($loaded.stateSha256 -eq $cp.checkpointStateSha256 -and $loaded.state.phase -eq 'analysis') 'restores state after digest verification'
