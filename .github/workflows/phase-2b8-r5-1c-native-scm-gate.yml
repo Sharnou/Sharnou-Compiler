@@ -1,0 +1,162 @@
+name: Phase 2B.8 R5.1.c Exact-Head Windows SCM Service Gate
+
+on:
+  push:
+    branches:
+      - phase-2b8-r5-1c-native-scm-host-20261128
+  pull_request:
+    branches:
+      - phase-2b8-r5-1b-win64-callback-abi-r2-20261127
+    types:
+      - opened
+      - synchronize
+      - reopened
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: phase-2b8-r5-1c-native-scm
+  cancel-in-progress: false
+
+jobs:
+  r51c-native-scm-qualification:
+    name: Exact-head Sharnou native SCM image and Windows service smoke
+    runs-on: windows-2025
+    timeout-minutes: 120
+    env:
+      EXPECTED_TESTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - name: Checkout exact PR source head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Initialize exact-head evidence
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $evidence = Join-Path $env:GITHUB_WORKSPACE 'r51c-evidence'
+          New-Item -ItemType Directory -Path $evidence -Force | Out-Null
+          $actualHead = (& git rev-parse HEAD).Trim()
+          if ($LASTEXITCODE -ne 0 -or $actualHead -ne $env:EXPECTED_TESTED_SHA) {
+            throw "Checkout head mismatch: expected=$env:EXPECTED_TESTED_SHA actual=$actualHead"
+          }
+          $metadata = @(
+            "repository=$env:GITHUB_REPOSITORY",
+            "event=$env:GITHUB_EVENT_NAME",
+            "event_sha=$env:GITHUB_SHA",
+            "tested_commit=$actualHead",
+            "workflow=$env:GITHUB_WORKFLOW",
+            "run_id=$env:GITHUB_RUN_ID",
+            "run_attempt=$env:GITHUB_RUN_ATTEMPT",
+            "runner_os=$env:RUNNER_OS",
+            "runner_arch=$env:RUNNER_ARCH",
+            "windows=$([Environment]::OSVersion.VersionString)",
+            "powershell=$($PSVersionTable.PSVersion.ToString())"
+          )
+          [IO.File]::WriteAllLines((Join-Path $evidence 'metadata.txt'), $metadata, [Text.Encoding]::ASCII)
+          $tracked = @(& git ls-files)
+          if ($LASTEXITCODE -ne 0 -or $tracked.Count -eq 0) { throw 'Could not enumerate tracked repository files.' }
+          $hashLines = foreach ($relativePath in $tracked) {
+            if (-not (Test-Path -LiteralPath $relativePath -PathType Leaf)) { throw "Tracked file missing: $relativePath" }
+            $item = Get-FileHash -LiteralPath $relativePath -Algorithm SHA256
+            "{0}  {1}" -f $item.Hash.ToLowerInvariant(), $relativePath
+          }
+          [IO.File]::WriteAllLines((Join-Path $evidence 'tracked-files.sha256'), [string[]]$hashLines, [Text.Encoding]::ASCII)
+
+      - name: Verify repository source encoding
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $tracked = @(& git ls-files)
+          if ($LASTEXITCODE -ne 0) { throw 'Could not enumerate tracked source files.' }
+          $files = foreach ($relativePath in $tracked) {
+            $extension = [IO.Path]::GetExtension($relativePath)
+            if ($extension -in @('.ps1', '.sharnou', '.yml', '.json', '.b64')) {
+              Get-Item -LiteralPath $relativePath -ErrorAction Stop
+            }
+          }
+          foreach ($file in $files) {
+            $bytes = [IO.File]::ReadAllBytes($file.FullName)
+            if ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF) {
+              throw "UTF-8 BOM is not allowed: $($file.FullName)"
+            }
+            foreach ($byte in $bytes) {
+              if ($byte -gt 127) { throw "Non-ASCII byte found: $($file.FullName)" }
+            }
+          }
+          Write-Host 'PASS: source encoding gate.'
+
+      - name: Generate and install the Sharnou SCM service
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & .\Tests\Test-NativeScmServiceHost.ps1
+
+      - name: Run complete combined regression suite
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $log = Join-Path (Join-Path $env:GITHUB_WORKSPACE 'r51c-evidence') 'combined-Test.ps1.log'
+          Start-Transcript -LiteralPath $log -Force
+          try { & .\Test.ps1 } finally { Stop-Transcript }
+
+      - name: Write exact-head R5.1.c PASS manifest
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $actualHead = (& git rev-parse HEAD).Trim()
+          if ($LASTEXITCODE -ne 0 -or $actualHead -ne $env:EXPECTED_TESTED_SHA) {
+            throw 'Checkout head changed during R5.1.c qualification.'
+          }
+          $serviceEvidence = Join-Path $env:GITHUB_WORKSPACE 'Build\R51C\r5-1c-evidence.json'
+          if (-not (Test-Path -LiteralPath $serviceEvidence -PathType Leaf)) {
+            throw 'Focused native SCM service evidence is missing.'
+          }
+          $focused = Get-Content -LiteralPath $serviceEvidence -Raw -Encoding ASCII | ConvertFrom-Json
+          if ($focused.acceptance -cne 'PASS' -or $focused.tested_commit -cne $actualHead) {
+            throw 'Focused SCM evidence is not a PASS for the exact checked-out source head.'
+          }
+          $result = [ordered]@{
+            acceptance = 'PASS'
+            scope = 'R5.1.c Sharnou-generated AMD64 PE32+ SCM service image, exact SCM imports, relocated service callback table, actual Windows SCM start/interrogate/stop and disposable-service cleanup; full inherited regression'
+            tested_commit = $actualHead
+            event = $env:GITHUB_EVENT_NAME
+            event_sha = $env:GITHUB_SHA
+            workflow_run = $env:GITHUB_RUN_ID
+            runner = $env:RUNNER_OS
+            windows = [Environment]::OSVersion.VersionString
+            service_evidence = 'Build/R51C/r5-1c-evidence.json'
+            service_executable = 'Build/R51C/SharnouAuthorityHost.exe'
+            later_required = @('R5.1.d full SCM lifecycle/failure-injection qualification', 'R5.2 service identity and protected CNG key', 'R5.3 authenticated named-pipe IPC', 'R5.4 service-owned authenticated durable journal')
+            r5_1d_accepted = $false
+            model_facing_execution = 'DISABLED'
+            autonomous_execution = 'DISABLED'
+            phase_2b8_security_acceptance = 'NOT ACCEPTED'
+          }
+          $result | ConvertTo-Json -Depth 6 |
+            Set-Content -LiteralPath (Join-Path $env:GITHUB_WORKSPACE 'r51c-evidence\exact-head-acceptance.json') -Encoding ASCII
+          Write-Host 'R5.1.c exact-head Windows SCM service qualification: PASS for declared scope.' -ForegroundColor Green
+
+      - name: Collect native image and service test evidence
+        if: always()
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Continue'
+          $evidence = Join-Path $env:GITHUB_WORKSPACE 'r51c-evidence'
+          New-Item -ItemType Directory -Path $evidence -Force | Out-Null
+          $build = Join-Path $env:GITHUB_WORKSPACE 'Build\R51C'
+          if (Test-Path -LiteralPath $build -PathType Container) {
+            Copy-Item -Path (Join-Path $build '*') -Destination $evidence -Recurse -Force
+          }
+
+      - name: Upload exact-head R5.1.c evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: r5-1c-native-scm-evidence
+          path: r51c-evidence/
+          if-no-files-found: warn
+          retention-days: 14

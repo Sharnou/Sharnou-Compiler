@@ -634,3 +634,29 @@ Next implementation: R5.1.a multi-target relocation builder and tests; R5.1.b ty
 R5.1.a qualifies bounded multi-target DIR64 relocation generation and parsing. R5.1.b qualifies two callback-pointer ABI contracts. Neither creates an SCM service. R5.1.c is next: genuine Sharnou-generated inert Windows SCM host, SERVICE_TABLE_ENTRYW callback wiring, service status/control lifecycle, actual import-table verification, and disposable Windows service install/start/stop/shutdown/failure-injection tests.
 
 No service SID, production CNG key, named-pipe transport, production signed journal, process execution authority or crash recovery is implemented yet. Full Phase 2B.8 remains NOT SECURITY ACCEPTED. Model-facing and autonomous execution remain DISABLED.
+
+
+## R5.1.c - native Sharnou SCM service candidate (2026-11-28)
+
+- Isolated implementation branch: `phase-2b8-r5-1c-native-scm-host-20261128`, based on the R5.1.b exact-head SHA `ab00219f1aa9783c148035b754eebce7269f6fbb`.
+- Implemented the compiler's opt-in SCM-host emission mode, actual SERVICE_TABLE_ENTRYW pointer data, typed pointer fixups and DIR64 relocations, generated ServiceMain/HandlerEx, minimal KERNEL32/ADVAPI32 import profile and service-aware PE verifier.
+- Added real Windows SCM smoke coverage for compile, PE verification, disposable service create/start/interrogate/stop/delete and PID-zero confirmation. Added exact-head Windows Server 2025 workflow and full combined regression.
+- Status is **PENDING exact-head Windows CI**; no implementation acceptance claim until run results and artifact are inspected.
+- R5.1.d remains mandatory and is not merged into this milestone. R5.2, R5.3 and R5.4 remain blocked by the user's strict dependency order.
+- Model-facing/autonomous execution remain DISABLED; Phase 2B.8 remains NOT SECURITY ACCEPTED.
+
+
+## Qualification state correction - 2026-11-28
+
+R5.1.c is not pending. It passed its exact-head Windows qualification and its evidence bundle was downloaded and inspected:
+- Head: `85efea1cd17ea03e5040dc6708d0dac1928dcfd5`.
+- Workflow run [46122764612](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/46122764612): SUCCESS.
+- Artifact `r5-1c-native-scm-evidence`, id `15253524806`, SHA-256 `7c4fda351a1fa7f117e6fa1615f5d521b3176d786d0cd2de502be5f20ec85556`.
+- Manifest PASS is bound to the exact tested commit. Executable SHA-256 `8623ed7fd37153a41b841cad632e30ac6965b5bfee0153a59e0880fb43e43f73` was independently recomputed and matched the focused service evidence.
+- PE verification, actual Windows SCM create/start/interrogate/stop/delete, STOPPED/PID-zero confirmation and complete combined regression passed.
+
+The inherited Low-IL AppContainer DPAPI protection call remains INCONCLUSIVE because Windows PowerShell could not load System.Security. Keep this as a separate unresolved Phase 2B.8 evidence gap; do not mark the entire security milestone accepted.
+
+Next authorized issue: R5.1.d full SCM adversarial lifecycle qualification, including SHUTDOWN, observable state/status assertions, deterministic test-only failure injection, repeated and racing lifecycle operations, bounded timeout, forced termination, crash/orphan cleanup and recovery. R5.2 is blocked until R5.1.d is accepted; R5.3 is blocked until R5.2; R5.4 is blocked until R5.3.
+
+Model-facing/autonomous execution remains DISABLED; production rollout and process-execution enablement remain unauthorized.

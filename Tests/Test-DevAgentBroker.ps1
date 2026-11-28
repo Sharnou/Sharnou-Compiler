@@ -356,7 +356,9 @@ try {
             throw "Native sandbox security component is missing: $required"
         }
     }
-    $importArrayMatch = [regex]::Match($compilerSource, '\$importSets\s*=\s*@\(([\s\S]*?)\r?\n\)')
+    # Select the ordinary compiler import profile (0x190 bytes), not the new
+    # service-only profile that is intentionally defined before the `else` branch.
+    $importArrayMatch = [regex]::Match($compilerSource, '\$importDirectorySize\s*=\s*0x190[\s\S]*?\$importSets\s*=\s*@\(([\s\S]*?)\r?\n\)')
     if (-not $importArrayMatch.Success) { throw 'Native import-set declarations could not be parsed.' }
     $importRecords = [regex]::Matches($importArrayMatch.Groups[1].Value, "Descriptor = (0x[0-9A-Fa-f]+); Lookup = (0x[0-9A-Fa-f]+); Iat = (0x[0-9A-Fa-f]+); Dll = '([^']+)'; Names = @\(([^)]*)\)")
     if ($importRecords.Count -ne 19) { throw "Expected 19 import descriptors, found $($importRecords.Count)." }
@@ -381,8 +383,12 @@ try {
         }
     }
     $iatEnd = [int](($iatRanges | Measure-Object -Property End -Maximum).Maximum)
-    if ($iatEnd -ne 0x360 -or -not $compilerSource.Contains('Value 0x2F0')) {
-        throw ("Import Address Table extent must include every final zero thunk through 0x360; expected=0x360 actual=0x{0:X}." -f $iatEnd)
+    $defaultIatDirectoryMatch = [regex]::Match(
+        $compilerSource,
+        '\$iatDirectorySize\s*=\s*if\s*\(\$script:NativeScmServiceMode\)\s*\{\s*\[UInt32\]0x60\s*\}\s*else\s*\{\s*\[UInt32\]0x2F0\s*\}'
+    )
+    if ($iatEnd -ne 0x360 -or -not $defaultIatDirectoryMatch.Success) {
+        throw ("Import Address Table extent must include every final zero thunk through 0x360 and retain default 0x2F0 directory size; expected=0x360 actual=0x{0:X}." -f $iatEnd)
     }
     Write-Host 'PASS: import lookup and IAT arrays are disjoint, including each module terminator' -ForegroundColor Green
 

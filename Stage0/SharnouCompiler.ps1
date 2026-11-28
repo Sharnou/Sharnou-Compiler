@@ -5,11 +5,27 @@ param(
     [Parameter(Mandatory = $true, Position = 1)]
     [string] $Output,
     [switch] $EnableDevAgentTools,
-    [switch] $EnableWin64CallbackTests
+    [switch] $EnableWin64CallbackTests,
+    [switch] $EnableNativeScmServiceHost,
+    [string] $NativeScmServiceName = 'SharnouAuthorityHost'
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+$script:NativeScmServiceMode = [bool]$EnableNativeScmServiceHost
+$script:NativeScmServiceName = [string]$NativeScmServiceName
+if ($script:NativeScmServiceMode) {
+    if ($EnableDevAgentTools -or $EnableWin64CallbackTests) {
+        throw 'Native SCM service compilation cannot be combined with DevAgent or callback-test compiler modes.'
+    }
+    if ([string]::IsNullOrWhiteSpace($script:NativeScmServiceName) -or
+        $script:NativeScmServiceName.Length -gt 256 -or
+        $script:NativeScmServiceName -notmatch '^[A-Za-z0-9_.-]+$') {
+        throw 'Native SCM service name must contain 1-256 ASCII letters, digits, period, underscore, or hyphen characters.'
+    }
+} elseif ($NativeScmServiceName -cne 'SharnouAuthorityHost') {
+    throw 'NativeScmServiceName can only be changed when EnableNativeScmServiceHost is specified.'
+}
 $relocationModulePath = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\Tools\SharnouPERelocations.ps1'))
 if (-not (Test-Path -LiteralPath $relocationModulePath -PathType Leaf)) {
     throw "Sharnou PE relocation module is missing: $relocationModulePath"
@@ -581,10 +597,16 @@ function Emit-DataAddress {
 }
 function Emit-CallDataPointer {
     param([object] $DataItem)
-    if ($null -eq $DataItem -or $DataItem.Bytes.Length -ne 8) {
-        throw 'Typed callback pointer call requires an eight-byte data pointer item.'
-    }
+    if ($null -eq $DataItem -or $DataItem.Bytes.Length -ne 8) { throw 'Typed callback pointer call requires an eight-byte data pointer item.' }
     Emit-Bytes -Bytes ([byte[]]@(0xFF, 0x15))
+    $dispOffset = $script:Code.Count
+    Emit-I32 -Value 0
+    $script:CodeFixups.Add([pscustomobject]@{ Kind = 'Data'; DispOffset = $dispOffset; Target = $DataItem })
+}
+function Emit-LoadDataPointer {
+    param([object] $DataItem)
+    if ($null -eq $DataItem -or $DataItem.Bytes.Length -ne 8) { throw 'Typed callback pointer load requires an eight-byte data pointer item.' }
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x8B, 0x05))
     $dispOffset = $script:Code.Count
     Emit-I32 -Value 0
     $script:CodeFixups.Add([pscustomobject]@{ Kind = 'Data'; DispOffset = $dispOffset; Target = $DataItem })
@@ -732,54 +754,59 @@ function Register-ByteDataConstant {
     $script:DataItems.Add($item); $script:DataMap.Add($Key, $item); $script:DataLength += $itemBytes.Length
     return $item
 }
+function Register-DataPointerFixup {
+    param(
+        [Parameter(Mandatory = $true)][string] $Key,
+        [Parameter(Mandatory = $true)][object] $DataItem,
+        [int] $SlotOffset = 0,
+        [Parameter(Mandatory = $true)][ValidateSet('Code', 'Data')][string] $TargetKind,
+        [string] $Label,
+        [object] $TargetItem,
+        [string] $Signature
+    )
+    if ($null -eq $DataItem -or $null -eq $DataItem.Bytes -or $SlotOffset -lt 0 -or ($SlotOffset + 8) -gt $DataItem.Bytes.Length) {
+        throw "Data-pointer fixup '$Key' does not identify a complete eight-byte slot."
+    }
+    if (([UInt64]$DataItem.Offset + [UInt64]$SlotOffset) % 8 -ne 0) { throw "Data-pointer fixup '$Key' is not eight-byte aligned." }
+    if (@($script:DataPointerFixups | Where-Object { $_.Key -ceq $Key }).Count -ne 0) { throw "Duplicate data-pointer fixup key: $Key" }
+    if ($TargetKind -eq 'Code') {
+        if ([string]::IsNullOrEmpty($Label) -or -not $Label.StartsWith('__', [StringComparison]::Ordinal)) { throw "Code-pointer fixup '$Key' must target a compiler-owned internal label." }
+        if ($Signature -cnotin @('SERVICE_MAIN_FUNCTIONW', 'HANDLER_FUNCTION_EX')) { throw "Code-pointer fixup '$Key' uses an unsupported callback signature." }
+    } elseif ($null -eq $TargetItem -or $null -eq $TargetItem.Bytes -or $TargetItem.Bytes.Length -lt 1) {
+        throw "Data-pointer fixup '$Key' has no initialized data target."
+    }
+    $script:DataPointerFixups.Add([pscustomobject]@{
+        Key = $Key; DataItem = $DataItem; SlotOffset = $SlotOffset; TargetKind = $TargetKind
+        Label = $Label; TargetItem = $TargetItem; Signature = $Signature; TargetRva = [UInt32]0
+    })
+}
 function Register-CodeCallbackPointer {
     param(
         [Parameter(Mandatory = $true)][string] $Key,
         [Parameter(Mandatory = $true)][string] $Label,
         [Parameter(Mandatory = $true)][ValidateSet('SERVICE_MAIN_FUNCTIONW', 'HANDLER_FUNCTION_EX')][string] $Signature
     )
-
     $existing = @($script:DataPointerFixups | Where-Object { $_.Key -ceq $Key })
     if ($existing.Count -gt 0) {
-        if ($existing.Count -ne 1 -or $existing[0].Label -cne $Label -or $existing[0].Signature -cne $Signature) {
+        if ($existing.Count -ne 1 -or $existing[0].Label -cne $Label -or $existing[0].Signature -cne $Signature -or $existing[0].TargetKind -cne 'Code') {
             throw "Callback pointer key '$Key' was registered with conflicting target metadata."
         }
         return $existing[0].DataItem
     }
     if ($script:DataMap.ContainsKey($Key)) { throw "Callback pointer data key collides with an existing constant: $Key" }
-    if (-not $Label.StartsWith('__', [StringComparison]::Ordinal)) {
-        throw 'Typed callback targets must use a compiler-owned internal code label.'
-    }
-
-    $signatureContract = switch ($Signature) {
-        'SERVICE_MAIN_FUNCTIONW' { 'VOID WINAPI (DWORD, LPWSTR*)' }
-        'HANDLER_FUNCTION_EX' { 'DWORD WINAPI (DWORD, DWORD, LPVOID, LPVOID)' }
-        default { throw "Unsupported Windows callback signature: $Signature" }
-    }
+    if (-not $Label.StartsWith('__', [StringComparison]::Ordinal)) { throw 'Typed callback targets must use a compiler-owned internal code label.' }
     $padding = (8 - ($script:DataLength % 8)) % 8
     if ($padding -gt 0) {
         if (($script:DataLength + $padding + 8) -gt 0x1000) { throw 'Callback pointer table exceeds .rdata capacity.' }
         $paddingBytes = [byte[]]::new($padding)
         $paddingItem = [pscustomobject]@{ Value = $Key + ':ALIGN'; Offset = $script:DataLength; Bytes = $paddingBytes }
-        $script:DataItems.Add($paddingItem)
-        $script:DataMap.Add($paddingItem.Value, $paddingItem)
-        $script:DataLength += $padding
+        $script:DataItems.Add($paddingItem); $script:DataMap.Add($paddingItem.Value, $paddingItem); $script:DataLength += $padding
     }
-
     if (($script:DataLength + 8) -gt 0x1000) { throw 'Callback pointer table exceeds .rdata capacity.' }
     $pointerBytes = [byte[]]::new(8)
     $item = [pscustomobject]@{ Value = $Key; Offset = $script:DataLength; Bytes = $pointerBytes }
-    $script:DataItems.Add($item)
-    $script:DataMap.Add($Key, $item)
-    $script:DataLength += 8
-    $script:DataPointerFixups.Add([pscustomobject]@{
-        Key = $Key
-        Label = $Label
-        Signature = $Signature
-        Contract = $signatureContract
-        DataItem = $item
-        TargetRva = [UInt32]0
-    })
+    $script:DataItems.Add($item); $script:DataMap.Add($Key, $item); $script:DataLength += 8
+    Register-DataPointerFixup -Key $Key -DataItem $item -SlotOffset 0 -TargetKind Code -Label $Label -Signature $Signature
     return $item
 }
 function Get-TempSlotPosition {
@@ -3891,11 +3918,268 @@ function Emit-DevRunTool {
     Emit-Jump -Label $done
     Mark-CodeLabel -Label $done
 }
+function Emit-NativeScmStatusCall {
+    param(
+        [int] $StatusHandleSlot,
+        [int] $StatusBase,
+        [int] $State,
+        [int] $ControlsAccepted,
+        [int] $ExitCodeSlot = -1,
+        [int] $ExitCodeValue = 0,
+        [int] $Checkpoint = 0,
+        [int] $WaitHint = 0
+    )
+    Emit-StoreBits32Frame -SlotPosition $StatusBase -Value 0x10
+    Emit-StoreBits32Frame -SlotPosition ($StatusBase + 4) -Value $State
+    Emit-StoreBits32Frame -SlotPosition ($StatusBase + 8) -Value $ControlsAccepted
+    if ($ExitCodeSlot -ge 0) {
+        Emit-LoadEaxFrame -SlotPosition $ExitCodeSlot
+        Emit-StoreEaxFrame -SlotPosition ($StatusBase + 12)
+    } else {
+        Emit-StoreBits32Frame -SlotPosition ($StatusBase + 12) -Value $ExitCodeValue
+    }
+    Emit-StoreBits32Frame -SlotPosition ($StatusBase + 16) -Value 0
+    Emit-StoreBits32Frame -SlotPosition ($StatusBase + 20) -Value $Checkpoint
+    Emit-StoreBits32Frame -SlotPosition ($StatusBase + 24) -Value $WaitHint
+    Emit-LoadRaxFrame -SlotPosition $StatusHandleSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1)) # RCX = SERVICE_STATUS_HANDLE
+    Emit-LeaRaxFrame -SlotPosition $StatusBase
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC2)) # RDX = SERVICE_STATUS*
+    Emit-Win64CallIat -TargetRva ([UInt32]0x30C0) # SetServiceStatus
+}
+function Emit-NativeScmCaptureLastError {
+    param([int] $ErrorSlot, [switch] $OnlyIfEmpty)
+    if ($OnlyIfEmpty) {
+        $skip = New-UniqueLabel -Prefix 'r51_error_already_recorded'
+        Emit-LoadEaxFrame -SlotPosition $ErrorSlot
+        Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
+        Emit-JumpConditional -ConditionCode 0x85 -Label $skip
+        Emit-Win64CallIat -TargetRva ([UInt32]0x3078) # GetLastError
+        Emit-StoreEaxFrame -SlotPosition $ErrorSlot
+        Mark-CodeLabel -Label $skip
+    } else {
+        Emit-Win64CallIat -TargetRva ([UInt32]0x3078) # GetLastError
+        Emit-StoreEaxFrame -SlotPosition $ErrorSlot
+    }
+}
+function Emit-NativeScmCallbacks {
+    if (-not $script:NativeScmServiceMode) { return }
+    if ($null -eq $script:NativeScmServiceNameDataItem -or $null -eq $script:NativeScmHandlerPointerItem) {
+        throw 'Native SCM callback data was not registered by the Sharnou service-host intrinsic.'
+    }
+    $script:NativeScmRuntimeFunctionSpecs = [System.Collections.Generic.List[object]]::new()
+    $script:NativeScmCallbackStartOffset = [int]$script:Code.Count
+
+    # SERVICE_MAIN_FUNCTIONW(DWORD, LPWSTR*) -> VOID. HandlerEx receives a
+    # pointer to EventSlot, whose lifetime is the service-main callback lifetime.
+    $serviceContext = [pscustomobject]@{ Name = '__r51_service_main'; SlotCount = 12; TempSlots = 8; ScratchPosition = 0; FrameSize = 0 }
+    Set-FrameSize -Context $serviceContext -NodeCount 0
+    $serviceMainStart = [int]$script:Code.Count
+    Mark-CodeLabel -Label '__r51_service_main'
+    Emit-Prologue -Context $serviceContext
+    $eventSlot = 0x80
+    $statusHandleSlot = 0x90
+    $statusBase = 0xA0
+    $errorSlot = 0xD0
+    Emit-StoreZero64Frame -SlotPosition $eventSlot
+    Emit-StoreZero64Frame -SlotPosition $statusHandleSlot
+    Emit-StoreBits32Frame -SlotPosition $errorSlot -Value 0
+
+    # The event slot is initialized before the handler is registered. No controls
+    # are accepted until SERVICE_RUNNING is successfully published.
+    Emit-DataAddress -DataItem $script:NativeScmServiceNameDataItem
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1)) # RCX = service name
+    Emit-LoadDataPointer -DataItem $script:NativeScmHandlerPointerItem
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC2)) # RDX = typed HandlerEx pointer
+    Emit-LeaRaxFrame -SlotPosition $eventSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x49, 0x89, 0xC0)) # R8 = stable context pointer
+    Emit-Win64CallIat -TargetRva ([UInt32]0x30B8) # RegisterServiceCtrlHandlerExW
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x85, 0xC0))
+    $registrationFailed = New-UniqueLabel -Prefix 'r51_register_handler_failed'
+    Emit-JumpConditional -ConditionCode 0x84 -Label $registrationFailed
+    Emit-StoreRaxFrame -SlotPosition $statusHandleSlot
+
+    Emit-NativeScmStatusCall -StatusHandleSlot $statusHandleSlot -StatusBase $statusBase -State 2 -ControlsAccepted 0 -ExitCodeValue 0 -Checkpoint 1 -WaitHint 10000
+    Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
+    $startStatusFailed = New-UniqueLabel -Prefix 'r51_start_status_failed'
+    Emit-JumpConditional -ConditionCode 0x84 -Label $startStatusFailed
+
+    # Create a manual-reset, initially nonsignaled stop event.
+    Emit-Bytes -Bytes ([byte[]]@(0x33, 0xC9, 0xBA, 0x01, 0x00, 0x00, 0x00, 0x45, 0x33, 0xC0, 0x45, 0x33, 0xC9))
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3080) # CreateEventW(NULL, TRUE, FALSE, NULL)
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x85, 0xC0))
+    $eventCreationFailed = New-UniqueLabel -Prefix 'r51_event_creation_failed'
+    Emit-JumpConditional -ConditionCode 0x84 -Label $eventCreationFailed
+    Emit-StoreRaxFrame -SlotPosition $eventSlot
+
+    # Publish RUNNING only after both event and control handler are ready.
+    Emit-NativeScmStatusCall -StatusHandleSlot $statusHandleSlot -StatusBase $statusBase -State 4 -ControlsAccepted 5 -ExitCodeValue 0 -Checkpoint 0 -WaitHint 0
+    Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
+    $runningStatusFailed = New-UniqueLabel -Prefix 'r51_running_status_failed'
+    Emit-JumpConditional -ConditionCode 0x84 -Label $runningStatusFailed
+
+    Emit-LoadRaxFrame -SlotPosition $eventSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1, 0xBA, 0xFF, 0xFF, 0xFF, 0xFF)) # RCX=event, EDX=INFINITE
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3090) # WaitForSingleObject
+    Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
+    $waitCompleted = New-UniqueLabel -Prefix 'r51_wait_completed'
+    Emit-JumpConditional -ConditionCode 0x84 -Label $waitCompleted
+    Emit-NativeScmCaptureLastError -ErrorSlot $errorSlot
+    Mark-CodeLabel -Label $waitCompleted
+
+    Emit-NativeScmStatusCall -StatusHandleSlot $statusHandleSlot -StatusBase $statusBase -State 3 -ControlsAccepted 0 -ExitCodeSlot $errorSlot -Checkpoint 1 -WaitHint 5000
+    Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
+    Emit-NativeScmCaptureLastError -ErrorSlot $errorSlot -OnlyIfEmpty
+
+    Mark-CodeLabel -Label '__r51_service_cleanup'
+    Emit-LoadRaxFrame -SlotPosition $eventSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x85, 0xC0))
+    $skipEventClose = New-UniqueLabel -Prefix 'r51_skip_event_close'
+    Emit-JumpConditional -ConditionCode 0x84 -Label $skipEventClose
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1))
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3098) # CloseHandle
+    Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
+    $eventClosed = New-UniqueLabel -Prefix 'r51_event_closed'
+    Emit-JumpConditional -ConditionCode 0x85 -Label $eventClosed
+    Emit-NativeScmCaptureLastError -ErrorSlot $errorSlot -OnlyIfEmpty
+    Mark-CodeLabel -Label $eventClosed
+    Emit-StoreZero64Frame -SlotPosition $eventSlot
+    Mark-CodeLabel -Label $skipEventClose
+
+    Emit-NativeScmStatusCall -StatusHandleSlot $statusHandleSlot -StatusBase $statusBase -State 1 -ControlsAccepted 0 -ExitCodeSlot $errorSlot -Checkpoint 0 -WaitHint 0
+    Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
+    $stoppedStatusFailed = New-UniqueLabel -Prefix 'r51_stopped_status_failed'
+    Emit-JumpConditional -ConditionCode 0x84 -Label $stoppedStatusFailed
+    Emit-Epilogue
+
+    Mark-CodeLabel -Label $stoppedStatusFailed
+    Emit-NativeScmCaptureLastError -ErrorSlot $errorSlot -OnlyIfEmpty
+    Emit-LoadEaxFrame -SlotPosition $errorSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
+    $stoppedStatusHasError = New-UniqueLabel -Prefix 'r51_stopped_status_has_error'
+    Emit-JumpConditional -ConditionCode 0x85 -Label $stoppedStatusHasError
+    Emit-Bytes -Bytes ([byte[]]@(0xB8, 0x01, 0x00, 0x00, 0x00)) # never return success after a failed final status report
+    Mark-CodeLabel -Label $stoppedStatusHasError
+    Emit-Bytes -Bytes ([byte[]]@(0x89, 0xC1)) # ECX = nonzero terminal failure
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3070) # ExitProcess
+    Emit-Epilogue # unreachable safety terminator
+
+    Mark-CodeLabel -Label $startStatusFailed
+    Emit-NativeScmCaptureLastError -ErrorSlot $errorSlot
+    Emit-Jump -Label '__r51_service_cleanup'
+    Mark-CodeLabel -Label $eventCreationFailed
+    Emit-NativeScmCaptureLastError -ErrorSlot $errorSlot
+    Emit-Jump -Label '__r51_service_cleanup'
+    Mark-CodeLabel -Label $runningStatusFailed
+    Emit-NativeScmCaptureLastError -ErrorSlot $errorSlot
+    Emit-Jump -Label '__r51_service_cleanup'
+    Mark-CodeLabel -Label $registrationFailed
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3078) # No service-status handle exists yet.
+    Emit-Bytes -Bytes ([byte[]]@(0x89, 0xC1)) # ECX = registration Win32 error.
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3070) # ExitProcess: a single-service host cannot remain alive without a handler.
+    Emit-Epilogue # Unreachable safety terminator if ExitProcess unexpectedly returns.
+    $serviceMainEnd = [int]$script:Code.Count
+    $script:NativeScmRuntimeFunctionSpecs.Add([pscustomobject]@{
+        StartOffset = $serviceMainStart; EndOffset = $serviceMainEnd; Context = $serviceContext
+        UnwindBytes = $null; UnwindOffset = 0
+    })
+
+    # HANDLER_FUNCTION_EX(DWORD, DWORD, LPVOID, LPVOID) -> DWORD.
+    # It only signals the event. It never blocks or mutates SERVICE_STATUS.
+    $handlerContext = [pscustomobject]@{ Name = '__r51_handler_ex'; SlotCount = 4; TempSlots = 8; ScratchPosition = 0; FrameSize = 0 }
+    Set-FrameSize -Context $handlerContext -NodeCount 0
+    $handlerStart = [int]$script:Code.Count
+    Mark-CodeLabel -Label '__r51_handler_ex'
+    Emit-Prologue -Context $handlerContext
+    $signalStop = New-UniqueLabel -Prefix 'r51_handler_signal_stop'
+    $interrogate = New-UniqueLabel -Prefix 'r51_handler_interrogate'
+    $unsupported = New-UniqueLabel -Prefix 'r51_handler_unsupported'
+    $invalidContext = New-UniqueLabel -Prefix 'r51_handler_invalid_context'
+    $signalFailed = New-UniqueLabel -Prefix 'r51_handler_signal_failed'
+    $handlerDone = New-UniqueLabel -Prefix 'r51_handler_done'
+
+    Emit-Bytes -Bytes ([byte[]]@(0x83, 0xF9, 0x01)) # SERVICE_CONTROL_STOP
+    Emit-JumpConditional -ConditionCode 0x84 -Label $signalStop
+    Emit-Bytes -Bytes ([byte[]]@(0x83, 0xF9, 0x05)) # SERVICE_CONTROL_SHUTDOWN
+    Emit-JumpConditional -ConditionCode 0x84 -Label $signalStop
+    Emit-Bytes -Bytes ([byte[]]@(0x83, 0xF9, 0x04)) # SERVICE_CONTROL_INTERROGATE
+    Emit-JumpConditional -ConditionCode 0x84 -Label $interrogate
+    Emit-Jump -Label $unsupported
+
+    Mark-CodeLabel -Label $signalStop
+    Emit-Bytes -Bytes ([byte[]]@(0x4D, 0x85, 0xC9)) # test r9,r9
+    Emit-JumpConditional -ConditionCode 0x84 -Label $invalidContext
+    Emit-Bytes -Bytes ([byte[]]@(0x49, 0x8B, 0x09)) # RCX = *(HANDLE*)context
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x85, 0xC9))
+    $alreadyStopping = New-UniqueLabel -Prefix 'r51_handler_already_stopping'
+    Emit-JumpConditional -ConditionCode 0x84 -Label $alreadyStopping
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3088) # SetEvent
+    Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
+    Emit-JumpConditional -ConditionCode 0x84 -Label $signalFailed
+    Mark-CodeLabel -Label $alreadyStopping
+    Emit-Bytes -Bytes ([byte[]]@(0x31, 0xC0)) # duplicate STOP/SHUTDOWN after signal is idempotent
+    Emit-Jump -Label $handlerDone
+    Mark-CodeLabel -Label $signalFailed
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3078) # GetLastError -> HandlerEx DWORD
+    Emit-Jump -Label $handlerDone
+
+    Mark-CodeLabel -Label $invalidContext
+    Emit-Bytes -Bytes ([byte[]]@(0xB8, 0x06, 0x00, 0x00, 0x00)) # ERROR_INVALID_HANDLE
+    Emit-Jump -Label $handlerDone
+    Mark-CodeLabel -Label $interrogate
+    Emit-Bytes -Bytes ([byte[]]@(0x31, 0xC0)) # last published status remains authoritative
+    Emit-Jump -Label $handlerDone
+    Mark-CodeLabel -Label $unsupported
+    Emit-Bytes -Bytes ([byte[]]@(0xB8, 0x78, 0x00, 0x00, 0x00)) # ERROR_CALL_NOT_IMPLEMENTED
+    Mark-CodeLabel -Label $handlerDone
+    Emit-Epilogue
+    $handlerEnd = [int]$script:Code.Count
+    $script:NativeScmRuntimeFunctionSpecs.Add([pscustomobject]@{
+        StartOffset = $handlerStart; EndOffset = $handlerEnd; Context = $handlerContext
+        UnwindBytes = $null; UnwindOffset = 0
+    })
+}
 function Emit-BuiltinCall {
     param([object] $Node)
     $baseDepth = [int]$script:TempDepth
     $argSlots = [System.Collections.Generic.List[int]]::new()
     switch ($Node.Builtin) {
+        'NativeScmServiceHost' {
+            if (-not $script:NativeScmServiceMode -or $Node.Arguments.Count -ne 0) {
+                throw 'The native SCM host intrinsic is only available in the isolated native service compiler mode.'
+            }
+            if ($null -ne $script:NativeScmServiceTableItem) {
+                throw 'The native SCM service table may only be registered once.'
+            }
+            $script:NativeScmServiceNameDataItem = Register-WideDataConstant -Value $script:NativeScmServiceName
+            $script:NativeScmHandlerPointerItem = Register-CodeCallbackPointer -Key 'SCM:HANDLER_FUNCTION_EX' -Label '__r51_handler_ex' -Signature 'HANDLER_FUNCTION_EX'
+            $tablePadding = (8 - ($script:DataLength % 8)) % 8
+            if ($tablePadding -gt 0) {
+                $paddingBytes = [byte[]]::new($tablePadding)
+                $paddingItem = [pscustomobject]@{ Value = 'SCM:SERVICE_TABLE:ALIGN'; Offset = $script:DataLength; Bytes = $paddingBytes }
+                $script:DataItems.Add($paddingItem)
+                $script:DataMap.Add($paddingItem.Value, $paddingItem)
+                $script:DataLength += $tablePadding
+            }
+            $tableBytes = [byte[]]::new(32) # one SERVICE_TABLE_ENTRYW plus the all-zero terminator
+            $script:NativeScmServiceTableItem = Register-ByteDataConstant -Key 'SCM:SERVICE_TABLE' -Bytes $tableBytes
+            Register-DataPointerFixup -Key 'SCM:SERVICE_TABLE_NAME' -DataItem $script:NativeScmServiceTableItem -SlotOffset 0 -TargetKind Data -TargetItem $script:NativeScmServiceNameDataItem
+            Register-DataPointerFixup -Key 'SCM:SERVICE_TABLE_MAIN' -DataItem $script:NativeScmServiceTableItem -SlotOffset 8 -TargetKind Code -Label '__r51_service_main' -Signature 'SERVICE_MAIN_FUNCTIONW'
+
+            Emit-DataAddress -DataItem $script:NativeScmServiceTableItem
+            Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1)) # RCX = SERVICE_TABLE_ENTRYW*
+            Emit-Win64CallIat -TargetRva ([UInt32]0x30B0) # StartServiceCtrlDispatcherW
+            Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
+            $dispatchSucceeded = New-UniqueLabel -Prefix 'r51_dispatch_succeeded'
+            Emit-JumpConditional -ConditionCode 0x85 -Label $dispatchSucceeded
+            Emit-Win64CallIat -TargetRva ([UInt32]0x3078) # GetLastError
+            Emit-Bytes -Bytes ([byte[]]@(0x89, 0xC1)) # ECX = dispatcher failure
+            Emit-Win64CallIat -TargetRva ([UInt32]0x3070) # ExitProcess(error)
+            Emit-Bytes -Bytes ([byte[]]@(0xB8, 0x01, 0x00, 0x00, 0x00)) # unreachable fail-closed return
+            Mark-CodeLabel -Label $dispatchSucceeded
+            $script:TempDepth = $baseDepth
+            return
+        }
         'Win64CallbackProbe' {
             $serviceMainPointer = Register-CodeCallbackPointer -Key 'CALLBACK:SERVICE_MAIN_FUNCTIONW' -Label '__r51_service_main_abi_probe' -Signature 'SERVICE_MAIN_FUNCTIONW'
             $handlerExPointer = Register-CodeCallbackPointer -Key 'CALLBACK:HANDLER_FUNCTION_EX' -Label '__r51_handler_ex_abi_probe' -Signature 'HANDLER_FUNCTION_EX'
@@ -4628,10 +4912,14 @@ function Emit-Prologue {
             Emit-StoreEaxFrame -SlotPosition $slotPosition
         }
     }
-    Emit-Bytes -Bytes ([byte[]]@(0xB9, 0xF5, 0xFF, 0xFF, 0xFF, 0x48, 0x83, 0xEC, 0x20)); Emit-CallIat -TargetRva ([UInt32]0x3070); Emit-Bytes -Bytes ([byte[]]@(0x48, 0x83, 0xC4, 0x20))
-    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x85, 0xC0)); Emit-JumpConditional -ConditionCode 0x84 -Label '__runtime_fail'
-    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x83, 0xF8, 0xFF)); Emit-JumpConditional -ConditionCode 0x84 -Label '__runtime_fail'
-    Emit-StoreRaxFrame -SlotPosition 0x78
+    if ($script:NativeScmServiceMode) {
+        Emit-StoreZero64Frame -SlotPosition 0x78 # service processes do not depend on an inherited console handle
+    } else {
+        Emit-Bytes -Bytes ([byte[]]@(0xB9, 0xF5, 0xFF, 0xFF, 0xFF, 0x48, 0x83, 0xEC, 0x20)); Emit-CallIat -TargetRva ([UInt32]0x3070); Emit-Bytes -Bytes ([byte[]]@(0x48, 0x83, 0xC4, 0x20))
+        Emit-Bytes -Bytes ([byte[]]@(0x48, 0x85, 0xC0)); Emit-JumpConditional -ConditionCode 0x84 -Label '__runtime_fail'
+        Emit-Bytes -Bytes ([byte[]]@(0x48, 0x83, 0xF8, 0xFF)); Emit-JumpConditional -ConditionCode 0x84 -Label '__runtime_fail'
+        Emit-StoreRaxFrame -SlotPosition 0x78
+    }
 }
 function New-UnwindInfoBytes {
     param([object] $Context)
@@ -4718,27 +5006,34 @@ if (Test-Path -LiteralPath $outputFullPath) { Remove-Item -LiteralPath $outputFu
 
 $script:Functions = [System.Collections.Generic.Dictionary[string, object]]::new([System.StringComparer]::Ordinal)
 $script:Builtins = [System.Collections.Generic.Dictionary[string, object]]::new([System.StringComparer]::Ordinal)
-$builtinDefinitions = @(
-    [pscustomobject]@{ Name = 'sh_abi_nonvolatile_probe'; Builtin = 'AbiNonvolatileProbe'; ParameterTypes = @(); ReturnType = 'Integer' },
-    [pscustomobject]@{ Name = 'sh_string_length'; Builtin = 'StringLength'; ParameterTypes = @('String'); ReturnType = 'Integer' },
-    [pscustomobject]@{ Name = 'sh_string_equal'; Builtin = 'StringEqual'; ParameterTypes = @('String', 'String'); ReturnType = 'Integer' },
-    [pscustomobject]@{ Name = 'sh_log'; Builtin = 'Log'; ParameterTypes = @('String'); ReturnType = 'Integer' },
-    [pscustomobject]@{ Name = 'sh_memory_fill'; Builtin = 'MemoryFill'; ParameterTypes = @('Integer', 'Integer'); ReturnType = 'Integer' },
-    [pscustomobject]@{ Name = 'sh_memory_byte_at'; Builtin = 'MemoryByteAt'; ParameterTypes = @('Integer'); ReturnType = 'Integer' },
-    [pscustomobject]@{ Name = 'sh_file_exists'; Builtin = 'FileExists'; ParameterTypes = @('String'); ReturnType = 'Integer' },
-    [pscustomobject]@{ Name = 'sh_file_size'; Builtin = 'FileSize'; ParameterTypes = @('String'); ReturnType = 'Integer' },
-    [pscustomobject]@{ Name = 'sh_asset_read_count'; Builtin = 'AssetReadCount'; ParameterTypes = @('String', 'Integer'); ReturnType = 'Integer' },
-    [pscustomobject]@{ Name = 'sh_asset_read_byte'; Builtin = 'AssetReadByte'; ParameterTypes = @('String', 'Integer'); ReturnType = 'Integer' },
-    [pscustomobject]@{ Name = 'sh_window_probe'; Builtin = 'WindowProbe'; ParameterTypes = @('String'); ReturnType = 'Integer' },
-    [pscustomobject]@{ Name = 'sh_window_pump_once'; Builtin = 'WindowPump'; ParameterTypes = @(); ReturnType = 'Integer' },
-    [pscustomobject]@{ Name = 'sh_thread_sync_probe'; Builtin = 'ThreadSyncProbe'; ParameterTypes = @(); ReturnType = 'Integer' },
-    [pscustomobject]@{ Name = 'sh_d3d11_render_demo'; Builtin = 'D3D11RenderDemo'; ParameterTypes = @('String', 'Integer'); ReturnType = 'Integer' }
-)
+if ($script:NativeScmServiceMode) {
+    # A service image has no general-purpose compiler intrinsic surface.
+    $builtinDefinitions = @(
+        [pscustomobject]@{ Name = 'sh_native_scm_service_host'; Builtin = 'NativeScmServiceHost'; ParameterTypes = @(); ReturnType = 'Integer' }
+    )
+} else {
+    $builtinDefinitions = @(
+        [pscustomobject]@{ Name = 'sh_abi_nonvolatile_probe'; Builtin = 'AbiNonvolatileProbe'; ParameterTypes = @(); ReturnType = 'Integer' },
+        [pscustomobject]@{ Name = 'sh_string_length'; Builtin = 'StringLength'; ParameterTypes = @('String'); ReturnType = 'Integer' },
+        [pscustomobject]@{ Name = 'sh_string_equal'; Builtin = 'StringEqual'; ParameterTypes = @('String', 'String'); ReturnType = 'Integer' },
+        [pscustomobject]@{ Name = 'sh_log'; Builtin = 'Log'; ParameterTypes = @('String'); ReturnType = 'Integer' },
+        [pscustomobject]@{ Name = 'sh_memory_fill'; Builtin = 'MemoryFill'; ParameterTypes = @('Integer', 'Integer'); ReturnType = 'Integer' },
+        [pscustomobject]@{ Name = 'sh_memory_byte_at'; Builtin = 'MemoryByteAt'; ParameterTypes = @('Integer'); ReturnType = 'Integer' },
+        [pscustomobject]@{ Name = 'sh_file_exists'; Builtin = 'FileExists'; ParameterTypes = @('String'); ReturnType = 'Integer' },
+        [pscustomobject]@{ Name = 'sh_file_size'; Builtin = 'FileSize'; ParameterTypes = @('String'); ReturnType = 'Integer' },
+        [pscustomobject]@{ Name = 'sh_asset_read_count'; Builtin = 'AssetReadCount'; ParameterTypes = @('String', 'Integer'); ReturnType = 'Integer' },
+        [pscustomobject]@{ Name = 'sh_asset_read_byte'; Builtin = 'AssetReadByte'; ParameterTypes = @('String', 'Integer'); ReturnType = 'Integer' },
+        [pscustomobject]@{ Name = 'sh_window_probe'; Builtin = 'WindowProbe'; ParameterTypes = @('String'); ReturnType = 'Integer' },
+        [pscustomobject]@{ Name = 'sh_window_pump_once'; Builtin = 'WindowPump'; ParameterTypes = @(); ReturnType = 'Integer' },
+        [pscustomobject]@{ Name = 'sh_thread_sync_probe'; Builtin = 'ThreadSyncProbe'; ParameterTypes = @(); ReturnType = 'Integer' },
+        [pscustomobject]@{ Name = 'sh_d3d11_render_demo'; Builtin = 'D3D11RenderDemo'; ParameterTypes = @('String', 'Integer'); ReturnType = 'Integer' }
+    )
 if ($EnableDevAgentTools) {
     $builtinDefinitions += [pscustomobject]@{ Name = 'sh_dev_run_tool'; Builtin = 'DevRunTool'; ParameterTypes = @('Integer', 'Integer'); ReturnType = 'Integer' }
 }
 if ($EnableWin64CallbackTests) {
     $builtinDefinitions += [pscustomobject]@{ Name = 'sh_win64_callback_abi_probe'; Builtin = 'Win64CallbackProbe'; ParameterTypes = @(); ReturnType = 'Integer' }
+}
 }
 foreach ($definition in $builtinDefinitions) { $script:Builtins.Add($definition.Name, $definition) }
 $script:Modules = [System.Collections.Generic.List[object]]::new()
@@ -4754,6 +5049,19 @@ $script:Scopes = [System.Collections.Generic.List[object]]::new(); Push-Scope
 $script:ActiveContext = $script:MainContext; $script:CurrentFunction = $null; $script:BlockDepth = 0
 foreach ($module in $script:Modules) { Parse-Module -Module $module }
 
+if ($script:NativeScmServiceMode) {
+    if ($script:Modules.Count -ne 1 -or $script:Functions.Count -ne 0 -or $script:MainStatements.Count -ne 1) {
+        throw 'Native SCM service mode accepts exactly one root module, no user functions, and one top-level host declaration.'
+    }
+    $serviceStatement = $script:MainStatements[0]
+    if ($serviceStatement.Kind -cne 'Let' -or $null -eq $serviceStatement.Expression -or
+        $serviceStatement.Expression.Kind -cne 'Call' -or
+        $serviceStatement.Expression.Builtin -cne 'NativeScmServiceHost' -or
+        $serviceStatement.Expression.Arguments.Count -ne 0) {
+        throw 'Native SCM service source must consist solely of: let serviceHost = sh_native_scm_service_host();'
+    }
+}
+
 Set-FrameSize -Context $script:MainContext -NodeCount (Get-StatementsNodeCount -Statements $script:MainStatements.ToArray())
 foreach ($functionObject in $script:Functions.Values) {
     if ($null -eq $functionObject.Context) { throw "Function '$($functionObject.Name)' was declared but not parsed." }
@@ -4766,6 +5074,10 @@ $script:CodeLabels = [System.Collections.Generic.Dictionary[string, int]]::new([
 $script:DataItems = [System.Collections.Generic.List[object]]::new()
 $script:DataMap = [System.Collections.Generic.Dictionary[string, object]]::new([System.StringComparer]::Ordinal)
 $script:DataPointerFixups = [System.Collections.Generic.List[object]]::new()
+$script:NativeScmServiceTableItem = $null
+$script:NativeScmServiceNameDataItem = $null
+$script:NativeScmHandlerPointerItem = $null
+$script:NativeScmRuntimeFunctionSpecs = $null
 $script:DataLength = 8 # reserved absolute entry-point anchor, patched by the base-relocation directory
 $script:UniqueLabel = 0
 
@@ -4773,9 +5085,10 @@ $script:UniqueLabel = 0
 Mark-CodeLabel -Label '__entry'
 Emit-Prologue -Context $script:MainContext
 foreach ($statement in $script:MainStatements) { Emit-Statement -Statement $statement }
-Emit-Bytes -Bytes ([byte[]]@(0x31, 0xC9, 0x48, 0x83, 0xEC, 0x20)); Emit-CallIat -TargetRva ([UInt32]0x3080); Emit-Bytes -Bytes ([byte[]]@(0xCC))
+$exitProcessIatRva = if ($script:NativeScmServiceMode) { [UInt32]0x3070 } else { [UInt32]0x3080 }
+Emit-Bytes -Bytes ([byte[]]@(0x31, 0xC9, 0x48, 0x83, 0xEC, 0x20)); Emit-CallIat -TargetRva $exitProcessIatRva; Emit-Bytes -Bytes ([byte[]]@(0xCC))
 Mark-CodeLabel -Label '__runtime_fail'
-Emit-Bytes -Bytes ([byte[]]@(0xB9, 0x01, 0x00, 0x00, 0x00, 0x48, 0x83, 0xEC, 0x20)); Emit-CallIat -TargetRva ([UInt32]0x3080); Emit-Bytes -Bytes ([byte[]]@(0xCC))
+Emit-Bytes -Bytes ([byte[]]@(0xB9, 0x01, 0x00, 0x00, 0x00, 0x48, 0x83, 0xEC, 0x20)); Emit-CallIat -TargetRva $exitProcessIatRva; Emit-Bytes -Bytes ([byte[]]@(0xCC))
 
 foreach ($functionObject in ($script:Functions.Values | Sort-Object Index)) {
     Mark-CodeLabel -Label $functionObject.Label
@@ -4788,6 +5101,8 @@ foreach ($functionObject in ($script:Functions.Values | Sort-Object Index)) {
 # Windows x64 stack-probe helper. This is a leaf routine using only R10/R11
 # and flags; RAX (the requested allocation size), argument registers, RSP, and
 # all nonvolatile registers are preserved. Leaf routines require no .pdata row.
+if ($script:NativeScmServiceMode) { Emit-NativeScmCallbacks }
+
 $stackProbeOffset = [int]$script:Code.Count
 Mark-CodeLabel -Label '__sharnou_chkstk'
 Emit-Bytes -Bytes ([byte[]]@(0x49, 0x89, 0xE2)) # mov r10,rsp (includes the call return address)
@@ -4819,7 +5134,7 @@ Emit-Bytes -Bytes ([byte[]]@(0x31, 0xC0, 0xC3)) # return DWORD 0
 # Explicit Win64 callback ABI probes are leaf functions. The first probe uses
 # the exact SERVICE_MAIN_FUNCTIONW parameter widths; the second uses the exact
 # HANDLER_FUNCTION_EX four-register layout. They preserve all nonvolatile state.
-if ($script:DataPointerFixups.Count -gt 0) {
+if ($EnableWin64CallbackTests) {
     $callbackMarker = [byte[]]@(0xDE, 0xC0, 0xA7, 0x51)
 
     Mark-CodeLabel -Label '__r51_service_main_abi_probe'
@@ -4858,14 +5173,18 @@ if ($script:DataPointerFixups.Count -gt 0) {
 # need no RUNTIME_FUNCTION rows. Frame-owning functions retain x64 unwind data.
 $orderedFunctions = @($script:Functions.Values | Sort-Object Index)
 $runtimeFunctionSpecs = [System.Collections.Generic.List[object]]::new()
-$entryEndOffset = if ($orderedFunctions.Count -gt 0) { [int]$script:CodeLabels[$orderedFunctions[0].Label] } else { $stackProbeOffset }
+$managedCodeEndOffset = if ($script:NativeScmServiceMode) { [int]$script:NativeScmCallbackStartOffset } else { [int]$stackProbeOffset }
+$entryEndOffset = if ($orderedFunctions.Count -gt 0) { [int]$script:CodeLabels[$orderedFunctions[0].Label] } else { $managedCodeEndOffset }
 $runtimeFunctionSpecs.Add([pscustomobject]@{ StartOffset = [int]$script:CodeLabels['__entry']; EndOffset = $entryEndOffset; Context = $script:MainContext; UnwindBytes = $null; UnwindOffset = 0 })
 for ($functionIndex = 0; $functionIndex -lt $orderedFunctions.Count; $functionIndex++) {
     $functionObject = $orderedFunctions[$functionIndex]
     $startOffset = [int]$script:CodeLabels[$functionObject.Label]
-    $endOffset = if (($functionIndex + 1) -lt $orderedFunctions.Count) { [int]$script:CodeLabels[$orderedFunctions[$functionIndex + 1].Label] } else { $stackProbeOffset }
+    $endOffset = if (($functionIndex + 1) -lt $orderedFunctions.Count) { [int]$script:CodeLabels[$orderedFunctions[$functionIndex + 1].Label] } else { $managedCodeEndOffset }
     if ($endOffset -le $startOffset) { throw "Invalid generated function range for '$($functionObject.Name)'." }
     $runtimeFunctionSpecs.Add([pscustomobject]@{ StartOffset = $startOffset; EndOffset = $endOffset; Context = $functionObject.Context; UnwindBytes = $null; UnwindOffset = 0 })
+}
+if ($script:NativeScmServiceMode) {
+    foreach ($serviceRuntimeFunction in $script:NativeScmRuntimeFunctionSpecs) { $runtimeFunctionSpecs.Add($serviceRuntimeFunction) }
 }
 foreach ($runtimeFunction in $runtimeFunctionSpecs) {
     $runtimeFunction.UnwindBytes = New-UnwindInfoBytes -Context $runtimeFunction.Context
@@ -4894,17 +5213,28 @@ $dataRva = [UInt32]([long]$textRva + [long]$textVirtualSpan)
 $relocationImageBoundary = [UInt32]([long]$dataRva + [long]$dataVirtualSpan)
 $relocationTargets = [System.Collections.Generic.List[UInt32]]::new()
 $relocationTargets.Add($dataRva) # Existing .rdata absolute entry-point anchor.
-foreach ($callbackFixup in $script:DataPointerFixups) {
-    if (-not $script:CodeLabels.ContainsKey([string]$callbackFixup.Label)) {
-        throw "Unresolved typed callback code label: $($callbackFixup.Label)"
+foreach ($pointerFixup in $script:DataPointerFixups) {
+    if ($pointerFixup.TargetKind -eq 'Code') {
+        if (-not $script:CodeLabels.ContainsKey([string]$pointerFixup.Label)) {
+            throw "Unresolved typed callback code label: $($pointerFixup.Label)"
+        }
+        $targetOffset = [Int64]$script:CodeLabels[[string]$pointerFixup.Label]
+        if ($targetOffset -lt 0 -or $targetOffset -ge $codeBytes.Length) {
+            throw "Typed callback target is outside .text: $($pointerFixup.Label)"
+        }
+        $pointerFixup.TargetRva = [UInt32]([Int64]$textRva + $targetOffset)
+    } elseif ($pointerFixup.TargetKind -eq 'Data') {
+        if ($null -eq $pointerFixup.TargetItem -or
+            $pointerFixup.TargetItem.Offset -lt 0 -or
+            ($pointerFixup.TargetItem.Offset + $pointerFixup.TargetItem.Bytes.Length) -gt $script:DataLength) {
+            throw "Typed data pointer target is outside initialized .rdata: $($pointerFixup.Key)"
+        }
+        $pointerFixup.TargetRva = [UInt32]([UInt64]$dataRva + [UInt64]$pointerFixup.TargetItem.Offset)
+    } else {
+        throw "Unknown typed data-pointer target kind: $($pointerFixup.TargetKind)"
     }
-    $callbackOffset = [Int64]$script:CodeLabels[[string]$callbackFixup.Label]
-    if ($callbackOffset -lt 0 -or $callbackOffset -ge $codeBytes.Length) {
-        throw "Typed callback target is outside .text: $($callbackFixup.Label)"
-    }
-    $callbackFixup.TargetRva = [UInt32]([Int64]$textRva + $callbackOffset)
-    $pointerRva = [UInt64]$dataRva + [UInt64]$callbackFixup.DataItem.Offset
-    if ($pointerRva -gt [UInt32]::MaxValue) { throw 'Typed callback pointer data RVA exceeds the PE RVA range.' }
+    $pointerRva = [UInt64]$dataRva + [UInt64]$pointerFixup.DataItem.Offset + [UInt64]$pointerFixup.SlotOffset
+    if ($pointerRva -gt [UInt32]::MaxValue) { throw "Typed pointer slot RVA exceeds the PE RVA range: $($pointerFixup.Key)" }
     $relocationTargets.Add([UInt32]$pointerRva)
 }
 $script:ExpectedRelocationTargetRvas = [UInt32[]]@($relocationTargets)
@@ -4948,12 +5278,12 @@ $codeBytes = $script:Code.ToArray()
 $dataBytes = [byte[]]::new([Math]::Max(8, $script:DataLength))
 # Relocated pointer used by the linker's relocation/verification self-check.
 Set-U64 -Buffer $dataBytes -Offset 0 -Value ([UInt64]([Int64]0x140001000))
-foreach ($callbackFixup in $script:DataPointerFixups) {
-    if ($callbackFixup.DataItem.Bytes.Length -ne 8 -or $callbackFixup.TargetRva -eq 0) {
-        throw "Typed callback pointer fixup is incomplete: $($callbackFixup.Key)"
+foreach ($pointerFixup in $script:DataPointerFixups) {
+    if (($pointerFixup.SlotOffset + 8) -gt $pointerFixup.DataItem.Bytes.Length -or $pointerFixup.TargetRva -eq 0) {
+        throw "Typed data-pointer fixup is incomplete: $($pointerFixup.Key)"
     }
-    $callbackVa = [UInt64]([UInt64]0x140000000 + [UInt64]$callbackFixup.TargetRva)
-    Set-U64 -Buffer $callbackFixup.DataItem.Bytes -Offset 0 -Value $callbackVa
+    $targetVa = [UInt64]([UInt64]0x140000000 + [UInt64]$pointerFixup.TargetRva)
+    Set-U64 -Buffer $pointerFixup.DataItem.Bytes -Offset $pointerFixup.SlotOffset -Value $targetVa
 }
 foreach ($item in $script:DataItems) { if ($item.Bytes.Length -gt 0) { Set-Bytes -Buffer $dataBytes -Offset $item.Offset -Bytes $item.Bytes } }
 
@@ -4966,9 +5296,17 @@ $dataRawSize = Align-Up -Value $dataBytes.Length -Alignment 0x200
 $idata = [byte[]]::new(0x1000)
 # Import descriptors have a dedicated .idata range, disjoint from lookups, IAT and names.
 $descriptorBase = 0xA00
-$importDirectorySize = 0x190
-if (($descriptorBase + $importDirectorySize) -gt $idata.Length) { throw 'Import descriptor table exceeds .idata storage.' }
-$importSets = @(
+if ($script:NativeScmServiceMode) {
+    # Minimal, service-specific import profile. No process launch, crypto, userenv,
+    # GUI, D3D, or developer-agent APIs are linked into this image.
+    $importDirectorySize = 0x3C # two descriptors and one all-zero terminator
+    $importSets = @(
+        [pscustomobject]@{ Descriptor = 0x00; Lookup = 0xC00; Iat = 0x70; Dll = 'KERNEL32.dll'; Names = @('ExitProcess', 'GetLastError', 'CreateEventW', 'SetEvent', 'WaitForSingleObject', 'CloseHandle') },
+        [pscustomobject]@{ Descriptor = 0x14; Lookup = 0xC40; Iat = 0xB0; Dll = 'ADVAPI32.dll'; Names = @('StartServiceCtrlDispatcherW', 'RegisterServiceCtrlHandlerExW', 'SetServiceStatus') }
+    )
+} else {
+    $importDirectorySize = 0x190
+    $importSets = @(
     [pscustomobject]@{ Descriptor = 0x00; Lookup = 0xC00; Iat = 0x70; Dll = 'KERNEL32.dll'; Names = @('GetStdHandle', 'WriteFile', 'ExitProcess') },
     [pscustomobject]@{ Descriptor = 0x14; Lookup = 0xC20; Iat = 0x90; Dll = 'USER32.dll'; Names = @('wsprintfA') },
     [pscustomobject]@{ Descriptor = 0x28; Lookup = 0xC30; Iat = 0xA0; Dll = 'KERNEL32.dll'; Names = @('CreateFileA', 'GetFileSizeEx', 'ReadFile', 'CloseHandle', 'GetModuleHandleA', 'CreateThread', 'WaitForSingleObject', 'CreateMutexA', 'ReleaseMutex') },
@@ -4989,6 +5327,7 @@ $importSets = @(
     [pscustomobject]@{ Descriptor = 0x154; Lookup = 0xED0; Iat = 0x340; Dll = 'USERENV.dll'; Names = @('DeleteAppContainerProfile') },
     [pscustomobject]@{ Descriptor = 0x168; Lookup = 0xEE0; Iat = 0x350; Dll = 'ADVAPI32.dll'; Names = @('EqualSid') }
 )
+}
 if (($descriptorBase + $importDirectorySize) -gt $idata.Length) { throw 'Import descriptor table exceeds .idata storage.' }
 $apiNameRvas = @{}
 $nameCursor = 0x3A0
@@ -5006,22 +5345,27 @@ foreach ($set in $importSets) {
 if ($nameCursor -gt $descriptorBase) {
     throw ("Import-by-name strings overlap the import descriptor table: end=0x{0:X}, descriptorBase=0x{1:X}." -f $nameCursor, $descriptorBase)
 }
-Set-AsciiZ -Buffer $idata -Offset 0xF00 -Value 'KERNEL32.dll'
-Set-AsciiZ -Buffer $idata -Offset 0xF10 -Value 'USER32.dll'
-Set-AsciiZ -Buffer $idata -Offset 0xF20 -Value 'D3D11.dll'
-Set-AsciiZ -Buffer $idata -Offset 0xF30 -Value 'DXGI.dll'
-Set-AsciiZ -Buffer $idata -Offset 0xF40 -Value 'BCRYPT.dll'
-Set-AsciiZ -Buffer $idata -Offset 0xF50 -Value 'USERENV.dll'
-Set-AsciiZ -Buffer $idata -Offset 0xF60 -Value 'ADVAPI32.dll'
+if ($script:NativeScmServiceMode) {
+    Set-AsciiZ -Buffer $idata -Offset 0xF00 -Value 'KERNEL32.dll'
+    Set-AsciiZ -Buffer $idata -Offset 0xF10 -Value 'ADVAPI32.dll'
+} else {
+    Set-AsciiZ -Buffer $idata -Offset 0xF00 -Value 'KERNEL32.dll'
+    Set-AsciiZ -Buffer $idata -Offset 0xF10 -Value 'USER32.dll'
+    Set-AsciiZ -Buffer $idata -Offset 0xF20 -Value 'D3D11.dll'
+    Set-AsciiZ -Buffer $idata -Offset 0xF30 -Value 'DXGI.dll'
+    Set-AsciiZ -Buffer $idata -Offset 0xF40 -Value 'BCRYPT.dll'
+    Set-AsciiZ -Buffer $idata -Offset 0xF50 -Value 'USERENV.dll'
+    Set-AsciiZ -Buffer $idata -Offset 0xF60 -Value 'ADVAPI32.dll'
+}
 foreach ($set in $importSets) {
     switch ($set.Dll) {
         'KERNEL32.dll' { $nameOffset = 0xF00 }
+        'ADVAPI32.dll' { $nameOffset = if ($script:NativeScmServiceMode) { 0xF10 } else { 0xF60 } }
         'USER32.dll' { $nameOffset = 0xF10 }
         'D3D11.dll' { $nameOffset = 0xF20 }
         'DXGI.dll' { $nameOffset = 0xF30 }
         'BCRYPT.dll' { $nameOffset = 0xF40 }
         'USERENV.dll' { $nameOffset = 0xF50 }
-        'ADVAPI32.dll' { $nameOffset = 0xF60 }
         default { throw "Internal linker error: unsupported import DLL '$($set.Dll)'" }
     }
         $descriptorOffset = [int]($descriptorBase + $set.Descriptor)
@@ -5100,7 +5444,8 @@ Set-U32 -Buffer $image -Offset ($opt + 104) -Value 0; Set-U32 -Buffer $image -Of
 Set-U32 -Buffer $image -Offset ($opt + 120) -Value ([UInt32]([long]$idataRva + [long]$descriptorBase)); Set-U32 -Buffer $image -Offset ($opt + 124) -Value $importDirectorySize
 Set-U32 -Buffer $image -Offset ($opt + 136) -Value $pdataRva; Set-U32 -Buffer $image -Offset ($opt + 140) -Value $pdataBytes.Length
 Set-U32 -Buffer $image -Offset ($opt + 152) -Value $relocRva; Set-U32 -Buffer $image -Offset ($opt + 156) -Value $relocationDirectory.DirectorySize
-Set-U32 -Buffer $image -Offset ($opt + 208) -Value ([UInt32]([long]$idataRva + 0x70)); Set-U32 -Buffer $image -Offset ($opt + 212) -Value 0x2F0
+$iatDirectorySize = if ($script:NativeScmServiceMode) { [UInt32]0x60 } else { [UInt32]0x2F0 }
+Set-U32 -Buffer $image -Offset ($opt + 208) -Value ([UInt32]([long]$idataRva + 0x70)); Set-U32 -Buffer $image -Offset ($opt + 212) -Value $iatDirectorySize
 $sectionText = 0x188
 Set-Ascii -Buffer $image -Offset $sectionText -Value '.text'; Set-U32 -Buffer $image -Offset ($sectionText + 8) -Value $codeBytes.Length; Set-U32 -Buffer $image -Offset ($sectionText + 12) -Value $textRva; Set-U32 -Buffer $image -Offset ($sectionText + 16) -Value $textRawSize; Set-U32 -Buffer $image -Offset ($sectionText + 20) -Value $textRawPointer; Set-U32 -Buffer $image -Offset ($sectionText + 36) -Value 0x60000020
 $sectionData = 0x1B0
@@ -5121,7 +5466,8 @@ $verifierPath = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\Tools
 try {
     [System.IO.File]::WriteAllBytes($outputFullPath, $image)
     if (-not (Test-Path -LiteralPath $verifierPath -PathType Leaf)) { throw "PE verifier is missing: $verifierPath" }
-    & $verifierPath -Path $outputFullPath
+    if ($script:NativeScmServiceMode) { & $verifierPath -Path $outputFullPath -NativeScmServiceHost }
+    else { & $verifierPath -Path $outputFullPath }
 } catch {
     if (Test-Path -LiteralPath $outputFullPath) { Remove-Item -LiteralPath $outputFullPath -Force -ErrorAction SilentlyContinue }
     throw ("Linked image failed post-write validation: {0}" -f $_.Exception.Message)
@@ -5129,6 +5475,10 @@ try {
 $sha256 = (Get-FileHash -LiteralPath $outputFullPath -Algorithm SHA256).Hash
 Write-Host "Created native x64 PE32+ executable: $outputFullPath"
 Write-Host ("Link result: modules={0}, functions={1}, codeBytes={2}, dataBytes={3}" -f $script:Modules.Count, $script:Functions.Count, $codeBytes.Length, $dataBytes.Length)
-Write-Host 'Sections: .text, .rdata, .idata, .reloc, .pdata, .xdata; imports: KERNEL32.dll, USER32.dll, D3D11.dll, and DXGI.dll'
+if ($script:NativeScmServiceMode) {
+    Write-Host 'Native SCM service image: exact KERNEL32.dll / ADVAPI32.dll imports; SCM callbacks and relocated service table verified.'
+} else {
+    Write-Host 'Sections: .text, .rdata, .idata, .reloc, .pdata, .xdata; imports: KERNEL32.dll, USER32.dll, D3D11.dll, and DXGI.dll'
+}
 Write-Host "SHA-256: $sha256"
 Write-Warning 'Milestone 6 adds a native D3D11/DXGI solid-clear demo and runtime frame timing. Native rendering must be validated on an interactive Windows desktop. Shader/geometry rendering, device-loss recovery, resize handling, and persistent window/event loops remain unsupported.' 
