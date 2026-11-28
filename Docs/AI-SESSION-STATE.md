@@ -1219,3 +1219,12 @@ After the prior session record, one more isolated diagnostic commit was added to
 - Windows Actions run `46170545017` started on the corrected source/test head; its status at this documentation update is **IN PROGRESS**, so no Windows test result is claimed. A later documentation synchronization will require its own exact-head run.
 - The earlier run on pre-correction head `f445706d604381b0b116b907b3ce8f63264338f5` is not qualification evidence for the updated branch tip.
 - The branch remains based on PR #45's exact head and no default-branch changes or merges were performed.
+
+
+### DGA-GFX-0.5A Windows qualification update - 2026-11-28
+
+- Corrected code/test head `123264b133f6147520084ddccab7801617cf9510`: PR run [46170550007](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/46170550007) and push run [46170545017](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/46170545017) both completed SUCCESS.
+- Documentation-synchronized head `a0f4fcdb78e2e68a3830e6fc6bb32942e64a42fd`: PR run [46170595343](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/46170595343) and push run [46170590806](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/46170590806) both completed SUCCESS.
+- Exact a0f4 head Windows PowerShell 5.1 results: DGA-GFX-0.5A contract 30/30; inherited DGA-GFX-0.3 journal 30/30; inherited DGA-GFX-0.4 adapter 49/49. Total 109 passed, 0 failed across these three suites. ASCII/no-BOM, strict profile checks, CLI, and explicit readiness=BLOCKED checks passed.
+- This qualifies the contract/readiness slice only. It does not qualify model parsing, tokenizer, numeric kernels, transformer inference, offline generation, or a native DevAgent executable.
+- The final state/README synchronization in this commit will trigger another exact-tip Windows run; results must be inspected before the new PR tip is treated as qualified.

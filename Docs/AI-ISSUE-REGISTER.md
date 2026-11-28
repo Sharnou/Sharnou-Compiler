@@ -613,3 +613,14 @@ No model tool authority, process launch, shell, network use during inference, re
 - Corrected source/test head: `123264b133f6147520084ddccab7801617cf9510`. Windows workflow run [46170545017](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/46170545017) is IN PROGRESS on that code/test head; no pass is claimed.
 - This remains only the model-contract/readiness slice. Native model loading, tokenizer, tensor kernels, Llama inference and in-process host are NOT IMPLEMENTED / NOT RUN.
 - Campaign activation and all model tool authority remain BLOCKED.
+
+
+### DGA-GFX-0.5A Windows evidence - 2026-11-28
+
+The model-profile/readiness contract is Windows PowerShell 5.1-qualified on source/test head `123264b133f6147520084ddccab7801617cf9510` and documentation-synchronized head `a0f4fcdb78e2e68a3830e6fc6bb32942e64a42fd`.
+
+- PR workflow [46170595343](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/46170595343): SUCCESS on a0f4 head.
+- Push workflow [46170590806](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/46170590806): SUCCESS on a0f4 head.
+- DGA-GFX-0.5A tests 30/30; DGA-GFX-0.3 journal regression 30/30; DGA-GFX-0.4 adapter regression 49/49. Combined: 109 passed, 0 failed.
+- ASCII/no-BOM, schema/profile parse, CLI and readiness BLOCKED gates passed.
+- These runs qualify only the contract slice; real model inference remains NOT IMPLEMENTED / NOT RUN. The next docs synchronization creates a new PR head and requires its own exact-head check.

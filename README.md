@@ -127,3 +127,6 @@ DGA-GFX-0.5 begins the genuine Sharnou-owned in-process local inference track. T
 
 
 DGA-GFX-0.5A is tracked in [draft PR #46](https://github.com/Sharnou/Sharnou-Compiler/pull/46), stacked on the DGA-GFX-0.4 adapter branch. Its model-profile and fail-closed readiness contract is a preparatory slice only; native inference remains unimplemented and blocked pending model artifact, numeric ABI, tokenizer, tensor, transformer and Windows runtime gates.
+
+
+DGA-GFX-0.5A contract qualification passed on its exact source/test head: 30 contract, 30 inherited journal and 49 inherited GitHub-adapter tests passed under Windows PowerShell 5.1 (109 total, 0 failed). This validates the profile and fail-closed readiness gate only; native model inference remains unimplemented.
