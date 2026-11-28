@@ -1148,3 +1148,8 @@ After the prior session record, one more isolated diagnostic commit was added to
 A static code review identified and corrected an important JSON property-access issue: scalar JSON properties must remain scalar while array-valued properties must remain arrays. \`Get-SgirValue\` now preserves only actual arrays as a single pipeline object; a dedicated positive test checks both cases. The negative corpus now has 22 named rejection cases, and the verifier enforces explicit declaration/CFG limits before dominator analysis. The schema and GFX-0.2 design note were updated to reflect those bounds.
 
 Latest substantive verifier/test source commit: \`8edef41f56075fd34210b2840e2d2d31c3779a5b\`. PR #41 tracks the current combined branch head. Static JSON parsing of both the fixture and schema succeeded. These checks do not substitute for Windows PowerShell execution; the qualification status remains **WINDOWS EXECUTION NOT VERIFIED**.
+
+
+### GFX-0.2 bounded-string follow-up — 2026-11-28
+
+The verifier now caps ordinary non-empty strings at 256 characters, stage semantics at 64, and struct field names at 128 (IDs retain their 128-character grammar bound). Added one negative case for overlong stage semantics. The current authored negative corpus is **23 cases**. Latest substantive implementation/test commit: \`d604709b940fa9390428fbfc07581c3650a211c2\`; current PR head will additionally include this status update. Windows qualification remains NOT VERIFIED.
