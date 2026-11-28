@@ -329,7 +329,7 @@ if ($NativeScmServiceHost) {
     foreach ($dll in $expectedServiceDlls) { if (-not $foundDlls.Contains($dll)) { Fail-PE "Native SCM service image is missing required DLL '$dll'." } }
     if ($foundImports.Count -ne $expectedServiceApis.Count) { Fail-PE 'Native SCM service image import table contains an unexpected or missing API.' }
     foreach ($api in $expectedServiceApis) { if (-not $foundImports.Contains($api)) { Fail-PE "Native SCM service image is missing required API '$api'." } }
-    if ($importSize -ne 0x3C -or $iatRva -ne ([UInt64]$idata.Rva + 0x70) -or $iatSize -ne 0x48) {
+    if ($importSize -ne 0x3C -or $iatRva -ne ([UInt64]$idata.Rva + 0x70) -or $iatSize -ne 0x60) {
         Fail-PE 'Native SCM service import/IAT directory bounds do not match the minimal service import profile.'
     }
 } else {
