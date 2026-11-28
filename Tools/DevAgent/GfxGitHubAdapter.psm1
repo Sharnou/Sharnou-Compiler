@@ -272,17 +272,18 @@ function Get-GfxGitHubCommitEvidence {
  [CmdletBinding()]param([Parameter(Mandatory=$true)][string]$CommitSha)
  if($CommitSha -notmatch '^[0-9a-f]{40}$'){throw 'Commit evidence requires a full lowercase commit SHA.'}
  $repository=Get-GfxGitHubRepository;$commit=Get-GfxGitHubCommit -Ref $CommitSha;$runs=Get-GfxGitHubWorkflowRuns -CommitSha $CommitSha
- $allArtifacts=New-Object Collections.ArrayList
+ $allArtifacts=New-Object Collections.ArrayList;$artifactTruncated=$false
  foreach($run in $runs.workflowRuns){
-  $result=Get-GfxGitHubRunArtifacts -RunId $run.runId
-  foreach($artifact in $result.artifacts){$null=$allArtifacts.Add($artifact)}
+  $artifactResult=Get-GfxGitHubRunArtifacts -RunId $run.runId
+  if($artifactResult.truncated){$artifactTruncated=$true}
+  foreach($artifact in $artifactResult.artifacts){$null=$allArtifacts.Add($artifact)}
  }
  $result=[pscustomobject][ordered]@{
   schemaVersion='sharnou.devagent.github-evidence/1';provider='github-rest';apiVersion=$script:GfxApiVersion
   repository=[pscustomobject][ordered]@{fullName=$repository.repository;repositoryId=$repository.repositoryId;defaultBranch=$repository.defaultBranch;visibility=$repository.visibility}
   capturedAtUtc=[DateTime]::UtcNow.ToString('o',[Globalization.CultureInfo]::InvariantCulture)
   commit=[pscustomobject][ordered]@{sha=$commit.sha;treeSha=$commit.treeSha;messageSha256=$commit.messageSha256;authorDateUtc=$commit.authorDateUtc;committerDateUtc=$commit.committerDateUtc}
-  workflowRuns=@($runs.workflowRuns);artifacts=@($allArtifacts.ToArray());truncated=$runs.truncated
+  workflowRuns=@($runs.workflowRuns);artifacts=@($allArtifacts.ToArray());truncated=([bool]($runs.truncated -or $artifactTruncated))
  }
  $validation=Test-GfxGitHubEvidenceObject -Evidence $result
  if(-not $validation.valid){throw ('Evidence snapshot failed self-validation: '+($validation.errors -join '; '))}
