@@ -644,3 +644,19 @@ No service SID, production CNG key, named-pipe transport, production signed jour
 - Status is **PENDING exact-head Windows CI**; no implementation acceptance claim until run results and artifact are inspected.
 - R5.1.d remains mandatory and is not merged into this milestone. R5.2, R5.3 and R5.4 remain blocked by the user's strict dependency order.
 - Model-facing/autonomous execution remain DISABLED; Phase 2B.8 remains NOT SECURITY ACCEPTED.
+
+
+## Qualification state correction - 2026-11-28
+
+R5.1.c is not pending. It passed its exact-head Windows qualification and its evidence bundle was downloaded and inspected:
+- Head: `85efea1cd17ea03e5040dc6708d0dac1928dcfd5`.
+- Workflow run [46122764612](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/46122764612): SUCCESS.
+- Artifact `r5-1c-native-scm-evidence`, id `15253524806`, SHA-256 `7c4fda351a1fa7f117e6fa1615f5d521b3176d786d0cd2de502be5f20ec85556`.
+- Manifest PASS is bound to the exact tested commit. Executable SHA-256 `8623ed7fd37153a41b841cad632e30ac6965b5bfee0153a59e0880fb43e43f73` was independently recomputed and matched the focused service evidence.
+- PE verification, actual Windows SCM create/start/interrogate/stop/delete, STOPPED/PID-zero confirmation and complete combined regression passed.
+
+The inherited Low-IL AppContainer DPAPI protection call remains INCONCLUSIVE because Windows PowerShell could not load System.Security. Keep this as a separate unresolved Phase 2B.8 evidence gap; do not mark the entire security milestone accepted.
+
+Next authorized issue: R5.1.d full SCM adversarial lifecycle qualification, including SHUTDOWN, observable state/status assertions, deterministic test-only failure injection, repeated and racing lifecycle operations, bounded timeout, forced termination, crash/orphan cleanup and recovery. R5.2 is blocked until R5.1.d is accepted; R5.3 is blocked until R5.2; R5.4 is blocked until R5.3.
+
+Model-facing/autonomous execution remains DISABLED; production rollout and process-execution enablement remain unauthorized.
