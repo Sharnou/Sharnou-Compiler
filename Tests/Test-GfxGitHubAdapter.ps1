@@ -59,6 +59,33 @@ Assert-GfxAdapter ($status.status -in @('NOT_CONFIGURED','CONFIGURED')) 'credent
 Assert-GfxAdapter ($status.storage -eq 'DPAPI_CURRENT_USER') 'credential storage declares current-user DPAPI protection'
 Assert-GfxAdapter ($status.PSObject.Properties.Name -notcontains 'token') 'credential status never returns token material'
 
+$priorLocalAppData=$env:LOCALAPPDATA
+$testLocalAppData=Join-Path $env:TEMP ('Sharnou-DGA-GFX04-CredentialTest-'+[Guid]::NewGuid().ToString('N'))
+$testToken='ghp_dga_gfx_test_token_1234567890'
+$testSecureToken=$null
+try{
+ $env:LOCALAPPDATA=$testLocalAppData
+ $testSecureToken=ConvertTo-SecureString -String $testToken -AsPlainText -Force
+ $configured=Set-GfxGitHubCredential -Token $testSecureToken
+ $configuredStatus=Get-GfxGitHubCredentialStatus
+ $storedCipher=[IO.File]::ReadAllText($configuredStatus.path)
+ $recoveredToken=& $module {Get-GfxAuthToken}
+ Assert-GfxAdapter ($configured.status -eq 'CONFIGURED' -and $configured.aclVerified) 'credential setup writes only after owner ACL verification'
+ Assert-GfxAdapter ($configuredStatus.status -eq 'CONFIGURED' -and $configuredStatus.aclVerified) 'DPAPI credential file passes strict owner-only ACL verification'
+ Assert-GfxAdapter ($storedCipher -ne $testToken -and $storedCipher.Length -gt $testToken.Length) 'credential file stores DPAPI ciphertext rather than plaintext token'
+ Assert-GfxAdapter ($recoveredToken -ceq $testToken) 'DPAPI current-user credential round-trip succeeds'
+ $recoveredToken=$null
+ $removed=Remove-GfxGitHubCredential
+ $afterRemove=Get-GfxGitHubCredentialStatus
+ Assert-GfxAdapter ($removed.status -eq 'NOT_CONFIGURED' -and $afterRemove.status -eq 'NOT_CONFIGURED') 'credential removal deletes the encrypted token file'
+}catch{
+ Assert-GfxAdapter $false ('credential round-trip and ACL lifecycle: '+$_.Exception.Message)
+}finally{
+ if($null -ne $testSecureToken){$testSecureToken.Dispose()}
+ $env:LOCALAPPDATA=$priorLocalAppData
+ if(Test-Path -LiteralPath $testLocalAppData){Remove-Item -LiteralPath $testLocalAppData -Recurse -Force}
+}
+
 $requests=Set-MockQueue @((New-MockResponse -Object $repoObject))
 $r=Get-GfxGitHubRepository
 Assert-GfxAdapter ($r.repository -eq 'Sharnou/Sharnou-Compiler' -and $r.repositoryId -eq 1442471501) 'repository metadata is bound to the fixed repository identity'
