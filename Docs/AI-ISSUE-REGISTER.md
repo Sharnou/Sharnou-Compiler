@@ -479,3 +479,13 @@ PR #24 candidate head advanced to bd411c2fc777006f9b1160ab8d3d5992c2a15afa. Stag
 - M1-M6 run [45964360562](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45964360562): WINDOWS CI PASS 83/83 on exact head bd411c2fc777006f9b1160ab8d3d5992c2a15afa.
 - Stage 7A/broker run [45964360481](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/45964360481): IN PROGRESS at the latest check; no conclusion claimed.
 - Required next evidence: inspect the final log for ACL_RECOVERY_NATIVE_PATH, compare it byte-for-byte with the PowerShell-computed journal path, then decide whether the defect is path construction or process token/ACL access. Do not weaken ACLs to force a pass.
+
+
+## Phase 2B.8 R5.1.a/b exact-head qualification update - 2026-11-28
+
+- PR #33 R5.1.a remains OPEN / DRAFT at `2583faec76d5e469962756d17d2ffabecd6fcd98`. Windows Server 2025 run [46066382172](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/46066382172) completed SUCCESS: PE relocation suite 21/21; Stage 7A 24/24; frozen M1-M6 baseline 83/83; combined PASS. Artifact 15231785189, SHA-256 `698ebd55dfb66b529cd8b001aa986e4832e995e8f37a68f7906c7db19546b725`.
+- PR #35 R5.1.b remains OPEN / DRAFT at `ab00219f1aa9783c148035b754eebce7269f6fbb`, stacked on PR #33. Windows Server 2025 run [46070065850](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/46070065850) completed SUCCESS: focused typed callback-pointer/Win64 ABI probe PASS; Stage 7A 24/24; frozen M1-M6 83/83; combined result and exact-head manifest PASS. Artifact 15232513039, SHA-256 `b246b9e588d06c956ce59ea6583b7da99f1d9a02f3e35df50e8a5fc9a99ed10f`. The callback test does not emit a numeric test total.
+- PR #35 manifest explicitly sets `native_scm_service_implemented=false`. The test-only callback intrinsic is opt-in and absent from the default compiler catalog; these runs do not establish an SCM executable or service lifecycle.
+- PR #36 remains OPEN / DRAFT and design-only for R5.2/R5.3. R5.1.c real Sharnou-generated SCM host and R5.1.d actual SCM lifecycle/failure/cleanup qualification remain mandatory prerequisites. Do not implement R5.2 service identity/key or R5.3 pipe transport before both R5.1.c and R5.1.d pass.
+- The Low-IL AppContainer DPAPI protection subtest remains INCONCLUSIVE because the Windows PowerShell runner could not load `System.Security` (FileNotFoundException). It is not a pass and remains open.
+- **Next bounded task:** R5.1.c inert Sharnou-generated service image, actual PE import/relocation/exception verification, and disposable Windows SCM lifecycle smoke tests. Keep model-facing/autonomous execution disabled; Phase 2B.8 remains NOT SECURITY ACCEPTED.
