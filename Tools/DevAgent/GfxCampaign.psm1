@@ -86,8 +86,10 @@ function Test-GfxCampaignObject{
   $allowed=@('id','title','workstream','status','existingPullRequest','existingPullRequestUrl','sourceBaseBranch','sourceBranch','sourceHeadSha','dependsOn','agentRoles','allowedPaths','deliverables','acceptanceGates','hardStops','requiresRealWindowsRuntimeEvidence','requiresPhysicalGpuEvidence','requiredOwnerDecisions')
   $seen=@{}
   foreach($m in $Campaign.milestones){
-   $id=[string]$m.id;Assert-GfxObject $m $allowed "milestones[$id]" $errors
-   foreach($n in $required){if((Get-GfxNames $m)-notcontains $n){Add-GfxError $errors "$id omits '$n'."}}
+   $id=[string]$m.id
+   $actualFields=Get-GfxNames $m
+   foreach($n in $required){if($actualFields -notcontains $n){Add-GfxError $errors "$id omits required '$n'."}}
+   foreach($n in $actualFields){if($allowed -notcontains $n){Add-GfxError $errors "$id has unsupported property '$n'."}}
    if($id -notmatch '^GFX-(0\.[1-8]|A\.[1-3])$'){Add-GfxError $errors "Invalid milestone ID '$id'."}
    if($seen.ContainsKey($id)){Add-GfxError $errors "Duplicate milestone ID '$id'."}else{$seen[$id]=$true}
    if($m.title -isnot [string] -or $m.title.Length -lt 4 -or $m.title.Length -gt 160){Add-GfxError $errors "$id title invalid."}
