@@ -53,7 +53,7 @@ jobs:
             if ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF) {
               throw "UTF-8 BOM is prohibited: $relative"
             }
-            if ($relative -match '\.(ps1|json) {
+            if ($relative -match '\.(ps1|json)$') {
               foreach ($byte in $bytes) {
                 if ($byte -gt 0x7F) { throw "Non-ASCII source/artifact byte found in $relative" }
               }
