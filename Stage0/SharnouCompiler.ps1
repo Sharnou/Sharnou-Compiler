@@ -5271,9 +5271,17 @@ $dataRawSize = Align-Up -Value $dataBytes.Length -Alignment 0x200
 $idata = [byte[]]::new(0x1000)
 # Import descriptors have a dedicated .idata range, disjoint from lookups, IAT and names.
 $descriptorBase = 0xA00
-$importDirectorySize = 0x190
-if (($descriptorBase + $importDirectorySize) -gt $idata.Length) { throw 'Import descriptor table exceeds .idata storage.' }
-$importSets = @(
+if ($script:NativeScmServiceMode) {
+    # Minimal, service-specific import profile. No process launch, crypto, userenv,
+    # GUI, D3D, or developer-agent APIs are linked into this image.
+    $importDirectorySize = 0x3C # two descriptors and one all-zero terminator
+    $importSets = @(
+        [pscustomobject]@{ Descriptor = 0x00; Lookup = 0xC00; Iat = 0x70; Dll = 'KERNEL32.dll'; Names = @('ExitProcess', 'GetLastError', 'CreateEventW', 'SetEvent', 'WaitForSingleObject', 'CloseHandle') },
+        [pscustomobject]@{ Descriptor = 0x14; Lookup = 0xC40; Iat = 0xA0; Dll = 'ADVAPI32.dll'; Names = @('StartServiceCtrlDispatcherW', 'RegisterServiceCtrlHandlerExW', 'SetServiceStatus') }
+    )
+} else {
+    $importDirectorySize = 0x190
+    $importSets = @(
     [pscustomobject]@{ Descriptor = 0x00; Lookup = 0xC00; Iat = 0x70; Dll = 'KERNEL32.dll'; Names = @('GetStdHandle', 'WriteFile', 'ExitProcess') },
     [pscustomobject]@{ Descriptor = 0x14; Lookup = 0xC20; Iat = 0x90; Dll = 'USER32.dll'; Names = @('wsprintfA') },
     [pscustomobject]@{ Descriptor = 0x28; Lookup = 0xC30; Iat = 0xA0; Dll = 'KERNEL32.dll'; Names = @('CreateFileA', 'GetFileSizeEx', 'ReadFile', 'CloseHandle', 'GetModuleHandleA', 'CreateThread', 'WaitForSingleObject', 'CreateMutexA', 'ReleaseMutex') },
@@ -5294,6 +5302,7 @@ $importSets = @(
     [pscustomobject]@{ Descriptor = 0x154; Lookup = 0xED0; Iat = 0x340; Dll = 'USERENV.dll'; Names = @('DeleteAppContainerProfile') },
     [pscustomobject]@{ Descriptor = 0x168; Lookup = 0xEE0; Iat = 0x350; Dll = 'ADVAPI32.dll'; Names = @('EqualSid') }
 )
+}
 if (($descriptorBase + $importDirectorySize) -gt $idata.Length) { throw 'Import descriptor table exceeds .idata storage.' }
 $apiNameRvas = @{}
 $nameCursor = 0x3A0
@@ -5311,16 +5320,22 @@ foreach ($set in $importSets) {
 if ($nameCursor -gt $descriptorBase) {
     throw ("Import-by-name strings overlap the import descriptor table: end=0x{0:X}, descriptorBase=0x{1:X}." -f $nameCursor, $descriptorBase)
 }
-Set-AsciiZ -Buffer $idata -Offset 0xF00 -Value 'KERNEL32.dll'
-Set-AsciiZ -Buffer $idata -Offset 0xF10 -Value 'USER32.dll'
-Set-AsciiZ -Buffer $idata -Offset 0xF20 -Value 'D3D11.dll'
-Set-AsciiZ -Buffer $idata -Offset 0xF30 -Value 'DXGI.dll'
-Set-AsciiZ -Buffer $idata -Offset 0xF40 -Value 'BCRYPT.dll'
-Set-AsciiZ -Buffer $idata -Offset 0xF50 -Value 'USERENV.dll'
-Set-AsciiZ -Buffer $idata -Offset 0xF60 -Value 'ADVAPI32.dll'
+if ($script:NativeScmServiceMode) {
+    Set-AsciiZ -Buffer $idata -Offset 0xF00 -Value 'KERNEL32.dll'
+    Set-AsciiZ -Buffer $idata -Offset 0xF10 -Value 'ADVAPI32.dll'
+} else {
+    Set-AsciiZ -Buffer $idata -Offset 0xF00 -Value 'KERNEL32.dll'
+    Set-AsciiZ -Buffer $idata -Offset 0xF10 -Value 'USER32.dll'
+    Set-AsciiZ -Buffer $idata -Offset 0xF20 -Value 'D3D11.dll'
+    Set-AsciiZ -Buffer $idata -Offset 0xF30 -Value 'DXGI.dll'
+    Set-AsciiZ -Buffer $idata -Offset 0xF40 -Value 'BCRYPT.dll'
+    Set-AsciiZ -Buffer $idata -Offset 0xF50 -Value 'USERENV.dll'
+    Set-AsciiZ -Buffer $idata -Offset 0xF60 -Value 'ADVAPI32.dll'
+}
 foreach ($set in $importSets) {
     switch ($set.Dll) {
         'KERNEL32.dll' { $nameOffset = 0xF00 }
+        'ADVAPI32.dll' { $nameOffset = if ($script:NativeScmServiceMode) { 0xF10 } else { 0xF60 } }
         'USER32.dll' { $nameOffset = 0xF10 }
         'D3D11.dll' { $nameOffset = 0xF20 }
         'DXGI.dll' { $nameOffset = 0xF30 }
@@ -5405,7 +5420,8 @@ Set-U32 -Buffer $image -Offset ($opt + 104) -Value 0; Set-U32 -Buffer $image -Of
 Set-U32 -Buffer $image -Offset ($opt + 120) -Value ([UInt32]([long]$idataRva + [long]$descriptorBase)); Set-U32 -Buffer $image -Offset ($opt + 124) -Value $importDirectorySize
 Set-U32 -Buffer $image -Offset ($opt + 136) -Value $pdataRva; Set-U32 -Buffer $image -Offset ($opt + 140) -Value $pdataBytes.Length
 Set-U32 -Buffer $image -Offset ($opt + 152) -Value $relocRva; Set-U32 -Buffer $image -Offset ($opt + 156) -Value $relocationDirectory.DirectorySize
-Set-U32 -Buffer $image -Offset ($opt + 208) -Value ([UInt32]([long]$idataRva + 0x70)); Set-U32 -Buffer $image -Offset ($opt + 212) -Value 0x2F0
+$iatDirectorySize = if ($script:NativeScmServiceMode) { [UInt32]0x48 } else { [UInt32]0x2F0 }
+Set-U32 -Buffer $image -Offset ($opt + 208) -Value ([UInt32]([long]$idataRva + 0x70)); Set-U32 -Buffer $image -Offset ($opt + 212) -Value $iatDirectorySize
 $sectionText = 0x188
 Set-Ascii -Buffer $image -Offset $sectionText -Value '.text'; Set-U32 -Buffer $image -Offset ($sectionText + 8) -Value $codeBytes.Length; Set-U32 -Buffer $image -Offset ($sectionText + 12) -Value $textRva; Set-U32 -Buffer $image -Offset ($sectionText + 16) -Value $textRawSize; Set-U32 -Buffer $image -Offset ($sectionText + 20) -Value $textRawPointer; Set-U32 -Buffer $image -Offset ($sectionText + 36) -Value 0x60000020
 $sectionData = 0x1B0
