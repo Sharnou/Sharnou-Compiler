@@ -595,3 +595,14 @@ The final docs-synchronized PR tip is qualified only by its own Windows PowerShe
 - The adapter remains read-only. Transport qualification is mocked; no live GitHub token round-trip or archive download/re-hash occurred. API-reported artifact digest is metadata only. Current-user DPAPI is not service SID protection; SHA-256 journal chaining is not authentication.
 - No process launch, shell, GitHub writes, inference, autonomous source generation, background worker, merge or release is enabled. R5/Phase 2B.8 remains an independent blocker.
 - Next milestone: DGA-GFX-0.5 genuine in-process local inference, with resource-bounded inference and zero implicit process authority.
+
+
+## DGA-GFX-0.5A - local inference contract candidate - 2026-11-28
+
+A new isolated candidate branch `devagent-gfx-local-inference-contract-20261128` is based on DGA-GFX-0.4 PR #45 head `485481364d57153b16e340d7333a9bf6f4a94e0c`. It adds a strict versioned model-profile schema, a reference SmolLM2-135M-Instruct profile, a fail-closed readiness validator/CLI, PowerShell tests and a Windows qualification workflow.
+
+This is only the DGA-GFX-0.5A contract slice. It does **not** implement the tokenizer, tensor kernels, transformer graph, model-container reader or native in-process inference. Weight, tokenizer and chat-template bytes are not downloaded or pinned; the declared license file has not been independently pinned; golden vectors and Windows inference evidence do not exist. The validator therefore reports BLOCKED and all activation flags remain false.
+
+A key prerequisite is still open: the current documented Sharnou compiler ABI does not yet establish a complete FP32 arithmetic/storage and Windows x64 floating-point calling-convention contract, including BF16 conversion, XMM preservation, arrays/pointers/heap bounds and numerical semantics. DGA-GFX-0.5B onward must not bypass this with an external C++ compiler, llama.cpp/ggml, ONNX Runtime, Python or helper process.
+
+No model tool authority, process launch, shell, network use during inference, repository-write capability, self-acceptance or model policy mutation is granted. Campaign activation remains BLOCKED; Phase 2B.8/R5 remains an independent security boundary. Tests and Windows CI for this candidate are **NOT RUN** until the exact PR head is qualified.

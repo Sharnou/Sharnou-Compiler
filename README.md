@@ -119,3 +119,8 @@ DGA-GFX-0.4 adds a read-only GitHub REST adapter for source and Actions provenan
 ### DGA-GFX-0.4 - qualified read-only GitHub evidence foundation
 
 DGA-GFX-0.4 now has a Windows PowerShell 5.1-qualified read-only GitHub REST adapter with commit-pinned source reads, Git-blob SHA-1 verification, independent SHA-256, exact-head Actions binding, artifact metadata and bounded metadata-only persistence through the durable DGA task journal. The final exact source/test head passed 49 adapter tests and the existing 30 journal tests; empty, singleton and paged PR-list responses are covered. See Docs/DEVAGENT-GFX-MILESTONE-AUTOMATION.md. Artifact ZIP bytes are not retrieved or rehashed, and autonomous execution/background research remain disabled.
+
+
+### DGA-GFX-0.5A - local inference contract foundation
+
+DGA-GFX-0.5 begins the genuine Sharnou-owned in-process local inference track. The current 0.5A candidate adds a strict model profile, a pinned reference configuration, and a fail-closed readiness validator. It does not yet implement model parsing, tokenization, tensor math, a transformer, or inference. Model weights and tokenizer assets remain unpinned; native inference and Windows qualification are not yet performed. See [DGA-GFX-0.5 local inference engineering contract](Docs/DGA-GFX-0.5-LOCAL-INFERENCE.md). The DevAgent campaign remains blocked until the complete runtime and later security/patch-tool prerequisites are accepted.

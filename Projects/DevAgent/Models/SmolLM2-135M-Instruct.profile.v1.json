@@ -1,0 +1,85 @@
+{
+  "schemaVersion": "1.0.0",
+  "profileId": "smollm2-135m-instruct",
+  "status": "CANDIDATE_NOT_ACTIVATABLE",
+  "source": {
+    "repository": "HuggingFaceTB/SmolLM2-135M-Instruct",
+    "referenceRevision": "02e84e7cc564d9c3ca090f978a4da4698ccaac29",
+    "license": "Apache-2.0",
+    "licenseEvidenceUrl": "https://huggingface.co/HuggingFaceTB/SmolLM2-135M-Instruct"
+  },
+  "architecture": {
+    "modelType": "llama",
+    "transformersArchitecture": "LlamaForCausalLM",
+    "hiddenSize": 576,
+    "intermediateSize": 1536,
+    "numHiddenLayers": 30,
+    "numAttentionHeads": 9,
+    "numKeyValueHeads": 3,
+    "vocabSize": 49152,
+    "maxPositionEmbeddings": 8192,
+    "rmsNormEpsilon": 0.00001,
+    "ropeTheta": 100000,
+    "hiddenActivation": "silu",
+    "tensorDtype": "BF16"
+  },
+  "artifacts": {
+    "weights": {
+      "state": "UNPINNED",
+      "format": "safetensors-v1",
+      "revision": null,
+      "files": [],
+      "sha256": null,
+      "byteCount": null
+    },
+    "tokenizer": {
+      "state": "UNPINNED",
+      "format": "huggingface-tokenizer-json",
+      "revision": null,
+      "files": [],
+      "sha256": null,
+      "byteCount": null
+    },
+    "chatTemplate": {
+      "state": "UNVERIFIED",
+      "format": "tokenizer-config-chat-template",
+      "revision": null,
+      "files": [],
+      "sha256": null,
+      "byteCount": null
+    }
+  },
+  "runtime": {
+    "backend": "SHARNOU_NATIVE_CPU",
+    "executionMode": "IN_PROCESS",
+    "weightPrecision": "BF16",
+    "accumulationPrecision": "FP32",
+    "quantization": "NONE",
+    "maxContextTokens": 1024,
+    "maxOutputTokens": 128,
+    "maxInputUtf8Bytes": 32768,
+    "maxWorkingSetBytes": 1073741824,
+    "maxInferenceMilliseconds": 300000,
+    "requiresNetwork": false
+  },
+  "policy": {
+    "processLaunchAllowed": false,
+    "networkAllowedAtInference": false,
+    "repositoryWriteAllowed": false,
+    "dynamicLibraryLoadingAllowed": false,
+    "toolAuthority": "NONE",
+    "modelMayChangePolicy": false,
+    "modelMayMarkAccepted": false,
+    "remoteSourceSubmissionAllowed": false
+  },
+  "qualification": {
+    "weightsPinned": false,
+    "tokenizerPinned": false,
+    "chatTemplatePinned": false,
+    "licenseFileVerified": false,
+    "goldenVectorsPassed": false,
+    "nativeInferenceImplemented": false,
+    "offlineInferencePassed": false,
+    "windowsExactHeadPassed": false
+  }
+}

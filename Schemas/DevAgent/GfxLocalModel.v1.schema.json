@@ -1,0 +1,171 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://sharnou.dev/schemas/devagent/gfx-local-model/v1.json",
+  "title": "SharnouDevAgent Local Model Profile v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "profileId",
+    "status",
+    "source",
+    "architecture",
+    "artifacts",
+    "runtime",
+    "policy",
+    "qualification"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "1.0.0" },
+    "profileId": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{2,63}$" },
+    "status": { "const": "CANDIDATE_NOT_ACTIVATABLE" },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repository", "referenceRevision", "license", "licenseEvidenceUrl"],
+      "properties": {
+        "repository": { "const": "HuggingFaceTB/SmolLM2-135M-Instruct" },
+        "referenceRevision": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+        "license": { "const": "Apache-2.0" },
+        "licenseEvidenceUrl": { "const": "https://huggingface.co/HuggingFaceTB/SmolLM2-135M-Instruct" }
+      }
+    },
+    "architecture": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "modelType",
+        "transformersArchitecture",
+        "hiddenSize",
+        "intermediateSize",
+        "numHiddenLayers",
+        "numAttentionHeads",
+        "numKeyValueHeads",
+        "vocabSize",
+        "maxPositionEmbeddings",
+        "rmsNormEpsilon",
+        "ropeTheta",
+        "hiddenActivation",
+        "tensorDtype"
+      ],
+      "properties": {
+        "modelType": { "const": "llama" },
+        "transformersArchitecture": { "const": "LlamaForCausalLM" },
+        "hiddenSize": { "const": 576 },
+        "intermediateSize": { "const": 1536 },
+        "numHiddenLayers": { "const": 30 },
+        "numAttentionHeads": { "const": 9 },
+        "numKeyValueHeads": { "const": 3 },
+        "vocabSize": { "const": 49152 },
+        "maxPositionEmbeddings": { "const": 8192 },
+        "rmsNormEpsilon": { "const": 0.00001 },
+        "ropeTheta": { "const": 100000 },
+        "hiddenActivation": { "const": "silu" },
+        "tensorDtype": { "const": "BF16" }
+      }
+    },
+    "artifacts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["weights", "tokenizer", "chatTemplate"],
+      "properties": {
+        "weights": { "$ref": "#/definitions/unpinnedArtifact" },
+        "tokenizer": { "$ref": "#/definitions/unpinnedArtifact" },
+        "chatTemplate": { "$ref": "#/definitions/unpinnedArtifact" }
+      }
+    },
+    "runtime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "backend",
+        "executionMode",
+        "weightPrecision",
+        "accumulationPrecision",
+        "quantization",
+        "maxContextTokens",
+        "maxOutputTokens",
+        "maxInputUtf8Bytes",
+        "maxWorkingSetBytes",
+        "maxInferenceMilliseconds",
+        "requiresNetwork"
+      ],
+      "properties": {
+        "backend": { "const": "SHARNOU_NATIVE_CPU" },
+        "executionMode": { "const": "IN_PROCESS" },
+        "weightPrecision": { "const": "BF16" },
+        "accumulationPrecision": { "const": "FP32" },
+        "quantization": { "const": "NONE" },
+        "maxContextTokens": { "type": "integer", "minimum": 1, "maximum": 1024 },
+        "maxOutputTokens": { "type": "integer", "minimum": 1, "maximum": 128 },
+        "maxInputUtf8Bytes": { "type": "integer", "minimum": 1, "maximum": 32768 },
+        "maxWorkingSetBytes": { "type": "integer", "minimum": 1048576, "maximum": 1073741824 },
+        "maxInferenceMilliseconds": { "type": "integer", "minimum": 1, "maximum": 300000 },
+        "requiresNetwork": { "const": false }
+      }
+    },
+    "policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "processLaunchAllowed",
+        "networkAllowedAtInference",
+        "repositoryWriteAllowed",
+        "dynamicLibraryLoadingAllowed",
+        "toolAuthority",
+        "modelMayChangePolicy",
+        "modelMayMarkAccepted",
+        "remoteSourceSubmissionAllowed"
+      ],
+      "properties": {
+        "processLaunchAllowed": { "const": false },
+        "networkAllowedAtInference": { "const": false },
+        "repositoryWriteAllowed": { "const": false },
+        "dynamicLibraryLoadingAllowed": { "const": false },
+        "toolAuthority": { "const": "NONE" },
+        "modelMayChangePolicy": { "const": false },
+        "modelMayMarkAccepted": { "const": false },
+        "remoteSourceSubmissionAllowed": { "const": false }
+      }
+    },
+    "qualification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "weightsPinned",
+        "tokenizerPinned",
+        "chatTemplatePinned",
+        "licenseFileVerified",
+        "goldenVectorsPassed",
+        "nativeInferenceImplemented",
+        "offlineInferencePassed",
+        "windowsExactHeadPassed"
+      ],
+      "properties": {
+        "weightsPinned": { "const": false },
+        "tokenizerPinned": { "const": false },
+        "chatTemplatePinned": { "const": false },
+        "licenseFileVerified": { "const": false },
+        "goldenVectorsPassed": { "const": false },
+        "nativeInferenceImplemented": { "const": false },
+        "offlineInferencePassed": { "const": false },
+        "windowsExactHeadPassed": { "const": false }
+      }
+    }
+  },
+  "definitions": {
+    "unpinnedArtifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "format", "revision", "files", "sha256", "byteCount"],
+      "properties": {
+        "state": { "enum": ["UNPINNED", "UNVERIFIED"] },
+        "format": { "type": "string", "minLength": 1, "maxLength": 48 },
+        "revision": { "type": ["string", "null"] },
+        "files": { "type": "array", "maxItems": 0 },
+        "sha256": { "type": ["string", "null"] },
+        "byteCount": { "type": ["integer", "null"], "minimum": 0 }
+      }
+    }
+  }
+}
