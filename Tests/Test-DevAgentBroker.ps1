@@ -383,8 +383,12 @@ try {
         }
     }
     $iatEnd = [int](($iatRanges | Measure-Object -Property End -Maximum).Maximum)
-    if ($iatEnd -ne 0x360 -or -not $compilerSource.Contains('Value 0x2F0')) {
-        throw ("Import Address Table extent must include every final zero thunk through 0x360; expected=0x360 actual=0x{0:X}." -f $iatEnd)
+    $defaultIatDirectoryMatch = [regex]::Match(
+        $compilerSource,
+        '\$iatDirectorySize\s*=\s*if\s*\(\$script:NativeScmServiceMode\)\s*\{\s*\[UInt32\]0x60\s*\}\s*else\s*\{\s*\[UInt32\]0x2F0\s*\}'
+    )
+    if ($iatEnd -ne 0x360 -or -not $defaultIatDirectoryMatch.Success) {
+        throw ("Import Address Table extent must include every final zero thunk through 0x360 and retain default 0x2F0 directory size; expected=0x360 actual=0x{0:X}." -f $iatEnd)
     }
     Write-Host 'PASS: import lookup and IAT arrays are disjoint, including each module terminator' -ForegroundColor Green
 
