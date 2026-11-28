@@ -90,6 +90,20 @@ jobs:
           }
           Write-Host 'PASS: source encoding gate.'
 
+      - name: Parse R5.1.d PowerShell harness before execution
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $scriptPath = Join-Path $env:GITHUB_WORKSPACE 'Tests\Test-NativeScmServiceLifecycle.ps1'
+          $tokens = $null
+          $parseErrors = $null
+          [void][System.Management.Automation.Language.Parser]::ParseFile($scriptPath, [ref]$tokens, [ref]$parseErrors)
+          if ($parseErrors.Count -gt 0) {
+            $details = ($parseErrors | ForEach-Object { $_.ToString() }) -join [Environment]::NewLine
+            throw "PowerShell parser rejected the lifecycle harness:`n$details"
+          }
+          Write-Host 'PASS: PowerShell 5.1 parser accepted the R5.1.d lifecycle harness.'
+
       - name: Execute R5.1.d native SCM lifecycle qualification
         shell: powershell
         run: |
