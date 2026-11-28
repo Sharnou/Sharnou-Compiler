@@ -138,7 +138,7 @@ function Invoke-GfxHttpGet {
  finally{$token=$null}
 }
 function New-GfxApiUri {
- param([Parameter(Mandatory=$true)][string]$Path,[string]$Query='')
+ param([string]$Path='',[string]$Query='')
  if($Path.StartsWith('/') -or $Path -match '(^|/)\.\.?(/|$)' -or $Path.Contains('\') -or $Path -match '[\x00-\x20]'){throw 'API path failed fixed-route validation.'}
  $uriText=$script:GfxApiBase+'/repos/'+$script:GfxRepo+'/'+$Path
  if(-not[string]::IsNullOrEmpty($Query)){$uriText+='?'+$Query}
