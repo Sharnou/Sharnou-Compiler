@@ -4145,7 +4145,7 @@ function Emit-NativeScmCallbacks {
     Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
     $stopStatusFailed = New-UniqueLabel -Prefix 'r51_stop_status_failed'
     $stopStatusReady = New-UniqueLabel -Prefix 'r51_stop_status_ready'
-    Emit-JumpConditional -ConditionCode 0x85 -Label $stopStatusFailed
+    Emit-JumpConditional -ConditionCode 0x84 -Label $stopStatusFailed
     Emit-NativeScmTestDelay # STOP_PENDING is held only in explicit test images.
     Emit-Jump -Label $stopStatusReady
     Mark-CodeLabel -Label $stopStatusFailed
