@@ -362,3 +362,28 @@ DGA-0.3 does not itself make continuous research run in the background. It suppl
 The mutex uses the Windows Local namespace, so concurrent writers in separate Windows logon sessions are not coordinated by this DGA-0.3 implementation. The same state root must therefore be owned by one DevAgent host session until a later cross-session coordination design is independently qualified.
 
 The journal stores task metadata and explicitly supplied bounded checkpoint state. It does not automatically persist model conversations, raw source trees, credentials, prompts or complete research documents. SHA-256 chaining detects record corruption but is not a signature or an authorization mechanism. An attacker able to rewrite all journal/checkpoint files can recompute the hashes. Protected service-owned ACLs, verified service identity and the independent Phase 2B.8/R5 security gates remain mandatory before the journal is trusted by autonomous or model-controlled execution.
+
+
+## DGA-GFX-0.4 - read-only GitHub repository and Actions adapter
+
+**Status:** implementation candidate; exact-head Windows PowerShell 5.1 qualification is pending.
+
+DGA-GFX-0.4 adds a typed read-only GitHub REST adapter for the fixed Sharnou/Sharnou-Compiler repository. Its public operations read repository metadata, branch tips, commit metadata, source-file contents, pull-request state, Actions workflow runs and run-artifact metadata. The adapter has no general-purpose URL or HTTP method input. Every network request is HTTPS to api.github.com, uses an explicit GET method, disables automatic redirects, applies bounded timeouts and response sizes, and suppresses response bodies in HTTP error messages.
+
+Source-file reads first resolve the requested branch/ref to a full commit SHA, then request the file at that exact SHA. The adapter verifies Git's blob SHA-1 against the received bytes and records an independent SHA-256 digest and byte count. Source reads are capped at 1 MiB. Actions results are queried by full commit SHA; a returned run with a different head SHA is rejected. Commit evidence binds repository identity, commit/tree identity, workflow run IDs and attempts, timestamps, conclusions, and each artifact's run ID, size, expiration and GitHub-provided SHA-256 digest.
+
+A fine-grained GitHub token can be configured interactively with Read-Host -AsSecureString. It is encrypted with Windows DPAPI for the current Windows user and written under %LOCALAPPDATA%\\Sharnou\\DevAgent\\Credentials with an owner-only ACL. The CLI never accepts a token argument and its credential status output contains no token. Recommended fine-grained token permissions are repository Metadata: read, Contents: read, Pull requests: read and Actions: read. Use the narrowest repository selection possible. See the official [fine-grained token permission matrix](https://docs.github.com/en/rest/authentication/permissions-required-for-fine-grained-personal-access-tokens).
+
+Example Windows PowerShell 5.1 commands:
+
+\`\`\`powershell
+.\\Tools\\DevAgent\\Invoke-GfxGitHubAdapter.ps1 -Action CredentialStatus
+.\\Tools\\DevAgent\\Invoke-GfxGitHubAdapter.ps1 -Action ConfigureCredential
+.\\Tools\\DevAgent\\Invoke-GfxGitHubAdapter.ps1 -Action PullRequestEvidence -PullRequestNumber 44
+.\\Tools\\DevAgent\\Invoke-GfxGitHubAdapter.ps1 -Action CommitEvidence -CommitSha <full-40-character-sha>
+.\\Tools\\DevAgent\\Invoke-GfxGitHubAdapter.ps1 -Action File -Path Tools/DevAgent/GfxTaskJournal.psm1 -Ref <branch-or-full-sha>
+\`\`\`
+
+The captured artifact entries are metadata only. DGA-GFX-0.4 does not download ZIP artifacts, extract archives, fetch job logs, or claim that the GitHub-reported digest has been independently verified against artifact bytes. A later bounded evidence collector must perform digest-verified artifact retrieval before artifacts can be treated as locally verified test evidence. Workflow conclusion alone is not a qualification decision; exact-head checks, test totals, artifact payload verification and owner acceptance remain separate gates.
+
+The credential store is DPAPI-protected for the interactive user's Windows identity, not a service SID or cross-session secret broker. It must not be treated as service-owned authentication until the independent Phase 2B.8/R5 identity, ACL and lifecycle qualification is accepted. The adapter does not launch processes, execute shell commands, infer/generate code, write Git objects, create branches, mutate PRs/issues, trigger or rerun workflows, approve deployments, or run in the background. External API content remains untrusted input and must be size-bounded, provenance-bound and reviewed before reuse.
