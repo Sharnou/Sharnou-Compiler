@@ -354,3 +354,10 @@ This is a local data-persistence primitive only. It does not enable autonomous m
 DGA-GFX-0.3 now has a Windows PowerShell 5.1-qualified append-only task journal, record hash chain, deterministic idempotency keys, immutable checkpoint chain and restart recovery. The final code/test head is 847e9e7c3c5b07d02ce2cb21aa56caac1293e4fa. Both push and PR Windows runs passed; 30 tests passed, 0 failed, with source encoding/BOM and CLI Initialize/Inspect checks passing.
 
 Resume requires a committed durable checkpoint. Replay rejects record sequence gaps, altered event bodies and altered checkpoint bodies. Repeated recovery is idempotent. This layer provides bounded task progress state, not model-conversation storage, an authenticated trust store, or an active background worker. Its Local named mutex coordinates within one Windows logon session only. Service-owned ACLs and Phase 2B.8/R5 gates remain separate prerequisites.
+
+
+## DGA-GFX-0.4 implementation candidate
+
+A read-only GitHub REST adapter is being implemented on the isolated branch devagent-gfx-readonly-github-adapter-20261128, based on the exact DGA-GFX-0.3 PR #44 head dba4e402f49162c3bd4b71ad0f1b0e90cf144c0e. The adapter is scoped to Sharnou/Sharnou-Compiler and typed GET operations for repository, branch, commit, source file, pull request, Actions runs and artifact metadata. Source bytes are pinned to a resolved commit and verified against Git blob SHA-1 plus SHA-256. Actions runs are bound to the requested full commit SHA.
+
+Credentials use an interactive SecureString prompt, current-user DPAPI encryption and an owner-only local ACL. The adapter exposes no arbitrary URL/method, shell, process or write operation. Artifact payloads and job logs are not downloaded in this increment; GitHub's artifact digest is retained as provenance metadata only. Exact-head Windows qualification and independent PR review are pending. Autonomous execution, inference and background research remain disabled.
