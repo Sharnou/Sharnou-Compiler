@@ -1,0 +1,309 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sharnou.dev/schemas/sgir/1/sgir.schema.json",
+  "title": "Sharnou Graphics Intermediate Representation SGIR/1",
+  "description": "Structural schema for the first verified D3D11 graphics IR profile. Semantic and CFG invariants are enforced by SharnouGraphicsIR.ps1.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "moduleId",
+    "target",
+    "capabilities",
+    "types",
+    "resources",
+    "entryPoints",
+    "functions"
+  ],
+  "properties": {
+    "schema": { "const": "SGIR/1" },
+    "moduleId": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$" },
+    "target": { "$ref": "#/$defs/target" },
+    "capabilities": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "shader.pixel",
+          "shader.vertex",
+          "texture.sample.implicit_lod"
+        ]
+      }
+    },
+    "types": { "type": "array", "items": { "$ref": "#/$defs/typeDeclaration" } },
+    "resources": { "type": "array", "items": { "$ref": "#/$defs/resource" } },
+    "entryPoints": { "type": "array", "items": { "$ref": "#/$defs/entryPoint" } },
+    "functions": { "type": "array", "items": { "$ref": "#/$defs/function" } }
+  },
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z_][A-Za-z0-9_.-]*$"
+    },
+    "typeId": {
+      "type": "string",
+      "pattern": "^(void|bool|i32|u32|f32|[A-Za-z_][A-Za-z0-9_.-]{0,127})$"
+    },
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [ "api", "featureLevel", "shaderModel" ],
+      "properties": {
+        "api": { "const": "d3d11" },
+        "featureLevel": { "const": "11_0" },
+        "shaderModel": { "const": "5_0" }
+      }
+    },
+    "scalarType": {
+      "enum": [ "bool", "i32", "u32", "f32" ]
+    },
+    "typeDeclaration": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [ "id", "kind", "elementType", "lanes" ],
+          "properties": {
+            "id": { "$ref": "#/$defs/identifier" },
+            "kind": { "const": "vector" },
+            "elementType": { "enum": [ "f32", "i32", "u32" ] },
+            "lanes": { "type": "integer", "minimum": 2, "maximum": 4 }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [ "id", "kind", "elementType", "rows", "columns", "major" ],
+          "properties": {
+            "id": { "$ref": "#/$defs/identifier" },
+            "kind": { "const": "matrix" },
+            "elementType": { "const": "f32" },
+            "rows": { "type": "integer", "minimum": 2, "maximum": 4 },
+            "columns": { "type": "integer", "minimum": 2, "maximum": 4 },
+            "major": { "enum": [ "row", "column" ] }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [ "id", "kind", "fields" ],
+          "properties": {
+            "id": { "$ref": "#/$defs/identifier" },
+            "kind": { "const": "struct" },
+            "fields": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [ "name", "type", "index" ],
+                "properties": {
+                  "name": { "type": "string", "minLength": 1, "maxLength": 128 },
+                  "type": { "$ref": "#/$defs/typeId" },
+                  "index": { "type": "integer", "minimum": 0, "maximum": 65535 }
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [ "id", "kind", "elementType", "count" ],
+          "properties": {
+            "id": { "$ref": "#/$defs/identifier" },
+            "kind": { "const": "array" },
+            "elementType": { "$ref": "#/$defs/typeId" },
+            "count": { "type": "integer", "minimum": 1, "maximum": 65536 }
+          }
+        }
+      ]
+    },
+    "resource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [ "id", "name", "kind", "set", "binding", "type", "stages" ],
+      "properties": {
+        "id": { "$ref": "#/$defs/identifier" },
+        "name": { "type": "string", "minLength": 1 },
+        "kind": { "enum": [ "texture2d", "sampler", "constant_buffer" ] },
+        "set": { "type": "integer", "minimum": 0, "maximum": 7 },
+        "binding": { "type": "integer", "minimum": 0, "maximum": 127 },
+        "type": { "$ref": "#/$defs/typeId" },
+        "stages": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "enum": [ "vertex", "pixel" ] }
+        }
+      }
+    },
+    "stageInterface": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [ "id", "location", "semantic", "type", "interpolation" ],
+      "properties": {
+        "id": { "$ref": "#/$defs/identifier" },
+        "location": { "type": "integer", "minimum": 0, "maximum": 31 },
+        "semantic": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "type": { "$ref": "#/$defs/typeId" },
+        "interpolation": { "enum": [ "perspective", "noperspective", "flat" ] }
+      }
+    },
+    "entryPoint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [ "name", "stage", "function", "inputs", "outputs" ],
+      "properties": {
+        "name": { "$ref": "#/$defs/identifier" },
+        "stage": { "enum": [ "vertex", "pixel" ] },
+        "function": { "$ref": "#/$defs/identifier" },
+        "inputs": { "type": "array", "items": { "$ref": "#/$defs/stageInterface" } },
+        "outputs": { "type": "array", "items": { "$ref": "#/$defs/stageInterface" } }
+      }
+    },
+    "parameter": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [ "id", "type", "index" ],
+      "properties": {
+        "id": { "$ref": "#/$defs/identifier" },
+        "type": { "$ref": "#/$defs/typeId" },
+        "index": { "type": "integer", "minimum": 0, "maximum": 255 }
+      }
+    },
+    "instruction": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [ "op", "result", "type", "literal" ],
+          "properties": {
+            "op": { "const": "const" },
+            "result": { "$ref": "#/$defs/identifier" },
+            "type": { "$ref": "#/$defs/scalarType" },
+            "literal": {}
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [ "op", "result", "type", "interface" ],
+          "properties": {
+            "op": { "const": "load_input" },
+            "result": { "$ref": "#/$defs/identifier" },
+            "type": { "$ref": "#/$defs/typeId" },
+            "interface": { "$ref": "#/$defs/identifier" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [ "op", "result", "type", "operands" ],
+          "properties": {
+            "op": { "enum": [ "add", "mul", "construct_vector" ] },
+            "result": { "$ref": "#/$defs/identifier" },
+            "type": { "$ref": "#/$defs/typeId" },
+            "operands": { "type": "array", "items": { "$ref": "#/$defs/identifier" } }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [ "op", "result", "type", "incoming" ],
+          "properties": {
+            "op": { "const": "phi" },
+            "result": { "$ref": "#/$defs/identifier" },
+            "type": { "$ref": "#/$defs/typeId" },
+            "incoming": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [ "block", "value" ],
+                "properties": {
+                  "block": { "$ref": "#/$defs/identifier" },
+                  "value": { "$ref": "#/$defs/identifier" }
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [ "op", "interface", "value" ],
+          "properties": {
+            "op": { "const": "store_output" },
+            "interface": { "$ref": "#/$defs/identifier" },
+            "value": { "$ref": "#/$defs/identifier" }
+          }
+        }
+      ]
+    },
+    "terminator": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [ "op", "target" ],
+          "properties": {
+            "op": { "const": "branch" },
+            "target": { "$ref": "#/$defs/identifier" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [ "op", "condition", "trueTarget", "falseTarget" ],
+          "properties": {
+            "op": { "const": "branch_conditional" },
+            "condition": { "$ref": "#/$defs/identifier" },
+            "trueTarget": { "$ref": "#/$defs/identifier" },
+            "falseTarget": { "$ref": "#/$defs/identifier" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [ "op" ],
+          "properties": {
+            "op": { "const": "return" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [ "op", "value" ],
+          "properties": {
+            "op": { "const": "return" },
+            "value": { "$ref": "#/$defs/identifier" }
+          }
+        }
+      ]
+    },
+    "basicBlock": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [ "id", "instructions", "terminator" ],
+      "properties": {
+        "id": { "$ref": "#/$defs/identifier" },
+        "instructions": { "type": "array", "items": { "$ref": "#/$defs/instruction" } },
+        "terminator": { "$ref": "#/$defs/terminator" }
+      }
+    },
+    "function": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [ "id", "returnType", "entryBlock", "parameters", "blocks" ],
+      "properties": {
+        "id": { "$ref": "#/$defs/identifier" },
+        "returnType": { "$ref": "#/$defs/typeId" },
+        "entryBlock": { "$ref": "#/$defs/identifier" },
+        "parameters": { "type": "array", "items": { "$ref": "#/$defs/parameter" } },
+        "blocks": { "type": "array", "items": { "$ref": "#/$defs/basicBlock" } }
+      }
+    }
+  }
+}
