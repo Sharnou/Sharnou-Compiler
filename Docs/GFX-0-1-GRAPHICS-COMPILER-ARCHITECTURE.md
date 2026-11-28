@@ -327,6 +327,10 @@ The first runtime milestone is intentionally small: compile, reflect, bind and r
 - Microsoft: [D3D11_QUERY](https://learn.microsoft.com/windows/win32/api/d3d11/ne-d3d11-d3d11_query), [D3D11_QUERY_DATA_TIMESTAMP_DISJOINT](https://learn.microsoft.com/windows/win32/api/d3d11/ns-d3d11-d3d11_query_data_timestamp_disjoint), and [ID3D11DeviceContext::GetData](https://learn.microsoft.com/windows/win32/api/d3d11/nf-d3d11-id3d11devicecontext-getdata).
 - Microsoft PIX: [Requirements and D3D11 capture limitations](https://devblogs.microsoft.com/pix/requirements/). PIX is not the primary profiler for the initial D3D11 renderer.
 
+## 15. Learning path
+
+Use [Docs/SHARNOU-GRAPHICS-COMPILER-LEARNING-PATH.md](SHARNOU-GRAPHICS-COMPILER-LEARNING-PATH.md) for the ordered study sequence covering compiler construction, graphics math, D3D11, shader compilation, asset validation, static/runtime analysis, profiling and IDE integration. It is a learning guide for the proposal, not a statement that these components exist today.
+
 ## 15. Current implementation status
 
 As of 2026-11-28, the repository contains the existing high-level 3D MMORPG renderer roadmap. This GFX-0.1 proposal adds a dedicated shader-compiler and analysis architecture. It does not add a shader language, SGIR implementation, shader bytecode generator, asset analyzer, material editor, render graph, GPU profiler, or graphics IDE feature.

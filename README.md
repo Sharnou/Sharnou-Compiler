@@ -23,7 +23,7 @@ The design choice is a purpose-built Sharnou language and toolchain, not a C++-c
 
 See [Docs/Renderer-Roadmap-3D-MMORPG.md](Docs/Renderer-Roadmap-3D-MMORPG.md) for the complete architecture, subsystem details, implementation phases, acceptance gates, and definition of done.
 
-The proposed [Sharnou Graphics Compiler and Analysis Architecture](Docs/GFX-0-1-GRAPHICS-COMPILER-ARCHITECTURE.md) defines a separate typed shader IR, shader/static analysis, D3D11 backend adapter, asset analyzer, reflection contract, and IDE workbench. It is design-only until its milestone acceptance tests pass.
+The proposed [Sharnou Graphics Compiler and Analysis Architecture](Docs/GFX-0-1-GRAPHICS-COMPILER-ARCHITECTURE.md) defines a separate typed shader IR, shader/static analysis, D3D11 backend adapter, asset analyzer, reflection contract, and IDE workbench. It is design-only until its milestone acceptance tests pass. The [Sharnou graphics compiler learning path](Docs/SHARNOU-GRAPHICS-COMPILER-LEARNING-PATH.md) lays out the concepts and practical sequence for building it.
 
 ## Milestone 7A - Control flow
 
