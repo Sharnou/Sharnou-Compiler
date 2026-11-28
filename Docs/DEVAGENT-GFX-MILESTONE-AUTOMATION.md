@@ -396,3 +396,8 @@ DGA-GFX-0.4 implements a read-only GitHub adapter and a bounded metadata-only ev
 Example: .\Tools\DevAgent\Invoke-GfxGitHubAdapter.ps1 -Action PullRequestEvidence -PullRequestNumber 45 -PersistEvidence. The default persistence root is %LOCALAPPDATA%\Sharnou\DevAgent\DgaGfxState; -StateDirectory overrides it. A snapshot gets its own DGA campaign journal identity, deterministic task ID, immutable checkpoint and idempotent completion. It contains repository/commit/run/artifact metadata only, is bounded to 240 KiB with at most 250 workflow-run summaries and 500 artifact summaries, and records truncation/omission counts.
 
 The GitHub artifact SHA-256 value is an API-supplied metadata field. This milestone does not download the artifact archive or independently hash its bytes; it does not certify the artifact payload. Current-user DPAPI token storage is not a service identity/secret broker. The DGA task journal's SHA-256 chain provides corruption detection, not authentication. Phase 2B.8/R5 service identity, ACL and key lifecycle remain separate prerequisites. No model inference, source generation, process launch, shell, GitHub mutation, worker scheduling or background execution is enabled.
+
+
+### DGA-GFX-0.4 final PR-tip qualification
+
+The exact docs-synchronized PR tip 2acd3011efdd997d645b38746a9ce7714aaf9e94 passed Windows PowerShell 5.1 qualification. Pull-request run #46164469232 and push run #46164462938 both completed PASS. On this exact head the adapter suite passed 44/44 and the inherited durable-journal suite passed 30/30; strict evidence-schema parsing, ASCII/no-BOM enforcement and the credential-status CLI gate also passed. This supersedes the earlier feature-only head reference above. PR #45 remains draft and open.
