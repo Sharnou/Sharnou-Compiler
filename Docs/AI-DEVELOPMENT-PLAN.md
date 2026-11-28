@@ -365,7 +365,7 @@ Credentials use an interactive SecureString prompt, current-user DPAPI encryptio
 
 ## DGA-GFX-0.4 - Windows-qualified read-only GitHub adapter
 
-The DGA-GFX-0.4 adapter implementation and journal integration pass Windows PowerShell 5.1 qualification on code/test head 57054ca03e2119b345621cff22bd7bf31b8a495e. PR run #46163917653 and push run #46163913745 passed. The adapter suite passed 43/43; the inherited DGA-GFX-0.3 task-journal regression suite passed 30/30. The exact docs-sync PR head is requalified by the same workflow.
+The DGA-GFX-0.4 adapter implementation and journal integration pass Windows PowerShell 5.1 qualification on code/test head bacde01986c701ca8735e0e27591bdba3f3b2235. PR run #46164332876 and push run #46164326875 passed. The adapter suite passed 44/44; the inherited DGA-GFX-0.3 task-journal regression suite passed 30/30. The exact docs-sync PR head is requalified by the same workflow.
 
 The milestone supplies read-only repository, branch, commit, file, pull-request, Actions-run and artifact-metadata reads; source reads are commit-pinned and Git-blob-hash verified. Bounded metadata-only snapshots persist as deterministic DGA-GFX-0.4 qualification tasks using the DGA-GFX-0.3 journal. Credential storage is interactive, current-user DPAPI and owner-ACL protected.
 
