@@ -220,3 +220,32 @@ Model-facing execution: DISABLED.
 Autonomous execution: DISABLED.
 Phase 2B.8 security acceptance: NOT ACCEPTED.
 Production installation/rollout: NOT AUTHORIZED.
+
+
+## R5.1.d implementation tranche — 2026-11-28
+
+Implementation is isolated on `phase-2b8-r5-1d-scm-lifecycle-20261128`, based on the R5.1.c exact-head qualified source tip. The R5.1.c branch and its accepted evidence are not modified.
+
+### Implemented on the R5.1.d branch
+
+- Added explicit opt-in native SCM test mode, fault selector and bounded pending-state hold. Test controls are rejected without `-EnableNativeScmServiceTestMode`, and test mode is rejected unless the native SCM host mode is also enabled.
+- Added deterministic failure injection for dispatcher startup, HandlerEx registration, event creation, and each of START_PENDING, RUNNING, STOP_PENDING and STOPPED `SetServiceStatus` boundaries.
+- Added a test-only `Sleep` import at the reserved Kernel32 IAT slot. Production service imports remain the existing minimal nine-API profile.
+- Added the `SHARNOU_R5_1_D_TEST_ONLY_V1` data marker to generated test images. The test verifier requires the marker and test import profile; the production verifier rejects the test-only profile.
+- Corrected STOP_PENDING error handling so a successful `SetServiceStatus` call does not capture a stale thread last-error value.
+- Added a Sharnou-generated callback probe that calls the actual emitted HandlerEx entry point with INTERROGATE, STOP, SHUTDOWN and duplicate STOP. It verifies that INTERROGATE does not signal the event and stop-class controls are idempotently signalled.
+- Added a Windows lifecycle qualification script for visible pending/running/stopped states and fields, three start/stop cycles, a start/stop race, duplicate STOP attempt, forced process termination, post-crash restart, deferred deletion recovery and every fault point.
+- Added a dedicated exact-head Windows Server 2025 workflow and evidence bundle, separate from R5.1.c.
+
+### Qualification boundary and remaining work
+
+The direct HandlerEx probe is callback-level evidence. It is **not** a real Service Control Manager shutdown broadcast. Windows does not allow an ordinary `ControlService` request to synthesize `SERVICE_CONTROL_SHUTDOWN`; that control is delivered by the operating system during shutdown. Do not report the direct callback probe as proof of OS shutdown delivery. The real shutdown broadcast still requires a disposable Windows VM/host test that can be safely shut down without destroying the CI runner.
+
+R5.1.d is therefore **IMPLEMENTATION IN PROGRESS / EXACT-HEAD WINDOWS QUALIFICATION PENDING** until the dedicated workflow passes and its artifact is downloaded and inspected. Even after the declared workflow scope passes, full R5.1.d acceptance remains blocked on the isolated OS-shutdown delivery test and inspection of all lifecycle/fault artifacts. Do not advance to R5.2 before that acceptance.
+
+The inherited Low-IL AppContainer DPAPI test remains INCONCLUSIVE for the previously documented PowerShell `System.Security` loading issue. This is a separate Phase 2B.8 security evidence gap.
+
+Model-facing execution: DISABLED.
+Autonomous execution: DISABLED.
+Phase 2B.8 security acceptance: NOT ACCEPTED.
+Production service rollout/key provisioning: NOT AUTHORIZED.

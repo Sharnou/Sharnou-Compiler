@@ -2353,3 +2353,20 @@ Model-facing execution: DISABLED.
 Autonomous execution: DISABLED.
 Phase 2B.8 security acceptance: NOT ACCEPTED.
 Production rollout: NOT AUTHORIZED.
+
+
+## R5.1.d implementation state — 2026-11-28
+
+- Isolated branch: `phase-2b8-r5-1d-scm-lifecycle-20261128`.
+- Base: the R5.1.c exact-head qualified branch tip; R5.1.c source/evidence were not modified.
+- Implemented opt-in test-only compiler mode, deterministic injection at dispatcher/HandlerEx registration/event creation and all four SetServiceStatus boundaries, bounded test pending windows, a test-image marker, and a verifier that accepts the test profile only with an explicit test switch while rejecting it in production mode.
+- Added native HandlerEx direct-call test for INTERROGATE, STOP, SHUTDOWN and duplicate STOP; added test harness for three real SCM start/stop cycles, pending/running/stopped status fields, a start-stop race, duplicate STOP attempt, forced process termination, restart, interrupted deletion and failure injections.
+- Added a separate exact-head Windows Server 2025 workflow. The code-bearing branch has not yet passed its Windows qualification; no exact-head artifact has yet been inspected. Current status is IMPLEMENTATION IN PROGRESS / QUALIFICATION PENDING.
+- The HandlerEx SHUTDOWN probe is callback-level only. Actual Windows OS shutdown delivery remains UNTESTED and requires a disposable VM/host; do not claim that `ControlService` produced a shutdown broadcast.
+- R5.1.d is not accepted, and R5.2 remains blocked until exact-head Windows runs and artifact inspection pass and the isolated OS shutdown delivery gap is closed.
+- The previous Low-IL AppContainer DPAPI `System.Security` diagnostic remains INCONCLUSIVE and remains a separate Phase 2B.8 gap.
+
+Model-facing execution: DISABLED.
+Autonomous execution: DISABLED.
+Phase 2B.8 security acceptance: NOT ACCEPTED.
+Production rollout, key provisioning, and process-execution enablement: NOT AUTHORIZED.
