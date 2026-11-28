@@ -1,0 +1,136 @@
+name: GFX-0.2 SGIR/1 Schema and Verifier Gate
+
+on:
+  push:
+    branches:
+      - graphics-compiler-gfx02-sgir-20261128
+  pull_request:
+    branches:
+      - graphics-compiler-gfx01-architecture-20261128
+    types:
+      - opened
+      - synchronize
+      - reopened
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gfx-0-2-sgir-verifier-\${{ github.event.pull_request.head.sha || github.sha }}
+  cancel-in-progress: false
+
+jobs:
+  sgir-verifier:
+    name: Exact-head Windows SGIR/1 and compiler regression
+    runs-on: windows-2025
+    timeout-minutes: 45
+    env:
+      EXPECTED_TESTED_SHA: \${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - name: Checkout exact source head
+        uses: actions/checkout@v4
+        with:
+          ref: \${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact head and source encoding
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $actualHead = (& git rev-parse HEAD).Trim()
+          if ($LASTEXITCODE -ne 0 -or $actualHead -cne $env:EXPECTED_TESTED_SHA) {
+            throw "Exact-head mismatch: expected=$env:EXPECTED_TESTED_SHA actual=$actualHead"
+          }
+          $paths = @(
+            'Tools/SharnouGraphicsIR.ps1',
+            'Schemas/SGIR/1/sgir.schema.json',
+            'Examples/GraphicsIR/triangle-minimal.sgir.json',
+            'Tests/Test-SharnouGraphicsIR.ps1',
+            'Docs/GFX-0-2-SGIR-1-SCHEMA-AND-VERIFIER.md'
+          )
+          foreach ($relative in $paths) {
+            if (-not (Test-Path -LiteralPath $relative -PathType Leaf)) { throw "Missing required GFX-0.2 file: $relative" }
+            $bytes = [IO.File]::ReadAllBytes((Join-Path $env:GITHUB_WORKSPACE $relative))
+            if ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF) {
+              throw "UTF-8 BOM is prohibited: $relative"
+            }
+            if ($relative -match '\.(ps1|json|md)$') {
+              foreach ($byte in $bytes) {
+                if ($byte -gt 0x7F) { throw "Non-ASCII source/artifact byte found in $relative" }
+              }
+            }
+          }
+          New-Item -ItemType Directory -Path 'gfx-0-2-evidence' -Force | Out-Null
+          "tested_commit=$actualHead" | Set-Content -LiteralPath 'gfx-0-2-evidence\metadata.txt' -Encoding ASCII
+          "runner_os=$env:RUNNER_OS" | Add-Content -LiteralPath 'gfx-0-2-evidence\metadata.txt' -Encoding ASCII
+          "runner_arch=$env:RUNNER_ARCH" | Add-Content -LiteralPath 'gfx-0-2-evidence\metadata.txt' -Encoding ASCII
+          "windows=$([Environment]::OSVersion.VersionString)" | Add-Content -LiteralPath 'gfx-0-2-evidence\metadata.txt' -Encoding ASCII
+          "powershell=$($PSVersionTable.PSVersion)" | Add-Content -LiteralPath 'gfx-0-2-evidence\metadata.txt' -Encoding ASCII
+
+      - name: Run existing compiler regression
+        id: compiler-regression
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          .\Test.ps1
+
+      - name: Run SGIR/1 positive, negative, CFG and determinism tests
+        id: gfx-tests
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          .\Tests\Test-SharnouGraphicsIR.ps1
+
+      - name: Verify standalone SGIR command-line contract
+        id: cli
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          .\Tools\SharnouGraphicsIR.ps1 -Action Verify -InputPath .\Examples\GraphicsIR\triangle-minimal.sgir.json
+          $output = Join-Path $env:RUNNER_TEMP 'triangle.canonical.sgir.json'
+          .\Tools\SharnouGraphicsIR.ps1 -Action Canonicalize -InputPath .\Examples\GraphicsIR\triangle-minimal.sgir.json -OutputPath $output
+          if (-not (Test-Path -LiteralPath $output -PathType Leaf)) { throw 'Canonical SGIR output was not created.' }
+          $digest = (Get-FileHash -LiteralPath $output -Algorithm SHA256).Hash.ToLowerInvariant()
+          "canonical_file_sha256=$digest" | Add-Content -LiteralPath 'gfx-0-2-evidence\metadata.txt' -Encoding ASCII
+          "canonical_cli=PASS" | Add-Content -LiteralPath 'gfx-0-2-evidence\metadata.txt' -Encoding ASCII
+
+      - name: Build exact-head qualification manifest
+        if: always()
+        shell: powershell
+        env:
+          REGRESSION_OUTCOME: \${{ steps.compiler-regression.outcome }}
+          SGIR_OUTCOME: \${{ steps.gfx-tests.outcome }}
+          CLI_OUTCOME: \${{ steps.cli.outcome }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if (-not (Test-Path -LiteralPath 'gfx-0-2-evidence' -PathType Container)) {
+            New-Item -ItemType Directory -Path 'gfx-0-2-evidence' -Force | Out-Null
+          }
+          $files = @(
+            'Tools/SharnouGraphicsIR.ps1',
+            'Schemas/SGIR/1/sgir.schema.json',
+            'Examples/GraphicsIR/triangle-minimal.sgir.json',
+            'Tests/Test-SharnouGraphicsIR.ps1'
+          )
+          $head = (& git rev-parse HEAD).Trim()
+          $manifest = @(
+            "tested_commit=$head",
+            "compiler_regression=$env:REGRESSION_OUTCOME",
+            "sgir_tests=$env:SGIR_OUTCOME",
+            "cli=$env:CLI_OUTCOME",
+            "qualification_result=$(if ($env:REGRESSION_OUTCOME -eq 'success' -and $env:SGIR_OUTCOME -eq 'success' -and $env:CLI_OUTCOME -eq 'success') { 'PASS' } else { 'FAIL_OR_INCOMPLETE' })"
+          )
+          foreach ($path in $files) {
+            if (Test-Path -LiteralPath $path -PathType Leaf) {
+              $hash = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
+              $manifest += "sha256.$path=$hash"
+            }
+          }
+          [IO.File]::WriteAllLines((Join-Path $env:GITHUB_WORKSPACE 'gfx-0-2-evidence\manifest.txt'), $manifest, [Text.Encoding]::ASCII)
+
+      - name: Upload exact-head evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gfx-0-2-sgir-evidence
+          path: gfx-0-2-evidence
+          if-no-files-found: error
