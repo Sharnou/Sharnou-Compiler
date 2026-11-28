@@ -27,7 +27,7 @@ function Set-MockQueue {
   return $queue.Dequeue()
  }.GetNewClosure()
  & $module {param($value)$script:GfxTransportOverride=$value} $transport
- return $queue
+ return ,$queue
 }
 function Clear-MockTransport {& $module {$script:GfxTransportOverride=$null}}
 function Get-TestCommitObject {
