@@ -3945,7 +3945,7 @@ function Emit-NativeScmStatusCall {
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1)) # RCX = SERVICE_STATUS_HANDLE
     Emit-LeaRaxFrame -SlotPosition $StatusBase
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC2)) # RDX = SERVICE_STATUS*
-    Emit-Win64CallIat -TargetRva ([UInt32]0x30B0) # SetServiceStatus
+    Emit-Win64CallIat -TargetRva ([UInt32]0x30C0) # SetServiceStatus
 }
 function Emit-NativeScmCaptureLastError {
     param([int] $ErrorSlot, [switch] $OnlyIfEmpty)
@@ -3992,7 +3992,7 @@ function Emit-NativeScmCallbacks {
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC2)) # RDX = typed HandlerEx pointer
     Emit-LeaRaxFrame -SlotPosition $eventSlot
     Emit-Bytes -Bytes ([byte[]]@(0x49, 0x89, 0xC0)) # R8 = stable context pointer
-    Emit-Win64CallIat -TargetRva ([UInt32]0x30A8) # RegisterServiceCtrlHandlerExW
+    Emit-Win64CallIat -TargetRva ([UInt32]0x30B8) # RegisterServiceCtrlHandlerExW
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x85, 0xC0))
     $registrationFailed = New-UniqueLabel -Prefix 'r51_register_handler_failed'
     Emit-JumpConditional -ConditionCode 0x84 -Label $registrationFailed
@@ -4148,7 +4148,7 @@ function Emit-BuiltinCall {
 
             Emit-DataAddress -DataItem $script:NativeScmServiceTableItem
             Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1)) # RCX = SERVICE_TABLE_ENTRYW*
-            Emit-Win64CallIat -TargetRva ([UInt32]0x30A0) # StartServiceCtrlDispatcherW
+            Emit-Win64CallIat -TargetRva ([UInt32]0x30B0) # StartServiceCtrlDispatcherW
             Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
             $dispatchSucceeded = New-UniqueLabel -Prefix 'r51_dispatch_succeeded'
             Emit-JumpConditional -ConditionCode 0x85 -Label $dispatchSucceeded
@@ -5277,7 +5277,7 @@ if ($script:NativeScmServiceMode) {
     $importDirectorySize = 0x3C # two descriptors and one all-zero terminator
     $importSets = @(
         [pscustomobject]@{ Descriptor = 0x00; Lookup = 0xC00; Iat = 0x70; Dll = 'KERNEL32.dll'; Names = @('ExitProcess', 'GetLastError', 'CreateEventW', 'SetEvent', 'WaitForSingleObject', 'CloseHandle') },
-        [pscustomobject]@{ Descriptor = 0x14; Lookup = 0xC40; Iat = 0xA0; Dll = 'ADVAPI32.dll'; Names = @('StartServiceCtrlDispatcherW', 'RegisterServiceCtrlHandlerExW', 'SetServiceStatus') }
+        [pscustomobject]@{ Descriptor = 0x14; Lookup = 0xC40; Iat = 0xB0; Dll = 'ADVAPI32.dll'; Names = @('StartServiceCtrlDispatcherW', 'RegisterServiceCtrlHandlerExW', 'SetServiceStatus') }
     )
 } else {
     $importDirectorySize = 0x190
@@ -5420,7 +5420,7 @@ Set-U32 -Buffer $image -Offset ($opt + 104) -Value 0; Set-U32 -Buffer $image -Of
 Set-U32 -Buffer $image -Offset ($opt + 120) -Value ([UInt32]([long]$idataRva + [long]$descriptorBase)); Set-U32 -Buffer $image -Offset ($opt + 124) -Value $importDirectorySize
 Set-U32 -Buffer $image -Offset ($opt + 136) -Value $pdataRva; Set-U32 -Buffer $image -Offset ($opt + 140) -Value $pdataBytes.Length
 Set-U32 -Buffer $image -Offset ($opt + 152) -Value $relocRva; Set-U32 -Buffer $image -Offset ($opt + 156) -Value $relocationDirectory.DirectorySize
-$iatDirectorySize = if ($script:NativeScmServiceMode) { [UInt32]0x48 } else { [UInt32]0x2F0 }
+$iatDirectorySize = if ($script:NativeScmServiceMode) { [UInt32]0x60 } else { [UInt32]0x2F0 }
 Set-U32 -Buffer $image -Offset ($opt + 208) -Value ([UInt32]([long]$idataRva + 0x70)); Set-U32 -Buffer $image -Offset ($opt + 212) -Value $iatDirectorySize
 $sectionText = 0x188
 Set-Ascii -Buffer $image -Offset $sectionText -Value '.text'; Set-U32 -Buffer $image -Offset ($sectionText + 8) -Value $codeBytes.Length; Set-U32 -Buffer $image -Offset ($sectionText + 12) -Value $textRva; Set-U32 -Buffer $image -Offset ($sectionText + 16) -Value $textRawSize; Set-U32 -Buffer $image -Offset ($sectionText + 20) -Value $textRawPointer; Set-U32 -Buffer $image -Offset ($sectionText + 36) -Value 0x60000020
