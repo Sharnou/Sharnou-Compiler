@@ -1,0 +1,52 @@
+{
+  "lockVersion": "1.0.0",
+  "profileId": "smollm2-135m-instruct",
+  "source": {
+    "repository": "HuggingFaceTB/SmolLM2-135M-Instruct",
+    "revision": "02e84e7cc564d9c3ca090f978a4da4698ccaac29"
+  },
+  "artifacts": {
+    "weights": {
+      "path": "model.safetensors",
+      "revision": "02e84e7cc564d9c3ca090f978a4da4698ccaac29",
+      "byteCount": 269060552,
+      "sha256": "5af571cbf074e6d21a03528d2330792e532ca608f24ac70a143f6b369968ab8c",
+      "state": "PINNED",
+      "digestEvidence": "HUGGINGFACE_XET_POINTER",
+      "independentLocalHashRequired": true
+    },
+    "tokenizer": {
+      "path": "tokenizer.json",
+      "revision": "02e84e7cc564d9c3ca090f978a4da4698ccaac29",
+      "byteCount": null,
+      "sha256": null,
+      "state": "REVISION_PINNED_HASH_PENDING",
+      "independentLocalHashRequired": true
+    },
+    "tokenizerConfig": {
+      "path": "tokenizer_config.json",
+      "revision": "02e84e7cc564d9c3ca090f978a4da4698ccaac29",
+      "byteCount": null,
+      "sha256": null,
+      "state": "REVISION_PINNED_HASH_PENDING",
+      "independentLocalHashRequired": true
+    },
+    "license": {
+      "path": null,
+      "revision": "02e84e7cc564d9c3ca090f978a4da4698ccaac29",
+      "byteCount": null,
+      "sha256": null,
+      "state": "MODEL_CARD_DECLARATION_ONLY",
+      "license": "Apache-2.0",
+      "independentLicenseFileRequired": true
+    }
+  },
+  "qualification": {
+    "weightsLocalSha256Verified": false,
+    "weightsHeaderParsed": false,
+    "tokenizerSha256Pinned": false,
+    "chatTemplateSha256Pinned": false,
+    "licenseFileVerified": false,
+    "allArtifactsQualified": false
+  }
+}

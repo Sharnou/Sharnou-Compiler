@@ -1,0 +1,88 @@
+name: SharnouDevAgent DGA-GFX-0.5B Safetensors Qualification
+
+on:
+  push:
+    branches:
+      - devagent-gfx-safetensors-reader-20261128
+  pull_request:
+    branches:
+      - devagent-gfx-local-inference-contract-20261128
+    paths:
+      - 'Schemas/DevAgent/GfxArtifactLock.v1.schema.json'
+      - 'Projects/DevAgent/Models/SmolLM2-135M-Instruct.artifact-lock.v1.json'
+      - 'Tools/DevAgent/GfxSafeTensorReader.psm1'
+      - 'Tools/DevAgent/Invoke-GfxSafeTensorInspection.ps1'
+      - 'Tools/DevAgent/Invoke-GfxArtifactQualification.ps1'
+      - 'Tests/Test-GfxSafeTensorReader.ps1'
+      - '.github/workflows/devagent-gfx-safetensors-reader.yml'
+      - 'Docs/DGA-GFX-0.5B-SAFETENSORS.md'
+      - 'Docs/AI-SESSION-STATE.md'
+      - 'Docs/AI-ISSUE-REGISTER.md'
+      - 'README.md'
+  workflow_dispatch:
+
+jobs:
+  safetensors-qualification:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Enforce ASCII and no BOM
+        shell: powershell
+        run: |
+          $paths = @(
+            'Schemas/DevAgent/GfxArtifactLock.v1.schema.json',
+            'Projects/DevAgent/Models/SmolLM2-135M-Instruct.artifact-lock.v1.json',
+            'Tools/DevAgent/GfxSafeTensorReader.psm1',
+            'Tools/DevAgent/Invoke-GfxSafeTensorInspection.ps1',
+            'Tools/DevAgent/Invoke-GfxArtifactQualification.ps1',
+            'Tests/Test-GfxSafeTensorReader.ps1',
+            'Docs/DGA-GFX-0.5B-SAFETENSORS.md',
+            'Docs/AI-SESSION-STATE.md',
+            'Docs/AI-ISSUE-REGISTER.md',
+            'README.md'
+          )
+          foreach ($path in $paths) {
+            $bytes = [IO.File]::ReadAllBytes((Join-Path $PWD $path))
+            if ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF) { throw "UTF-8 BOM: $path" }
+            foreach ($byte in $bytes) { if ($byte -gt 127) { throw "Non-ASCII byte: $path" } }
+          }
+          Write-Host 'PASS: source encoding and BOM policy.'
+
+      - name: Validate artifact lock and schema
+        shell: powershell
+        run: |
+          $schema = Get-Content -Raw -LiteralPath 'Schemas/DevAgent/GfxArtifactLock.v1.schema.json' | ConvertFrom-Json -ErrorAction Stop
+          $lock = Get-Content -Raw -LiteralPath 'Projects/DevAgent/Models/SmolLM2-135M-Instruct.artifact-lock.v1.json' | ConvertFrom-Json -ErrorAction Stop
+          if ($schema.additionalProperties -ne $false) { throw 'Artifact lock schema must reject additional properties.' }
+          if ($lock.artifacts.weights.byteCount -ne 269060552) { throw 'Pinned weights byte count changed.' }
+          if ($lock.artifacts.weights.sha256 -ne '5af571cbf074e6d21a03528d2330792e532ca608f24ac70a143f6b369968ab8c') { throw 'Pinned weights digest changed.' }
+          if ($lock.artifacts.tokenizer.state -ne 'REVISION_PINNED_HASH_PENDING') { throw 'Tokenizer must remain hash-pending.' }
+          if ($lock.artifacts.license.state -ne 'MODEL_CARD_DECLARATION_ONLY') { throw 'License evidence must remain declaration-only.' }
+          Write-Host 'PASS: immutable source revision and upstream weights digest lock.'
+
+      - name: Run DGA-GFX-0.5B Safetensors adversarial tests
+        shell: powershell
+        run: .\Tests\Test-GfxSafeTensorReader.ps1
+
+      - name: Run inherited DGA-GFX-0.5A contract regression
+        shell: powershell
+        run: .\Tests\Test-GfxLocalInferenceContract.ps1
+
+      - name: Run inherited DGA-GFX-0.3 task journal regression
+        shell: powershell
+        run: .\Tests\Test-GfxTaskJournal.ps1
+
+      - name: Run inherited DGA-GFX-0.4 GitHub adapter regression
+        shell: powershell
+        run: .\Tests\Test-GfxGitHubAdapter.ps1
+
+      - name: Confirm artifact and inference readiness remain blocked
+        shell: powershell
+        run: |
+          $lock = Get-Content -Raw -LiteralPath 'Projects/DevAgent/Models/SmolLM2-135M-Instruct.artifact-lock.v1.json' | ConvertFrom-Json
+          if ($lock.qualification.allArtifactsQualified -ne $false) { throw 'Artifact lock must not self-assert qualification.' }
+          if ($lock.artifacts.tokenizer.state -ne 'REVISION_PINNED_HASH_PENDING') { throw 'Tokenizer digest is still pending.' }
+          if ($lock.artifacts.license.state -ne 'MODEL_CARD_DECLARATION_ONLY') { throw 'Independent license text is still required.' }
+          Write-Host 'PASS: DGA-GFX-0.5B artifact qualification remains BLOCKED pending independent evidence.'

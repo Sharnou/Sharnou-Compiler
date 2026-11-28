@@ -1,0 +1,87 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://sharnou.dev/schemas/devagent/gfx-artifact-lock/v1.json",
+  "title": "SharnouDevAgent Model Artifact Lock v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["lockVersion", "profileId", "source", "artifacts", "qualification"],
+  "properties": {
+    "lockVersion": { "const": "1.0.0" },
+    "profileId": { "const": "smollm2-135m-instruct" },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repository", "revision"],
+      "properties": {
+        "repository": { "const": "HuggingFaceTB/SmolLM2-135M-Instruct" },
+        "revision": { "type": "string", "pattern": "^[0-9a-f]{40}$" }
+      }
+    },
+    "artifacts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["weights", "tokenizer", "tokenizerConfig", "license"],
+      "properties": {
+        "weights": { "$ref": "#/definitions/pinnedArtifact" },
+        "tokenizer": { "$ref": "#/definitions/pendingArtifact" },
+        "tokenizerConfig": { "$ref": "#/definitions/pendingArtifact" },
+        "license": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["path", "revision", "byteCount", "sha256", "state", "license", "independentLicenseFileRequired"],
+          "properties": {
+            "path": { "type": ["string", "null"] },
+            "revision": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+            "byteCount": { "type": ["integer", "null"] },
+            "sha256": { "type": ["string", "null"] },
+            "state": { "const": "MODEL_CARD_DECLARATION_ONLY" },
+            "license": { "const": "Apache-2.0" },
+            "independentLicenseFileRequired": { "const": true }
+          }
+        }
+      }
+    },
+    "qualification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["weightsLocalSha256Verified", "weightsHeaderParsed", "tokenizerSha256Pinned", "chatTemplateSha256Pinned", "licenseFileVerified", "allArtifactsQualified"],
+      "properties": {
+        "weightsLocalSha256Verified": { "const": false },
+        "weightsHeaderParsed": { "const": false },
+        "tokenizerSha256Pinned": { "const": false },
+        "chatTemplateSha256Pinned": { "const": false },
+        "licenseFileVerified": { "const": false },
+        "allArtifactsQualified": { "const": false }
+      }
+    }
+  },
+  "definitions": {
+    "pinnedArtifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "revision", "byteCount", "sha256", "state", "digestEvidence", "independentLocalHashRequired"],
+      "properties": {
+        "path": { "type": "string", "pattern": "^[A-Za-z0-9._/-]+$" },
+        "revision": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+        "byteCount": { "type": "integer", "minimum": 1 },
+        "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "state": { "const": "PINNED" },
+        "digestEvidence": { "const": "HUGGINGFACE_XET_POINTER" },
+        "independentLocalHashRequired": { "const": true }
+      }
+    },
+    "pendingArtifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "revision", "byteCount", "sha256", "state", "independentLocalHashRequired"],
+      "properties": {
+        "path": { "type": "string", "pattern": "^[A-Za-z0-9._/-]+$" },
+        "revision": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+        "byteCount": { "type": ["integer", "null"] },
+        "sha256": { "type": ["string", "null"] },
+        "state": { "const": "REVISION_PINNED_HASH_PENDING" },
+        "independentLocalHashRequired": { "const": true }
+      }
+    }
+  }
+}
