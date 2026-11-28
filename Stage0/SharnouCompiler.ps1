@@ -4058,8 +4058,10 @@ function Emit-NativeScmCallbacks {
     Emit-NativeScmCaptureLastError -ErrorSlot $errorSlot
     Emit-Jump -Label '__r51_service_cleanup'
     Mark-CodeLabel -Label $registrationFailed
-    Emit-Win64CallIat -TargetRva ([UInt32]0x3078) # No handler/status handle exists to report through.
-    Emit-Epilogue
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3078) # No service-status handle exists yet.
+    Emit-Bytes -Bytes ([byte[]]@(0x89, 0xC1)) # ECX = registration Win32 error.
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3070) # ExitProcess: a single-service host cannot remain alive without a handler.
+    Emit-Epilogue # Unreachable safety terminator if ExitProcess unexpectedly returns.
     $serviceMainEnd = [int]$script:Code.Count
     $script:NativeScmRuntimeFunctionSpecs.Add([pscustomobject]@{
         StartOffset = $serviceMainStart; EndOffset = $serviceMainEnd; Context = $serviceContext
