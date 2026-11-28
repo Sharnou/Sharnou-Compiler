@@ -532,3 +532,8 @@ PR #24 candidate head advanced to bd411c2fc777006f9b1160ab8d3d5992c2a15afa. Stag
 #### B4 follow-up — verifier review correction
 
 A static review correction was added to preserve scalar JSON properties as scalar values while preserving only true array properties as arrays. A positive test now covers both property categories. The candidate also applies explicit limits to declaration counts, parameters, stage interfaces, basic blocks and instructions before CFG dominator analysis. The verifier/schema/docs/test files are updated; JSON fixture and schema parse checks succeeded. Exact Windows PowerShell/CI acceptance remains NOT VERIFIED.
+
+
+#### B4 follow-up — bounded string validation
+
+Non-empty strings are now bounded (256 characters generally; 64 for stage semantics; 128 for struct field names and IDs). One new negative case rejects an overlong stage semantic. The authored negative corpus is now 23 cases. Exact Windows PowerShell/CI acceptance remains NOT VERIFIED.
