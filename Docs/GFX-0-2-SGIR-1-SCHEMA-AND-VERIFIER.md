@@ -50,7 +50,7 @@ Custom declarations currently include:
 - struct: named fields with unique names and contiguous zero-based indexes;
 - array: a bounded fixed element count and a declared element type.
 
-Type references must resolve. void cannot be used for a struct field or an array element. A constant-buffer resource must reference a declared struct. Cyclic aggregate types and layout computation are deferred to a separately qualified layout pass; they must not be treated as physically laid out by this milestone.
+Type references must resolve. void cannot be used for a struct field or an array element. A constant-buffer resource must reference a declared struct. Cyclic aggregate types are rejected. Physical field offsets, alignment, matrix packing and target constant-buffer layout are deferred to a separately qualified layout pass.
 
 f32 constants are represented as exactly eight uppercase hexadecimal digits containing the IEEE-754 binary32 bit pattern, not JSON decimal floating-point values. This prevents locale-dependent decimal serialization and preserves exact bit patterns.
 
