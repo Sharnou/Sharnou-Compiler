@@ -2320,3 +2320,15 @@ Architecture selection for the dedicated writer-authority service is owner-appro
 R5.1.a qualifies bounded multi-target DIR64 relocation generation and parsing. R5.1.b qualifies two callback-pointer ABI contracts. Neither creates an SCM service. R5.1.c is next: genuine Sharnou-generated inert Windows SCM host, SERVICE_TABLE_ENTRYW callback wiring, service status/control lifecycle, actual import-table verification, and disposable Windows service install/start/stop/shutdown/failure-injection tests.
 
 No service SID, production CNG key, named-pipe transport, production signed journal, process execution authority or crash recovery is implemented yet. Full Phase 2B.8 remains NOT SECURITY ACCEPTED. Model-facing and autonomous execution remain DISABLED.
+
+
+## 2026-11-28 - R5.1.c native SCM service implementation candidate
+
+- Isolated branch: `phase-2b8-r5-1c-native-scm-host-20261128`, based on corrected R5.1.b exact head `ab00219f1aa9783c148035b754eebce7269f6fbb`.
+- Added an opt-in Sharnou compiler service-host mode; minimal source `Examples/NativeScmServiceHost.sharnou`; typed code/data pointer fixups for the `SERVICE_TABLE_ENTRYW`, ServiceMain and HandlerEx; service-only KERNEL32/ADVAPI32 import set; service callback generation and unwind records.
+- Added the R5.1.c verifier mode for exact imports, data-directory bounds, Unicode service name, callback pointers, table terminator and exact DIR64 pointer target set.
+- Added `Tests/Test-NativeScmServiceHost.ps1`: compile with the Sharnou compiler, independently verify the actual PE, create a uniquely named disposable own-process service, start it via SCM, send INTERROGATE and STOP, verify STOPPED/PID zero, and delete the service.
+- Added `.github/workflows/phase-2b8-r5-1c-native-scm-gate.yml`: exact-head Windows Server 2025 checkout, source-encoding gate, focused actual SCM smoke, full `Test.ps1` regression, and evidence artifact.
+- Current acceptance state: **PENDING exact-head Windows qualification**. Source changes and file creation are not Windows execution evidence. Do not mark R5.1.c accepted until the workflow succeeds and the exact-head evidence bundle is inspected.
+- Next sequence is unchanged: R5.1.d full SCM lifecycle/failure qualification -> R5.2 service identity/protected CNG key -> R5.3 authenticated named-pipe IPC -> R5.4 service-owned authenticated durable journal. Do not start a later milestone before the preceding one is accepted.
+- Model-facing and autonomous execution remain DISABLED. Phase 2B.8 remains NOT SECURITY ACCEPTED. No service rollout, production key provisioning or process-execution enablement is authorized.
