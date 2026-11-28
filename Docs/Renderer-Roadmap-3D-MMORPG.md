@@ -237,6 +237,12 @@ Required language/runtime areas include:
 
 The Sharnou IDE should expose project builds, asset validation, shader diagnostics, runtime launch, frame capture, and CPU/GPU profiling without invoking external programming tools.
 
+## 12.1 Graphics compiler and analysis architecture
+
+The renderer also needs a first-party shader compiler, typed shader intermediate representation, static shader analyzer, asset analyzer, reflection contract and render-pipeline diagnostics. These are separate from the native x64 compiler and from the renderer feature phases R0-R11.
+
+The proposed companion architecture is documented in [Docs/GFX-0-1-GRAPHICS-COMPILER-ARCHITECTURE.md](GFX-0-1-GRAPHICS-COMPILER-ARCHITECTURE.md). It defines the shader-source -> SGIR -> verifier -> D3D11 lowering/reflection flow, asset-analysis responsibilities, IDE workbench and staged acceptance gates. That document is a design proposal; none of those new graphics-compiler capabilities should be treated as implemented until the respective Windows/runtime evidence passes.
+
 ## 13. Recommended implementation phases and gates
 
 Each phase is a separately testable milestone. Do not start the next major phase until the prior phase has unit tests, integration tests, and real Windows runtime evidence.

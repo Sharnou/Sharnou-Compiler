@@ -1,6 +1,6 @@
 # AI Issue Register - Sharnou Compiler
 
-**Last reviewed:** 2026-11-26
+**Last reviewed:** 2026-11-28
 **Live session tracker:** [Issue #8 - AI Development Plan and Live Session State](https://github.com/Sharnou/Sharnou-Compiler/issues/8)
 
 This register separates active blockers from historical findings. Do not close an issue or mark a risk resolved without the stated evidence.
@@ -489,3 +489,31 @@ PR #24 candidate head advanced to bd411c2fc777006f9b1160ab8d3d5992c2a15afa. Stag
 - PR #36 remains OPEN / DRAFT and design-only for R5.2/R5.3. R5.1.c real Sharnou-generated SCM host and R5.1.d actual SCM lifecycle/failure/cleanup qualification remain mandatory prerequisites. Do not implement R5.2 service identity/key or R5.3 pipe transport before both R5.1.c and R5.1.d pass.
 - The Low-IL AppContainer DPAPI protection subtest remains INCONCLUSIVE because the Windows PowerShell runner could not load `System.Security` (FileNotFoundException). It is not a pass and remains open.
 - **Next bounded task:** R5.1.c inert Sharnou-generated service image, actual PE import/relocation/exception verification, and disposable Windows SCM lifecycle smoke tests. Keep model-facing/autonomous execution disabled; Phase 2B.8 remains NOT SECURITY ACCEPTED.
+
+
+## GFX compiler and graphics analysis track - 2026-11-28
+
+- Tracking issue: [#40 - Build the Sharnou Graphics Compiler and Analysis System](https://github.com/Sharnou/Sharnou-Compiler/issues/40).
+- Draft architecture PR: [#39 - GFX-0.1](https://github.com/Sharnou/Sharnou-Compiler/pull/39), branch `graphics-compiler-gfx01-architecture-20261128`, latest head before this status persistence: `9bccd0c03d02acde9941246344e057fbfa8900ec`. OPEN / DRAFT / UNMERGED.
+- GFX-0.1 adds only the architecture and learning-path docs. It does not create a compiler implementation or claim graphics runtime functionality.
+- The proposed architecture keeps the Sharnou CPU compiler/PE linker separate from a GPU shader compiler and graphics asset analyzer. Proposed shader flow: source → typed AST → SGIR/1 → fail-closed verifier → optimization → target capability validation → D3D11 lowering → reflection checks → verified package.
+- Static-analysis domains include shader stage/types/resources/cbuffer/derivatives, GLB geometry/scene/accessor bounds, KTX2 payload/material semantics, skeletal/animation references, render graph/resource hazards, and CPU/GPU profile interpretation.
+- Next proposed implementation: GFX-0.2 SGIR/1 schema, canonical serialization, verifier, deterministic hash tests and malformed-IR negative corpus. Not accepted or implemented yet.
+- No external shader compiler/optimizer package has been added. D3DCompile/D3DReflect is only a proposed in-process D3D11 adapter and requires a separate dependency review.
+- Graphics profiling proposal for D3D11 uses timestamp/disjoint queries and delayed `GetData`; PIX is not a baseline D3D11 dependency.
+- Status: REPOSITORY PRESENT / STATIC REVIEWED. Shader compilation, asset analysis execution, real GPU draw, profiling and IDE graphics tooling remain NOT RUN.
+
+## Phase 2B.8 R5.1.d exact-head follow-up - 2026-11-28
+
+- PR #38 remains OPEN / DRAFT / UNMERGED, latest observed head `48b9dfc1f1897ed7b950e05f27f5257485746251`.
+- Windows run [46133422968](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/46133422968) was IN_PROGRESS at latest status check. Checkout, encoding and PowerShell parser gates passed; lifecycle step in progress, inherited regression pending, no artifact yet.
+- Run [46133193950](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/46133193950) failed on two test-harness property names (`ExitCode` vs `exit_code`) after native SCM test-image generation and PE verification passed. Fix is in the newer candidate head; do not infer any lifecycle pass from the old run.
+- R5.1.d NOT ACCEPTED; OS shutdown delivery NOT TESTED; DPAPI Low-IL diagnostic INCONCLUSIVE; R5.2/R5.3 BLOCKED; model-facing and autonomous execution DISABLED.
+
+### Additional graphics toolchain research - D3D11 compatibility and SM6 boundary
+
+- `D3DCompile` produces D3D shader bytecode for documented target profiles spanning Shader Models 2-5 and requires `D3DCompiler_47.dll`; `D3DReflect` also uses the D3DCompiler runtime. It is a D3D11-era compatibility adapter, not an SM6/DXIL backend.
+- DXC is the separate SM6+ path. Its official project documents `dxc.exe`, `dxcompiler.dll`, `dxil.dll`, DXIL and SPIR-V outputs, and an LLVM/Clang-based implementation. It remains research-only because the current Sharnou rule prohibits an external compiler/Clang dependency.
+- For an eventual SM6/D3D12 renderer, GFX must separately design a Sharnou-owned backend or request an explicit in-process DXC dependency decision; no implicit DXC install or external `dxc.exe` invocation is permitted.
+- PIX D3D11On12 capture sees translated D3D12 calls and does not preserve original D3D11 shader source/reflection metadata. The initial D3D11 profiler remains timestamp/disjoint queries with asynchronous `GetData` and Sharnou CPU markers.
+- Current graphics PR #39 branch head at this follow-up: `9bccd0c03d02acde9941246344e057fbfa8900ec`; PR body records these boundaries. GFX-0.1 remains design-only; GFX-0.2 remains proposed.
