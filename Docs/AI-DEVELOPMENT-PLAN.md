@@ -347,3 +347,10 @@ The campaign now explicitly continues after GFX-0.8 through primary-source resea
 The next DevAgent persistence increment introduces immutable append-only event records, SHA-256 record chaining, deterministic task IDs, idempotent operations, a typed task-state machine, immutable hash-bound checkpoints, and crash/restart recovery. Windows PowerShell 5.1 tests exercise lifecycle replay, repeated recovery, checkpoint restore, idempotency conflicts and corruption detection.
 
 This is a local data-persistence primitive only. It does not enable autonomous model execution, process launch, network research, GitHub writes or a background research service. Hash chaining detects tampering but is not an authentication boundary; service-owned ACLs and the separate Phase 2B.8/R5 controls remain required.
+
+
+## DGA-GFX-0.3 - qualified durable DevAgent task memory
+
+DGA-GFX-0.3 now has a Windows PowerShell 5.1-qualified append-only task journal, record hash chain, deterministic idempotency keys, immutable checkpoint chain and restart recovery. The final code/test head is 847e9e7c3c5b07d02ce2cb21aa56caac1293e4fa. Both push and PR Windows runs passed; 30 tests passed, 0 failed, with source encoding/BOM and CLI Initialize/Inspect checks passing.
+
+Resume requires a committed durable checkpoint. Replay rejects record sequence gaps, altered event bodies and altered checkpoint bodies. Repeated recovery is idempotent. This layer provides bounded task progress state, not model-conversation storage, an authenticated trust store, or an active background worker. Its Local named mutex coordinates within one Windows logon session only. Service-owned ACLs and Phase 2B.8/R5 gates remain separate prerequisites.

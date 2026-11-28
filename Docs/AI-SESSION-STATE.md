@@ -1145,3 +1145,16 @@ After the prior session record, one more isolated diagnostic commit was added to
 - No DGA-0.3 Windows test pass is claimed yet. Exact-head CI is required.
 - No background research, local model inference, source generation, process execution, GitHub mutation, automatic PR/merge/release or GFX runtime work is enabled. Campaign activation remains blocked.
 - Known boundary: SHA-256 chaining detects corruption but does not authenticate against an attacker able to rewrite the complete journal. Service-owned ACL protection and the separate Phase 2B.8/R5 security gates remain mandatory before model-controlled execution.
+
+
+### DGA-GFX-0.3 qualification completed - 2026-11-28
+
+- Final code/test head qualified: 847e9e7c3c5b07d02ce2cb21aa56caac1293e4fa.
+- Draft PR #44: https://github.com/Sharnou/Sharnou-Compiler/pull/44 (base: devagent-gfx-campaign-planner-20261128; parent DGA-GFX-0.2 PR #43).
+- Windows PowerShell 5.1 push workflow #46159857700: PASS.
+- Windows PowerShell 5.1 PR workflow #46159863463: PASS.
+- DGA-GFX-0.3 suite: 30 passed, 0 failed. ASCII/BOM gate and CLI Initialize/Inspect passed.
+- Additional hardening tests prove relative and UNC journal roots are rejected, resume is refused without a committed checkpoint, two checkpoint generations form a verified predecessor chain, missing interior records fail closed, and modified record/checkpoint bodies are rejected.
+- No default branch merge. No local inference, process execution, background research, autonomous source generation, or GitHub mutation has been activated by this persistence increment.
+- Known limitation: the named mutex is in the Local namespace and coordinates within one Windows logon session only. Cross-session same-root writer coordination is not supported.
+- Integrity is not authentication: SHA-256 chaining cannot prevent a principal with write access from rebuilding the entire journal with fresh hashes. Service-owned ACLs and the separate Phase 2B.8/R5 trust boundary are still required.

@@ -315,11 +315,11 @@ This is a repository-specific contract validator, not a complete implementation 
 
 ## DGA-GFX-0.3 - durable task journal, hash-bound checkpoints and restart recovery
 
-**Status:** implementation candidate; exact-head Windows PowerShell 5.1 qualification is pending.
+**Status:** Windows PowerShell 5.1-qualified on exact head 847e9e7c3c5b07d02ce2cb21aa56caac1293e4fa; draft PR review/acceptance remains pending.
 
 DGA-GFX-0.3 introduces a local persistence primitive for future DevAgent campaign execution. The journal is append-only and uses one immutable JSON envelope per event, named by a monotonically increasing sequence and deterministic event ID. Each envelope contains an exact body string and SHA-256 digest. Each body binds the journal ID, sequence, event ID, idempotency key, event type, task ID, timestamp, previous-record SHA-256 and Base64-encoded bounded event payload. Replay validates the complete chain from the genesis event and reconstructs task state; any malformed, missing, reordered, tampered or conflicting record fails closed.
 
-The journal uses a per-state-directory named mutex to serialize writers. A new file is written to a same-directory temporary file, flushed with FileStream.Flush(true), closed, and moved to its immutable final name. Existing records are never rewritten. A crash may leave an unreferenced temporary file or checkpoint; these are reported, not silently promoted or deleted. This is a Windows filesystem durability strategy, not a claim against faulty storage hardware, malicious same-user tampering or filesystem/volume failure.
+The journal uses a named mutex in the Windows Local namespace, derived from the state-directory path. It serializes cooperating writers within the same Windows logon session; it does not guarantee mutual exclusion across separate logon sessions that concurrently open the same state root. A new file is written to a same-directory temporary file, flushed with FileStream.Flush(true), closed, and moved to its immutable final name. Existing records are never rewritten. A crash may leave an unreferenced temporary file or checkpoint; these are reported, not silently promoted or deleted. This is a Windows filesystem durability strategy, not a claim against faulty storage hardware, malicious same-user tampering or filesystem/volume failure.
 
 Checkpoints are separate immutable files. Their state payload is bounded, UTF-8 encoded and SHA-256 hashed; each checkpoint body binds journal ID, task ID, checkpoint sequence, predecessor checkpoint digest, payload digest and state bytes. A TaskCheckpointed journal event binds the filename and both digests. Replay verifies every referenced checkpoint, including its predecessor link, before it trusts task state. A checkpoint written immediately before a crash but not journaled is an orphan and is not treated as committed.
 
@@ -343,3 +343,22 @@ The default state root is %LOCALAPPDATA%\Sharnou\DevAgent\GfxCampaignState; test
 This component performs local file persistence only. It has no process launch, shell, network, repository mutation or model-inference path. It does not enable unattended workers, research scheduling, model-facing process execution, build/test invocation or GitHub writes. It is not yet the fully qualified protected execution workspace: ACL identity, service-owned storage, hostile same-user process isolation, and the separate Phase 2B.8/R5 process-broker boundary remain independent requirements. A checksum detects modification; it is not an authentication signature and does not stop an attacker who can rewrite the complete journal and recompute hashes.
 
 DGA-0.3 does not itself make continuous research run in the background. It supplies durable task history and restart reconciliation needed by later repository/research adapters, local inference, typed patch transactions, specialist orchestration and the eventual scheduler.
+
+
+## DGA-GFX-0.3 Windows qualification - 2026-11-28
+
+- Qualified implementation head: 847e9e7c3c5b07d02ce2cb21aa56caac1293e4fa.
+- Windows PowerShell 5.1 push run: https://github.com/Sharnou/Sharnou-Compiler/actions/runs/46159857700 - PASS.
+- Windows PowerShell 5.1 pull-request run: https://github.com/Sharnou/Sharnou-Compiler/actions/runs/46159863463 - PASS.
+- Journal test suite: 30 passed, 0 failed.
+- Source encoding and BOM gate: PASS.
+- CLI Initialize and Inspect: PASS; returned integrity PASS, one genesis record, zero tasks and no abandoned temporary files.
+- Negative tests cover relative and UNC state roots, conflicting idempotency reuse, credential-shaped checkpoint keys, resume without a committed checkpoint, checkpoint tampering, journal tampering and a missing interior record.
+- Positive tests cover deterministic task identities, lifecycle transitions, duplicate no-op behavior, two sequential checkpoints and checkpoint predecessor validation, restart interruption, idempotent recovery, verified resume, completion, failure and cancellation.
+- PR #44 remains a draft stacked on PR #43. No merge or default-branch write occurred.
+
+### Operational limitations to preserve
+
+The mutex uses the Windows Local namespace, so concurrent writers in separate Windows logon sessions are not coordinated by this DGA-0.3 implementation. The same state root must therefore be owned by one DevAgent host session until a later cross-session coordination design is independently qualified.
+
+The journal stores task metadata and explicitly supplied bounded checkpoint state. It does not automatically persist model conversations, raw source trees, credentials, prompts or complete research documents. SHA-256 chaining detects record corruption but is not a signature or an authorization mechanism. An attacker able to rewrite all journal/checkpoint files can recompute the hashes. Protected service-owned ACLs, verified service identity and the independent Phase 2B.8/R5 security gates remain mandatory before the journal is trusted by autonomous or model-controlled execution.
