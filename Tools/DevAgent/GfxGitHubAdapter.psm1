@@ -294,24 +294,77 @@ function Get-GfxGitHubPullRequestEvidence {
  if(-not $validation.valid){throw ('Pull request evidence failed self-validation: '+($validation.errors -join '; '))}
  return $evidence
 }
+function Add-GfxEvidencePropertyErrors {
+ param($Object,[string[]]$Expected,[string]$Path,[Collections.ArrayList]$Errors)
+ if($null -eq $Object -or $Object -is [string] -or $Object -is [Array]){
+  $null=$Errors.Add("$Path must be an object.")
+  return
+ }
+ $actual=@($Object.PSObject.Properties|ForEach-Object{[string]$_.Name})
+ foreach($name in $Expected){if($actual -notcontains $name){$null=$Errors.Add("$Path is missing '$name'.")}}
+ foreach($name in $actual){if($Expected -notcontains $name){$null=$Errors.Add("$Path has unsupported property '$name'.")}}
+}
+function Test-GfxEvidenceTimestamp {
+ param($Value)
+ $parsed=[DateTimeOffset]::MinValue
+ return ($Value -is [string] -and [DateTimeOffset]::TryParse([string]$Value,[ref]$parsed))
+}
 function Test-GfxGitHubEvidenceObject {
  [CmdletBinding()]param([Parameter(Mandatory=$true)]$Evidence)
  $errors=New-Object Collections.ArrayList
- $required=@('schemaVersion','provider','apiVersion','repository','capturedAtUtc','commit','workflowRuns','artifacts','truncated')
- foreach($name in $required){if($null -eq $Evidence.PSObject.Properties[$name]){$null=$errors.Add("Evidence is missing '$name'.")}}
+ $root=@('schemaVersion','provider','apiVersion','repository','capturedAtUtc','commit','workflowRuns','artifacts','truncated')
+ if($null -ne $Evidence -and $null -ne $Evidence.PSObject.Properties['pullRequest']){$root+='pullRequest'}
+ Add-GfxEvidencePropertyErrors $Evidence $root 'evidence' $errors
+ if($errors.Count -gt 0){return [pscustomobject][ordered]@{valid=$false;errors=@($errors.ToArray());workflowRunCount=0;artifactCount=0}}
  if($Evidence.schemaVersion -cne 'sharnou.devagent.github-evidence/1'){$null=$errors.Add('Evidence schema version is invalid.')}
  if($Evidence.provider -cne 'github-rest' -or $Evidence.apiVersion -cne $script:GfxApiVersion){$null=$errors.Add('Evidence provider/API version is invalid.')}
- if($Evidence.repository.fullName -cne $script:GfxRepo -or [long]$Evidence.repository.repositoryId -lt 1){$null=$errors.Add('Evidence repository identity is invalid.')}
+ Add-GfxEvidencePropertyErrors $Evidence.repository @('fullName','repositoryId','defaultBranch','visibility') 'evidence.repository' $errors
+ Add-GfxEvidencePropertyErrors $Evidence.commit @('sha','treeSha','messageSha256','authorDateUtc','committerDateUtc') 'evidence.commit' $errors
+ if($errors.Count -gt 0){return [pscustomobject][ordered]@{valid=$false;errors=@($errors.ToArray());workflowRunCount=0;artifactCount=0}}
+ if($Evidence.repository.fullName -cne $script:GfxRepo -or -not(Test-GfxInt $Evidence.repository.repositoryId) -or [long]$Evidence.repository.repositoryId -lt 1){$null=$errors.Add('Evidence repository identity is invalid.')}
+ if([string]::IsNullOrWhiteSpace([string]$Evidence.repository.defaultBranch) -or [string]$Evidence.repository.defaultBranch.Length -gt 120 -or @('public','private','internal') -notcontains [string]$Evidence.repository.visibility){$null=$errors.Add('Evidence repository metadata is invalid.')}
  if($Evidence.commit.sha -notmatch '^[0-9a-f]{40}$' -or $Evidence.commit.treeSha -notmatch '^[0-9a-f]{40}$' -or $Evidence.commit.messageSha256 -notmatch '^[0-9a-f]{64}$'){$null=$errors.Add('Evidence commit binding is invalid.')}
- if($Evidence.workflowRuns -isnot [Array] -or $Evidence.artifacts -isnot [Array]){$null=$errors.Add('Evidence workflowRuns/artifacts must be arrays.')}
- else{
-  foreach($run in $Evidence.workflowRuns){if($run.headSha -cne $Evidence.commit.sha -or [long]$run.runId -lt 1){$null=$errors.Add('A workflow run is not bound to the evidence commit SHA.')}}
-  foreach($artifact in $Evidence.artifacts){if([long]$artifact.artifactId -lt 1 -or [long]$artifact.runId -lt 1 -or [string]$artifact.digest -notmatch '^sha256:[0-9a-f]{64}$'){$null=$errors.Add('Artifact evidence lacks an identity or SHA-256 digest.')};if(-not(@($Evidence.workflowRuns|Where-Object{$_.runId -eq $artifact.runId}).Count -eq 1)){$null=$errors.Add('Artifact evidence is not bound to exactly one captured workflow run.')}}
- }
+ if(-not(Test-GfxEvidenceTimestamp $Evidence.commit.authorDateUtc) -or -not(Test-GfxEvidenceTimestamp $Evidence.commit.committerDateUtc) -or -not(Test-GfxEvidenceTimestamp $Evidence.capturedAtUtc)){$null=$errors.Add('Evidence commit or capture timestamp is invalid.')}
+ if($Evidence.workflowRuns -isnot [Array] -or $Evidence.workflowRuns.Count -gt 500){$null=$errors.Add('Evidence workflowRuns must be an array of at most 500 entries.')}
+ if($Evidence.artifacts -isnot [Array] -or $Evidence.artifacts.Count -gt 2500){$null=$errors.Add('Evidence artifacts must be an array of at most 2500 entries.')}
  if($Evidence.truncated -isnot [bool]){$null=$errors.Add('Evidence truncated flag must be Boolean.')}
- $time=[DateTimeOffset]::MinValue;if(-not[DateTimeOffset]::TryParse([string]$Evidence.capturedAtUtc,[ref]$time)){$null=$errors.Add('Evidence timestamp is invalid.')}
+ $runIds=@{};$artifactIds=@{}
+ if($Evidence.workflowRuns -is [Array]){
+  foreach($run in $Evidence.workflowRuns){
+   Add-GfxEvidencePropertyErrors $run @('runId','workflowId','runNumber','attempt','name','event','status','conclusion','headSha','headBranch','createdAtUtc','updatedAtUtc','htmlUrl') 'evidence.workflowRuns[]' $errors
+   if($null -eq $run -or $run -is [string] -or $run -is [Array]){continue}
+   foreach($n in @('runId','workflowId','runNumber','attempt')){if(-not(Test-GfxInt $run.$n) -or [long]$run.$n -lt 1){$null=$errors.Add("Workflow run $n must be a positive integer.")}}
+   $id=[string]$run.runId
+   if($runIds.ContainsKey($id)){$null=$errors.Add("Duplicate workflow run ID '$id'.")}else{$runIds[$id]=$true}
+   if($run.headSha -cne $Evidence.commit.sha){$null=$errors.Add('A workflow run is not bound to the evidence commit SHA.')}
+   if(@('queued','in_progress','completed','requested','waiting','pending') -notcontains [string]$run.status){$null=$errors.Add('Workflow run status is invalid.')}
+   if($run.name -isnot [string] -or $run.name.Length -gt 256 -or $run.event -isnot [string] -or $run.event.Length -gt 80 -or $run.headBranch -isnot [string] -or [string]::IsNullOrWhiteSpace($run.headBranch) -or $run.headBranch.Length -gt 120 -or $run.conclusion -isnot [string] -or $run.conclusion.Length -gt 80){$null=$errors.Add('Workflow run textual metadata is invalid.')}
+   if(-not(Test-GfxEvidenceTimestamp $run.createdAtUtc) -or -not(Test-GfxEvidenceTimestamp $run.updatedAtUtc)){$null=$errors.Add('Workflow run timestamps are invalid.')}
+   if($run.htmlUrl -isnot [string] -or $run.htmlUrl -notmatch '^https://github\.com/Sharnou/Sharnou-Compiler/actions/runs/[0-9]+$'){$null=$errors.Add('Workflow run URL is invalid.')}
+  }
+ }
+ if($Evidence.artifacts -is [Array]){
+  foreach($artifact in $Evidence.artifacts){
+   Add-GfxEvidencePropertyErrors $artifact @('artifactId','runId','name','sizeBytes','expired','digest','createdAtUtc','expiresAtUtc','archiveUrl') 'evidence.artifacts[]' $errors
+   if($null -eq $artifact -or $artifact -is [string] -or $artifact -is [Array]){continue}
+   if(-not(Test-GfxInt $artifact.artifactId) -or [long]$artifact.artifactId -lt 1 -or -not(Test-GfxInt $artifact.runId) -or [long]$artifact.runId -lt 1 -or -not(Test-GfxInt $artifact.sizeBytes) -or [long]$artifact.sizeBytes -lt 0){$null=$errors.Add('Artifact identity or size is invalid.')}
+   $id=[string]$artifact.artifactId
+   if($artifactIds.ContainsKey($id)){$null=$errors.Add("Duplicate artifact ID '$id'.")}else{$artifactIds[$id]=$true}
+   if($artifact.digest -isnot [string] -or $artifact.digest -notmatch '^sha256:[0-9a-f]{64}$'){$null=$errors.Add('Artifact evidence lacks a valid SHA-256 digest.')}
+   if($artifact.expired -isnot [bool] -or $artifact.name -isnot [string] -or [string]::IsNullOrWhiteSpace($artifact.name) -or $artifact.name.Length -gt 256){$null=$errors.Add('Artifact text/expiration metadata is invalid.')}
+   if(-not(Test-GfxEvidenceTimestamp $artifact.createdAtUtc) -or -not(Test-GfxEvidenceTimestamp $artifact.expiresAtUtc)){$null=$errors.Add('Artifact timestamps are invalid.')}
+   if($artifact.archiveUrl -isnot [string] -or $artifact.archiveUrl -notmatch '^https://api\.github\.com/repos/Sharnou/Sharnou-Compiler/actions/artifacts/[0-9]+/zip$'){$null=$errors.Add('Artifact archive URL is invalid.')}
+   if(-not $runIds.ContainsKey([string]$artifact.runId)){$null=$errors.Add('Artifact is detached from the captured workflow-run set.')}
+  }
+ }
  if($null -ne $Evidence.PSObject.Properties['pullRequest'] -and $null -ne $Evidence.pullRequest){
-  if([int]$Evidence.pullRequest.number -lt 1 -or $Evidence.pullRequest.headSha -cne $Evidence.commit.sha -or [string]::IsNullOrWhiteSpace([string]$Evidence.pullRequest.headBranch)){$null=$errors.Add('Pull request does not bind to the evidence commit.')}
+  Add-GfxEvidencePropertyErrors $Evidence.pullRequest @('number','state','draft','merged','baseBranch','headBranch','baseSha','headSha','htmlUrl') 'evidence.pullRequest' $errors
+  if($null -ne $Evidence.pullRequest -and $Evidence.pullRequest -isnot [string] -and $Evidence.pullRequest -isnot [Array]){
+   $pr=$Evidence.pullRequest
+   if(-not(Test-GfxInt $pr.number) -or [long]$pr.number -lt 1 -or @('open','closed') -notcontains [string]$pr.state -or $pr.draft -isnot [bool] -or $pr.merged -isnot [bool]){$null=$errors.Add('Pull request identity/state metadata is invalid.')}
+   if([string]::IsNullOrWhiteSpace([string]$pr.baseBranch) -or [string]::IsNullOrWhiteSpace([string]$pr.headBranch) -or $pr.baseSha -notmatch '^[0-9a-f]{40}$' -or $pr.headSha -cne $Evidence.commit.sha){$null=$errors.Add('Pull request branch or exact-head binding is invalid.')}
+   if($pr.htmlUrl -isnot [string] -or $pr.htmlUrl -notmatch ('^https://github\.com/Sharnou/Sharnou-Compiler/pull/'+[string]$pr.number+'$')){$null=$errors.Add('Pull request URL is invalid.')}
+  }
  }
  return [pscustomobject][ordered]@{valid=($errors.Count -eq 0);errors=@($errors.ToArray());workflowRunCount=$(if($Evidence.workflowRuns -is [Array]){$Evidence.workflowRuns.Count}else{0});artifactCount=$(if($Evidence.artifacts -is [Array]){$Evidence.artifacts.Count}else{0})}
 }
