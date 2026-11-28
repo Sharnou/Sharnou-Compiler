@@ -3918,6 +3918,207 @@ function Emit-DevRunTool {
     Emit-Jump -Label $done
     Mark-CodeLabel -Label $done
 }
+function Emit-NativeScmStatusCall {
+    param(
+        [int] $StatusHandleSlot,
+        [int] $StatusBase,
+        [int] $State,
+        [int] $ControlsAccepted,
+        [int] $ExitCodeSlot = -1,
+        [int] $ExitCodeValue = 0,
+        [int] $Checkpoint = 0,
+        [int] $WaitHint = 0
+    )
+    Emit-StoreBits32Frame -SlotPosition $StatusBase -Value 0x10
+    Emit-StoreBits32Frame -SlotPosition ($StatusBase + 4) -Value $State
+    Emit-StoreBits32Frame -SlotPosition ($StatusBase + 8) -Value $ControlsAccepted
+    if ($ExitCodeSlot -ge 0) {
+        Emit-LoadEaxFrame -SlotPosition $ExitCodeSlot
+        Emit-StoreEaxFrame -SlotPosition ($StatusBase + 12)
+    } else {
+        Emit-StoreBits32Frame -SlotPosition ($StatusBase + 12) -Value $ExitCodeValue
+    }
+    Emit-StoreBits32Frame -SlotPosition ($StatusBase + 16) -Value 0
+    Emit-StoreBits32Frame -SlotPosition ($StatusBase + 20) -Value $Checkpoint
+    Emit-StoreBits32Frame -SlotPosition ($StatusBase + 24) -Value $WaitHint
+    Emit-LoadRaxFrame -SlotPosition $StatusHandleSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1)) # RCX = SERVICE_STATUS_HANDLE
+    Emit-LeaRaxFrame -SlotPosition $StatusBase
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC2)) # RDX = SERVICE_STATUS*
+    Emit-Win64CallIat -TargetRva ([UInt32]0x30B0) # SetServiceStatus
+}
+function Emit-NativeScmCaptureLastError {
+    param([int] $ErrorSlot, [switch] $OnlyIfEmpty)
+    if ($OnlyIfEmpty) {
+        $skip = New-UniqueLabel -Prefix 'r51_error_already_recorded'
+        Emit-LoadEaxFrame -SlotPosition $ErrorSlot
+        Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
+        Emit-JumpConditional -ConditionCode 0x85 -Label $skip
+        Emit-Win64CallIat -TargetRva ([UInt32]0x3078) # GetLastError
+        Emit-StoreEaxFrame -SlotPosition $ErrorSlot
+        Mark-CodeLabel -Label $skip
+    } else {
+        Emit-Win64CallIat -TargetRva ([UInt32]0x3078) # GetLastError
+        Emit-StoreEaxFrame -SlotPosition $ErrorSlot
+    }
+}
+function Emit-NativeScmCallbacks {
+    if (-not $script:NativeScmServiceMode) { return }
+    if ($null -eq $script:NativeScmServiceNameDataItem -or $null -eq $script:NativeScmHandlerPointerItem) {
+        throw 'Native SCM callback data was not registered by the Sharnou service-host intrinsic.'
+    }
+    $script:NativeScmRuntimeFunctionSpecs = [System.Collections.Generic.List[object]]::new()
+
+    # SERVICE_MAIN_FUNCTIONW(DWORD, LPWSTR*) -> VOID. HandlerEx receives a
+    # pointer to EventSlot, whose lifetime is the service-main callback lifetime.
+    $serviceContext = [pscustomobject]@{ Name = '__r51_service_main'; SlotCount = 12; TempSlots = 8; ScratchPosition = 0; FrameSize = 0 }
+    Set-FrameSize -Context $serviceContext -NodeCount 0
+    $serviceMainStart = [int]$script:Code.Count
+    Mark-CodeLabel -Label '__r51_service_main'
+    Emit-Prologue -Context $serviceContext
+    $eventSlot = 0x80
+    $statusHandleSlot = 0x90
+    $statusBase = 0xA0
+    $errorSlot = 0xD0
+    Emit-StoreZero64Frame -SlotPosition $eventSlot
+    Emit-StoreZero64Frame -SlotPosition $statusHandleSlot
+    Emit-StoreBits32Frame -SlotPosition $errorSlot -Value 0
+
+    # The event slot is initialized before the handler is registered. No controls
+    # are accepted until SERVICE_RUNNING is successfully published.
+    Emit-DataAddress -DataItem $script:NativeScmServiceNameDataItem
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1)) # RCX = service name
+    Emit-LoadDataPointer -DataItem $script:NativeScmHandlerPointerItem
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC2)) # RDX = typed HandlerEx pointer
+    Emit-LeaRaxFrame -SlotPosition $eventSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x49, 0x89, 0xC0)) # R8 = stable context pointer
+    Emit-Win64CallIat -TargetRva ([UInt32]0x30A8) # RegisterServiceCtrlHandlerExW
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x85, 0xC0))
+    $registrationFailed = New-UniqueLabel -Prefix 'r51_register_handler_failed'
+    Emit-JumpConditional -ConditionCode 0x84 -Label $registrationFailed
+    Emit-StoreRaxFrame -SlotPosition $statusHandleSlot
+
+    Emit-NativeScmStatusCall -StatusHandleSlot $statusHandleSlot -StatusBase $statusBase -State 2 -ControlsAccepted 0 -ExitCodeValue 0 -Checkpoint 1 -WaitHint 10000
+    Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
+    $startStatusFailed = New-UniqueLabel -Prefix 'r51_start_status_failed'
+    Emit-JumpConditional -ConditionCode 0x84 -Label $startStatusFailed
+
+    # Create a manual-reset, initially nonsignaled stop event.
+    Emit-Bytes -Bytes ([byte[]]@(0x33, 0xC9, 0xBA, 0x01, 0x00, 0x00, 0x00, 0x45, 0x33, 0xC0, 0x45, 0x33, 0xC9))
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3080) # CreateEventW(NULL, TRUE, FALSE, NULL)
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x85, 0xC0))
+    $eventCreationFailed = New-UniqueLabel -Prefix 'r51_event_creation_failed'
+    Emit-JumpConditional -ConditionCode 0x84 -Label $eventCreationFailed
+    Emit-StoreRaxFrame -SlotPosition $eventSlot
+
+    # Publish RUNNING only after both event and control handler are ready.
+    Emit-NativeScmStatusCall -StatusHandleSlot $statusHandleSlot -StatusBase $statusBase -State 4 -ControlsAccepted 5 -ExitCodeValue 0 -Checkpoint 0 -WaitHint 0
+    Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
+    $runningStatusFailed = New-UniqueLabel -Prefix 'r51_running_status_failed'
+    Emit-JumpConditional -ConditionCode 0x84 -Label $runningStatusFailed
+
+    Emit-LoadRaxFrame -SlotPosition $eventSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1, 0xBA, 0xFF, 0xFF, 0xFF, 0xFF)) # RCX=event, EDX=INFINITE
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3090) # WaitForSingleObject
+    Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
+    $waitCompleted = New-UniqueLabel -Prefix 'r51_wait_completed'
+    Emit-JumpConditional -ConditionCode 0x84 -Label $waitCompleted
+    Emit-NativeScmCaptureLastError -ErrorSlot $errorSlot
+    Mark-CodeLabel -Label $waitCompleted
+
+    Emit-NativeScmStatusCall -StatusHandleSlot $statusHandleSlot -StatusBase $statusBase -State 3 -ControlsAccepted 0 -ExitCodeSlot $errorSlot -Checkpoint 1 -WaitHint 5000
+    Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
+    Emit-NativeScmCaptureLastError -ErrorSlot $errorSlot -OnlyIfEmpty
+
+    Mark-CodeLabel -Label '__r51_service_cleanup'
+    Emit-LoadRaxFrame -SlotPosition $eventSlot
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x85, 0xC0))
+    $skipEventClose = New-UniqueLabel -Prefix 'r51_skip_event_close'
+    Emit-JumpConditional -ConditionCode 0x84 -Label $skipEventClose
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1))
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3098) # CloseHandle
+    Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
+    $eventClosed = New-UniqueLabel -Prefix 'r51_event_closed'
+    Emit-JumpConditional -ConditionCode 0x85 -Label $eventClosed
+    Emit-NativeScmCaptureLastError -ErrorSlot $errorSlot -OnlyIfEmpty
+    Mark-CodeLabel -Label $eventClosed
+    Emit-StoreZero64Frame -SlotPosition $eventSlot
+    Mark-CodeLabel -Label $skipEventClose
+
+    Emit-NativeScmStatusCall -StatusHandleSlot $statusHandleSlot -StatusBase $statusBase -State 1 -ControlsAccepted 0 -ExitCodeSlot $errorSlot -Checkpoint 0 -WaitHint 0
+    Emit-Epilogue
+
+    Mark-CodeLabel -Label $startStatusFailed
+    Emit-NativeScmCaptureLastError -ErrorSlot $errorSlot
+    Emit-Jump -Label '__r51_service_cleanup'
+    Mark-CodeLabel -Label $eventCreationFailed
+    Emit-NativeScmCaptureLastError -ErrorSlot $errorSlot
+    Emit-Jump -Label '__r51_service_cleanup'
+    Mark-CodeLabel -Label $runningStatusFailed
+    Emit-NativeScmCaptureLastError -ErrorSlot $errorSlot
+    Emit-Jump -Label '__r51_service_cleanup'
+    Mark-CodeLabel -Label $registrationFailed
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3078) # No handler/status handle exists to report through.
+    Emit-Epilogue
+    $serviceMainEnd = [int]$script:Code.Count
+    $script:NativeScmRuntimeFunctionSpecs.Add([pscustomobject]@{
+        StartOffset = $serviceMainStart; EndOffset = $serviceMainEnd; Context = $serviceContext
+        UnwindBytes = $null; UnwindOffset = 0
+    })
+
+    # HANDLER_FUNCTION_EX(DWORD, DWORD, LPVOID, LPVOID) -> DWORD.
+    # It only signals the event. It never blocks or mutates SERVICE_STATUS.
+    $handlerContext = [pscustomobject]@{ Name = '__r51_handler_ex'; SlotCount = 4; TempSlots = 8; ScratchPosition = 0; FrameSize = 0 }
+    Set-FrameSize -Context $handlerContext -NodeCount 0
+    $handlerStart = [int]$script:Code.Count
+    Mark-CodeLabel -Label '__r51_handler_ex'
+    Emit-Prologue -Context $handlerContext
+    $signalStop = New-UniqueLabel -Prefix 'r51_handler_signal_stop'
+    $interrogate = New-UniqueLabel -Prefix 'r51_handler_interrogate'
+    $unsupported = New-UniqueLabel -Prefix 'r51_handler_unsupported'
+    $invalidContext = New-UniqueLabel -Prefix 'r51_handler_invalid_context'
+    $signalFailed = New-UniqueLabel -Prefix 'r51_handler_signal_failed'
+    $handlerDone = New-UniqueLabel -Prefix 'r51_handler_done'
+
+    Emit-Bytes -Bytes ([byte[]]@(0x83, 0xF9, 0x01)) # SERVICE_CONTROL_STOP
+    Emit-JumpConditional -ConditionCode 0x84 -Label $signalStop
+    Emit-Bytes -Bytes ([byte[]]@(0x83, 0xF9, 0x05)) # SERVICE_CONTROL_SHUTDOWN
+    Emit-JumpConditional -ConditionCode 0x84 -Label $signalStop
+    Emit-Bytes -Bytes ([byte[]]@(0x83, 0xF9, 0x04)) # SERVICE_CONTROL_INTERROGATE
+    Emit-JumpConditional -ConditionCode 0x84 -Label $interrogate
+    Emit-Jump -Label $unsupported
+
+    Mark-CodeLabel -Label $signalStop
+    Emit-Bytes -Bytes ([byte[]]@(0x4D, 0x85, 0xC9)) # test r9,r9
+    Emit-JumpConditional -ConditionCode 0x84 -Label $invalidContext
+    Emit-Bytes -Bytes ([byte[]]@(0x49, 0x8B, 0x09)) # RCX = *(HANDLE*)context
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x85, 0xC9))
+    Emit-JumpConditional -ConditionCode 0x84 -Label $invalidContext
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3088) # SetEvent
+    Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
+    Emit-JumpConditional -ConditionCode 0x84 -Label $signalFailed
+    Emit-Bytes -Bytes ([byte[]]@(0x31, 0xC0))
+    Emit-Jump -Label $handlerDone
+    Mark-CodeLabel -Label $signalFailed
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3078) # GetLastError -> HandlerEx DWORD
+    Emit-Jump -Label $handlerDone
+
+    Mark-CodeLabel -Label $invalidContext
+    Emit-Bytes -Bytes ([byte[]]@(0xB8, 0x06, 0x00, 0x00, 0x00)) # ERROR_INVALID_HANDLE
+    Emit-Jump -Label $handlerDone
+    Mark-CodeLabel -Label $interrogate
+    Emit-Bytes -Bytes ([byte[]]@(0x31, 0xC0)) # last published status remains authoritative
+    Emit-Jump -Label $handlerDone
+    Mark-CodeLabel -Label $unsupported
+    Emit-Bytes -Bytes ([byte[]]@(0xB8, 0x78, 0x00, 0x00, 0x00)) # ERROR_CALL_NOT_IMPLEMENTED
+    Mark-CodeLabel -Label $handlerDone
+    Emit-Epilogue
+    $handlerEnd = [int]$script:Code.Count
+    $script:NativeScmRuntimeFunctionSpecs.Add([pscustomobject]@{
+        StartOffset = $handlerStart; EndOffset = $handlerEnd; Context = $handlerContext
+        UnwindBytes = $null; UnwindOffset = 0
+    })
+}
 function Emit-BuiltinCall {
     param([object] $Node)
     $baseDepth = [int]$script:TempDepth
