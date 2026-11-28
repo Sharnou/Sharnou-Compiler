@@ -1121,3 +1121,13 @@ After the prior session record, one more isolated diagnostic commit was added to
 - Windows PowerShell 5.1 execution is NOT YET VERIFIED. The dedicated workflow is being added in the follow-up commit; no DGA-0.2 test pass is claimed until the exact branch head succeeds.
 - Current DevAgent activation remains BLOCKED. The planner does not generate source or run any command. Local inference, patch transactions, durable journal, accepted process broker, GitHub/research adapter, model-facing process execution and autonomous writes remain disabled.
 - Next task after DGA-0.2 qualification: DGA-0.3 append-only journal, hash-bound checkpoints, crash recovery and idempotent reconciliation. Do not bypass the separate Phase 2B.8/R5 native security gates.
+
+
+### DGA-GFX-0.2 qualification - 2026-11-28
+
+- Exact PR head qualified: 6299da2234d4adcb1a3c01efd70225580d230761.
+- Windows PowerShell 5.1 pull-request run #46148617044: PASS.
+- Windows PowerShell 5.1 branch-push run #46148612214: PASS.
+- DGA-0.2 tests: 47 passed, 0 failed, 47 total. ASCII/BOM policy passed. Planner CLI completed successfully and reported the expected BLOCKED states.
+- PR #43 remains a draft stacked on PR #42. No default-branch merge occurred.
+- Qualification applies only to campaign validation/readiness planning. It does not turn on model inference, research, automatic code generation, child-process execution, or GFX rendering.

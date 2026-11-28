@@ -298,3 +298,16 @@ Future work may continue in later GFX-EVOL campaigns. Accepted milestones and ev
 ### DGA-0.2 limitations
 
 This is a repository-specific contract validator, not a complete implementation of every JSON Schema 2020-12 keyword. It cross-checks schema identity and selected structural invariants, then applies strict domain validation and cross-object rules. Windows PowerShell 5.1 ConvertFrom-Json does not expose duplicate JSON object keys for rejection at this layer; duplicate milestone IDs, dependency edges and PR snapshot numbers are rejected. The validator/planner contains no process launch, shell invocation, network call or Git write API.
+
+
+## DGA-GFX-0.2 Windows qualification evidence - 2026-11-28
+
+- Qualified branch head: 6299da2234d4adcb1a3c01efd70225580d230761.
+- Windows PowerShell 5.1 workflow: SharnouDevAgent GFX Campaign Validation.
+- Pull request validation run: https://github.com/Sharnou/Sharnou-Compiler/actions/runs/46148617044 - PASS.
+- Branch push validation run: https://github.com/Sharnou/Sharnou-Compiler/actions/runs/46148612214 - PASS.
+- Dedicated campaign tests: 47 passed, 0 failed, 47 total.
+- Source encoding/BOM gate: PASS.
+- Planner CLI: PASS; emits the eleven-milestone readiness plan and correctly leaves the campaign blocked by unaccepted predecessor/activation gates.
+- These results qualify the DGA-0.2 validator/planner on the tested PR head. They do not qualify the GFX compiler milestones, the native DevAgent runtime, background research, GPU rendering or autonomous code generation.
+- The branch remains a draft PR stacked on DGA-GFX-0.1 PR #42. No merge was performed.

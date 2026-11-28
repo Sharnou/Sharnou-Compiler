@@ -517,3 +517,13 @@ Static checks confirmed both JSON documents parse, all eleven milestone IDs exis
 - The campaign continuousImprovement policy explicitly persists after GFX-0.8 and requires source provenance, benchmark baselines, versioned follow-on work, independent review and owner acceptance.
 - Current qualification: static construction checks only. Windows test result is pending; do not mark DGA-0.2 accepted until exact-head CI is green.
 - No autonomous source generation, local inference, process launch, network research, patch transaction, Git write, automatic merge or release is enabled by this increment.
+
+
+## DGA-GFX-0.2 qualification result - 2026-11-28
+
+- PR #43 remains draft and is stacked on PR #42.
+- Exact tested head: 6299da2234d4adcb1a3c01efd70225580d230761.
+- Windows PowerShell 5.1 PR run #46148617044 and push run #46148612214 both PASS.
+- Campaign test suite: 47 passed, 0 failed; encoding/BOM gate and planner CLI also passed.
+- Readiness output correctly keeps GFX milestones blocked while DevAgent prerequisites and explicit predecessor acceptance remain unresolved.
+- DGA-0.2 candidate is technically qualified on this exact head, pending review/acceptance. No autonomous source generation or research daemon is enabled.
