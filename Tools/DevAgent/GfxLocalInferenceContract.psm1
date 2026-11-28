@@ -91,6 +91,7 @@ function Read-GfxLocalModelProfile {
  if($bytes.Length -eq 0 -or ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF)){throw 'Model profile must be non-empty UTF-8 without a BOM.'}
  foreach($byte in $bytes){if($byte -gt 127){throw 'Model profile must remain ASCII in this version.'}}
  try{$json=(New-Object Text.UTF8Encoding($false,$true)).GetString($bytes);$profile=ConvertFrom-Json -InputObject $json -ErrorAction Stop}catch{throw 'Model profile JSON is malformed or invalid UTF-8.'}
- return Test-GfxLocalModelProfile -Profile $profile
+ $result=Test-GfxLocalModelProfile -Profile $profile
+ return $result
 }
 Export-ModuleMember -Function Test-GfxLocalModelProfile,Read-GfxLocalModelProfile
