@@ -124,3 +124,6 @@ DGA-GFX-0.4 now has a Windows PowerShell 5.1-qualified read-only GitHub REST ada
 ### DGA-GFX-0.5A - local inference contract foundation
 
 DGA-GFX-0.5 begins the genuine Sharnou-owned in-process local inference track. The current 0.5A candidate adds a strict model profile, a pinned reference configuration, and a fail-closed readiness validator. It does not yet implement model parsing, tokenization, tensor math, a transformer, or inference. Model weights and tokenizer assets remain unpinned; native inference and Windows qualification are not yet performed. See [DGA-GFX-0.5 local inference engineering contract](Docs/DGA-GFX-0.5-LOCAL-INFERENCE.md). The DevAgent campaign remains blocked until the complete runtime and later security/patch-tool prerequisites are accepted.
+
+
+DGA-GFX-0.5A is tracked in [draft PR #46](https://github.com/Sharnou/Sharnou-Compiler/pull/46), stacked on the DGA-GFX-0.4 adapter branch. Its model-profile and fail-closed readiness contract is a preparatory slice only; native inference remains unimplemented and blocked pending model artifact, numeric ABI, tokenizer, tensor, transformer and Windows runtime gates.

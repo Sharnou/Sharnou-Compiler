@@ -1210,3 +1210,12 @@ After the prior session record, one more isolated diagnostic commit was added to
 - **Execution evidence:** repository content was created through Git object operations. Windows PowerShell 5.1 tests, YAML/workflow execution, tokenizer vectors, tensor kernels and native inference are **NOT RUN** at this point. CI is required on the resulting exact PR head. No SharnouDevAgent executable or model inference was built or run.
 - **Activation:** campaign remains BLOCKED. DGA-GFX-0.5 is not complete; only its 0.5A contract/readiness slice is proposed for review. DGA-GFX-0.6+ and model-facing process execution remain gated by their own dependencies and Phase 2B.8/R5.
 - **Next bounded action:** qualify the 0.5A contract on Windows, then reconcile the compiler's floating-point/array/pointer/heap/ABI prerequisites and pin actual model/tokenizer/license artifacts before implementing the safe model-container reader.
+
+### DGA-GFX-0.5A draft PR opened - 2026-11-28
+
+- Draft PR: [#46 - DGA-GFX-0.5A: define native local-inference model contract](https://github.com/Sharnou/Sharnou-Compiler/pull/46), stacked on DGA-GFX-0.4 PR #45. It remains OPEN / DRAFT / UNMERGED.
+- Initial code-bearing commit: `f445706d604381b0b116b907b3ce8f63264338f5`. A static review then corrected the profile-reader return to use an explicit variable for PowerShell 5.1 compatibility; updated source/test head: `123264b133f6147520084ddccab7801617cf9510`.
+- Changed paths total: 10 (seven new contract/profile/test/workflow files plus the session-state, issue-register and README updates).
+- Windows Actions run `46170545017` started on the corrected source/test head; its status at this documentation update is **IN PROGRESS**, so no Windows test result is claimed. A later documentation synchronization will require its own exact-head run.
+- The earlier run on pre-correction head `f445706d604381b0b116b907b3ce8f63264338f5` is not qualification evidence for the updated branch tip.
+- The branch remains based on PR #45's exact head and no default-branch changes or merges were performed.

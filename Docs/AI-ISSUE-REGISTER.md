@@ -606,3 +606,10 @@ This is only the DGA-GFX-0.5A contract slice. It does **not** implement the toke
 A key prerequisite is still open: the current documented Sharnou compiler ABI does not yet establish a complete FP32 arithmetic/storage and Windows x64 floating-point calling-convention contract, including BF16 conversion, XMM preservation, arrays/pointers/heap bounds and numerical semantics. DGA-GFX-0.5B onward must not bypass this with an external C++ compiler, llama.cpp/ggml, ONNX Runtime, Python or helper process.
 
 No model tool authority, process launch, shell, network use during inference, repository-write capability, self-acceptance or model policy mutation is granted. Campaign activation remains BLOCKED; Phase 2B.8/R5 remains an independent security boundary. Tests and Windows CI for this candidate are **NOT RUN** until the exact PR head is qualified.
+
+### DGA-GFX-0.5A draft PR #46
+
+- Draft PR [#46](https://github.com/Sharnou/Sharnou-Compiler/pull/46) is open on `devagent-gfx-local-inference-contract-20261128`, stacked on DGA-GFX-0.4 PR #45.
+- Corrected source/test head: `123264b133f6147520084ddccab7801617cf9510`. Windows workflow run [46170545017](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/46170545017) is IN PROGRESS on that code/test head; no pass is claimed.
+- This remains only the model-contract/readiness slice. Native model loading, tokenizer, tensor kernels, Llama inference and in-process host are NOT IMPLEMENTED / NOT RUN.
+- Campaign activation and all model tool authority remain BLOCKED.
