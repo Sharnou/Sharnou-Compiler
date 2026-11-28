@@ -164,6 +164,27 @@ Assert-GfxAdapter $ev.valid 'commit evidence snapshot validates end-to-end'
 Assert-GfxAdapter ($e.commit.sha -eq $sha -and $e.workflowRuns[0].headSha -eq $sha -and $e.artifacts[0].runId -eq 77) 'evidence links repository, exact commit, Actions run and artifact metadata'
 Assert-GfxAdapter ($e.artifacts[0].digest -eq ('sha256:'+('c'*64))) 'evidence snapshot preserves the artifact digest without claiming payload verification'
 
+$priorMaxPages=& $module {$script:GfxMaxPages}
+try{
+ & $module {$script:GfxMaxPages=1}
+ $manyArtifacts=New-Object Collections.ArrayList
+ for($n=0;$n -lt 100;$n++){
+  $null=$manyArtifacts.Add([pscustomobject]@{id=(1000+$n);name=('artifact-'+$n);size_in_bytes=512;expired=$false;digest=('sha256:'+('c'*64));created_at='2026-11-28T10:03:00Z';expires_at='2026-12-28T10:03:00Z';archive_download_url=('https://api.github.com/repos/Sharnou/Sharnou-Compiler/actions/artifacts/'+(1000+$n)+'/zip')})
+ }
+ $requests=Set-MockQueue @(
+  (New-MockResponse -Object $repoObject),
+  (New-MockResponse -Object (Get-TestCommitObject $sha)),
+  (New-MockResponse -Object ([pscustomobject]@{total_count=1;workflow_runs=@((Get-TestRun $sha))})),
+  (New-MockResponse -Object ([pscustomobject]@{total_count=101;artifacts=@($manyArtifacts.ToArray())}))
+ )
+ $truncatedEvidence=Get-GfxGitHubCommitEvidence -CommitSha $sha
+ Assert-GfxAdapter ($truncatedEvidence.artifacts.Count -eq 100 -and $truncatedEvidence.truncated) 'commit evidence propagates artifact pagination truncation'
+}catch{
+ Assert-GfxAdapter $false ('artifact truncation propagation: '+$_.Exception.Message)
+}finally{
+ & $module {param($value)$script:GfxMaxPages=$value} $priorMaxPages
+}
+
 $badEvidence=Copy-Object $e;$badEvidence.workflowRuns[0].headSha=('e'*40)
 Assert-GfxAdapter (-not(Test-GfxGitHubEvidenceObject -Evidence $badEvidence).valid) 'evidence validator rejects stale or mismatched workflow head'
 $badEvidence=Copy-Object $e;$badEvidence.artifacts[0].runId=999
