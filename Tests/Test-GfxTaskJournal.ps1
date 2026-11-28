@@ -27,6 +27,7 @@ try{
  $startAgain=Start-GfxTask -StateDirectory $script:State -TaskId $taskId -SessionId 'worker-session-01'
  Assert-GfxJournal ($startAgain.status -eq 'DUPLICATE_NOOP') 'replayed start is idempotent'
  $state=[pscustomobject][ordered]@{phase='analysis';completedUnits=7;sourceRevision='9db82798bd3e4f97f16cbfa74baee85687932ce1';findings=@('dependency graph reviewed','resume boundary verified')}
+ Write-Host ('DEBUG StateDirectory type=' + $script:State.GetType().FullName + ' value=' + $script:State)
  $cp=Save-GfxTaskCheckpoint -StateDirectory $script:State -TaskId $taskId -CheckpointState $state
  Assert-GfxJournal ($cp.status -eq 'APPENDED' -and $cp.checkpointSequence -eq 1 -and (Test-Path -LiteralPath (Join-Path (Join-Path $script:State 'checkpoints') $cp.checkpointFileName))) 'persists immutable hash-bound checkpoint'
  $cpAgain=Save-GfxTaskCheckpoint -StateDirectory $script:State -TaskId $taskId -CheckpointState $state

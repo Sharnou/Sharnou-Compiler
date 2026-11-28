@@ -36,7 +36,7 @@ function Test-GfxSensitiveNames {
 function Get-GfxStatePaths {
  param([string]$StateDirectory)
  if([string]::IsNullOrWhiteSpace($StateDirectory)){throw 'StateDirectory is required.'}
- if(-not [IO.Path]::IsPathRooted($StateDirectory)){throw 'StateDirectory must be absolute.'}
+ if(-not [IO.Path]::IsPathRooted($StateDirectory)){ $caller=(Get-PSCallStack)[1].Command; throw (('StateDirectory must be absolute; value=<{0}>; caller=<{1}>; type=<{2}>') -f $StateDirectory,$caller,($(if($null -eq $StateDirectory){'NULL'}else{$StateDirectory.GetType().FullName}))) }
  $root=[IO.Path]::GetFullPath($StateDirectory)
  return [pscustomobject][ordered]@{root=$root;journal=[IO.Path]::Combine($root,'journal');checkpoints=[IO.Path]::Combine($root,'checkpoints')}
 }
