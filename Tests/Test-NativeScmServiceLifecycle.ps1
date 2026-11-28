@@ -41,24 +41,112 @@ $script:Images = [System.Collections.Generic.List[object]]::new()
 $script:Services = [System.Collections.Generic.List[string]]::new()
 $script:ScSequence = 0
 
+function ConvertTo-WindowsCommandLineArgument {
+    param([AllowEmptyString()][Parameter(Mandatory = $true)][string] $Value)
+    $builder = [System.Text.StringBuilder]::new()
+    $null = $builder.Append([char]34)
+    $backslashCount = 0
+    foreach ($character in $Value.ToCharArray()) {
+        if ($character -eq [char]92) {
+            $backslashCount++
+            continue
+        }
+        if ($character -eq [char]34) {
+            if ($backslashCount -gt 0) {
+                $null = $builder.Append([char]92, (2 * $backslashCount) + 1)
+            } else {
+                $null = $builder.Append([char]92)
+            }
+            $null = $builder.Append([char]34)
+            $backslashCount = 0
+            continue
+        }
+        if ($backslashCount -gt 0) {
+            $null = $builder.Append([char]92, $backslashCount)
+            $backslashCount = 0
+        }
+        $null = $builder.Append($character)
+    }
+    if ($backslashCount -gt 0) {
+        $null = $builder.Append([char]92, 2 * $backslashCount)
+    }
+    $null = $builder.Append([char]34)
+    return $builder.ToString()
+}
+
 function Invoke-ScCommand {
     param(
         [Parameter(Mandatory = $true)][string[]] $Arguments,
-        [switch] $AllowFailure
+        [switch] $AllowFailure,
+        [ValidateRange(1, 120)][int] $TimeoutSeconds = 10
     )
-    $lines = @(& $script:ScPath @Arguments 2>&1 | ForEach-Object { [string]$_ })
-    $code = $LASTEXITCODE
-    $rendered = $lines -join [Environment]::NewLine
-    $script:Evidence.Add([pscustomobject]@{
-        timestamp_utc = [DateTime]::UtcNow.ToString('o')
-        command = 'sc.exe ' + ($Arguments -join ' ')
-        exit_code = $code
-        output = $rendered
-    })
-    if ($code -ne 0 -and -not $AllowFailure) {
-        throw ("sc.exe failed ({0}): {1}{2}{3}" -f $code, ($Arguments -join ' '), [Environment]::NewLine, $rendered)
+    $renderedArguments = @(
+        foreach ($argument in $Arguments) {
+            ConvertTo-WindowsCommandLineArgument -Value ([string]$argument)
+        }
+    )
+    $commandLine = $renderedArguments -join ' '
+    $commandText = 'sc.exe ' + ($Arguments -join ' ')
+    $startInfo = [System.Diagnostics.ProcessStartInfo]::new()
+    $startInfo.FileName = $script:ScPath
+    $startInfo.Arguments = $commandLine
+    $startInfo.UseShellExecute = $false
+    $startInfo.CreateNoWindow = $true
+    $startInfo.RedirectStandardOutput = $true
+    $startInfo.RedirectStandardError = $true
+
+    $process = [System.Diagnostics.Process]::new()
+    $process.StartInfo = $startInfo
+    try {
+        if (-not $process.Start()) {
+            throw "Could not start $commandText."
+        }
+        $stdoutTask = $process.StandardOutput.ReadToEndAsync()
+        $stderrTask = $process.StandardError.ReadToEndAsync()
+        if (-not $process.WaitForExit($TimeoutSeconds * 1000)) {
+            try { $process.Kill() } catch { }
+            try { $null = $process.WaitForExit(5000) } catch { }
+            $stdout = if ($stdoutTask.IsCompleted) { $stdoutTask.GetAwaiter().GetResult() } else { '' }
+            $stderr = if ($stderrTask.IsCompleted) { $stderrTask.GetAwaiter().GetResult() } else { '' }
+            $rendered = $stdout
+            if (-not [string]::IsNullOrEmpty($stderr)) {
+                $rendered += [Environment]::NewLine + 'STDERR:' + [Environment]::NewLine + $stderr
+            }
+            $script:Evidence.Add([pscustomobject]@{
+                timestamp_utc = [DateTime]::UtcNow.ToString('o')
+                command = $commandText
+                exit_code = $null
+                timed_out = $true
+                timeout_seconds = $TimeoutSeconds
+                output = $rendered
+            })
+            throw "$commandText exceeded its $TimeoutSeconds-second execution bound."
+        }
+
+        $process.WaitForExit()
+        $stdout = $stdoutTask.GetAwaiter().GetResult()
+        $stderr = $stderrTask.GetAwaiter().GetResult()
+        $code = $process.ExitCode
+        $rendered = $stdout
+        if (-not [string]::IsNullOrEmpty($stderr)) {
+            $rendered += [Environment]::NewLine + 'STDERR:' + [Environment]::NewLine + $stderr
+        }
+        $script:Evidence.Add([pscustomobject]@{
+            timestamp_utc = [DateTime]::UtcNow.ToString('o')
+            command = $commandText
+            exit_code = $code
+            timed_out = $false
+            timeout_seconds = $TimeoutSeconds
+            output = $rendered
+        })
+        if ($code -ne 0 -and -not $AllowFailure) {
+            throw ("sc.exe failed ({0}): {1}{2}{3}" -f $code, $commandText, [Environment]::NewLine, $rendered)
+        }
+        return [pscustomobject]@{ ExitCode = $code; Output = $rendered }
     }
-    return [pscustomobject]@{ ExitCode = $code; Output = $rendered }
+    finally {
+        $process.Dispose()
+    }
 }
 
 function Start-ScAsync {
