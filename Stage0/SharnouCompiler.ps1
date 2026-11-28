@@ -4988,6 +4988,22 @@ if ($script:NativeScmServiceMode) {
         [pscustomobject]@{ Name = 'sh_native_scm_service_host'; Builtin = 'NativeScmServiceHost'; ParameterTypes = @(); ReturnType = 'Integer' }
     )
 } else {
+    $builtinDefinitions = @(
+        [pscustomobject]@{ Name = 'sh_abi_nonvolatile_probe'; Builtin = 'AbiNonvolatileProbe'; ParameterTypes = @(); ReturnType = 'Integer' },
+        [pscustomobject]@{ Name = 'sh_string_length'; Builtin = 'StringLength'; ParameterTypes = @('String'); ReturnType = 'Integer' },
+        [pscustomobject]@{ Name = 'sh_string_equal'; Builtin = 'StringEqual'; ParameterTypes = @('String', 'String'); ReturnType = 'Integer' },
+        [pscustomobject]@{ Name = 'sh_log'; Builtin = 'Log'; ParameterTypes = @('String'); ReturnType = 'Integer' },
+        [pscustomobject]@{ Name = 'sh_memory_fill'; Builtin = 'MemoryFill'; ParameterTypes = @('Integer', 'Integer'); ReturnType = 'Integer' },
+        [pscustomobject]@{ Name = 'sh_memory_byte_at'; Builtin = 'MemoryByteAt'; ParameterTypes = @('Integer'); ReturnType = 'Integer' },
+        [pscustomobject]@{ Name = 'sh_file_exists'; Builtin = 'FileExists'; ParameterTypes = @('String'); ReturnType = 'Integer' },
+        [pscustomobject]@{ Name = 'sh_file_size'; Builtin = 'FileSize'; ParameterTypes = @('String'); ReturnType = 'Integer' },
+        [pscustomobject]@{ Name = 'sh_asset_read_count'; Builtin = 'AssetReadCount'; ParameterTypes = @('String', 'Integer'); ReturnType = 'Integer' },
+        [pscustomobject]@{ Name = 'sh_asset_read_byte'; Builtin = 'AssetReadByte'; ParameterTypes = @('String', 'Integer'); ReturnType = 'Integer' },
+        [pscustomobject]@{ Name = 'sh_window_probe'; Builtin = 'WindowProbe'; ParameterTypes = @('String'); ReturnType = 'Integer' },
+        [pscustomobject]@{ Name = 'sh_window_pump_once'; Builtin = 'WindowPump'; ParameterTypes = @(); ReturnType = 'Integer' },
+        [pscustomobject]@{ Name = 'sh_thread_sync_probe'; Builtin = 'ThreadSyncProbe'; ParameterTypes = @(); ReturnType = 'Integer' },
+        [pscustomobject]@{ Name = 'sh_d3d11_render_demo'; Builtin = 'D3D11RenderDemo'; ParameterTypes = @('String', 'Integer'); ReturnType = 'Integer' }
+    )
 if ($EnableDevAgentTools) {
     $builtinDefinitions += [pscustomobject]@{ Name = 'sh_dev_run_tool'; Builtin = 'DevRunTool'; ParameterTypes = @('Integer', 'Integer'); ReturnType = 'Integer' }
 }
