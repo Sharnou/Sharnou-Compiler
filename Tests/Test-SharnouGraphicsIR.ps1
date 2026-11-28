@@ -76,6 +76,21 @@ $vertexFunctionForType.blocks[0].instructions[0].type = 'f32'
 $badInputTypeJson = ConvertTo-Json -InputObject $badInputType -Depth 100 -Compress
 Invoke-ExpectedFailure -Name 'reject mismatched load-input interface type' -Json $badInputTypeJson -ExpectedCode 'V018'
 
+
+$oversizedTypes = ConvertFrom-SgirJsonText -Json $fixture
+$extraTypes = @()
+for ($i = 0; $i -lt 63; $i++) {
+    $extraTypes += [pscustomobject]@{
+        id = ('zztype{0:D3}' -f $i)
+        kind = 'vector'
+        elementType = 'f32'
+        lanes = 2
+    }
+}
+$oversizedTypes.types = @($oversizedTypes.types) + $extraTypes
+$oversizedTypesJson = ConvertTo-Json -InputObject $oversizedTypes -Depth 100 -Compress
+Invoke-ExpectedFailure -Name 'reject excessive custom type declarations before analysis' -Json $oversizedTypesJson -ExpectedCode 'S014'
+
 $duplicateResource = ConvertFrom-SgirJsonText -Json $fixture
 $duplicateResource.resources = @($duplicateResource.resources) + @($duplicateResource.resources)
 $duplicateResourceJson = ConvertTo-Json -InputObject $duplicateResource -Depth 100 -Compress
