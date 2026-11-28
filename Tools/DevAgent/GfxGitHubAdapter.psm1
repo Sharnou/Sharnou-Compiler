@@ -34,7 +34,10 @@ function Test-GfxPrivateAcl {
   if(($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0){return $false}
   $acl=Get-Acl -LiteralPath $Path -ErrorAction Stop;$sid=Get-GfxCurrentSid
   if($acl.GetOwner([Security.Principal.SecurityIdentifier]).Value -ne $sid.Value){return $false}
-  foreach($rule in $acl.GetAccessRules($true,$false,[Security.Principal.SecurityIdentifier])){
+  if(-not $acl.AreAccessRulesProtected){return $false}
+  $rules=@($acl.GetAccessRules($true,$false,[Security.Principal.SecurityIdentifier]))
+  if($rules.Count -ne 1){return $false}
+  foreach($rule in $rules){
    if($rule.IdentityReference.Value -ne $sid.Value -or $rule.AccessControlType -ne [Security.AccessControl.AccessControlType]::Allow -or (($rule.FileSystemRights -band [Security.AccessControl.FileSystemRights]::FullControl) -ne [Security.AccessControl.FileSystemRights]::FullControl)){return $false}
   }
   return $true
@@ -136,7 +139,7 @@ function Invoke-GfxHttpGet {
 }
 function New-GfxApiUri {
  param([Parameter(Mandatory=$true)][string]$Path,[string]$Query='')
- if($Path.StartsWith('/') -or $Path.Contains('..') -or $Path.Contains('\') -or $Path -match '[\x00-\x20]'){throw 'API path failed fixed-route validation.'}
+ if($Path.StartsWith('/') -or $Path -match '(^|/)\.\.?(/|$)' -or $Path.Contains('\') -or $Path -match '[\x00-\x20]'){throw 'API path failed fixed-route validation.'}
  $uriText=$script:GfxApiBase+'/repos/'+$script:GfxRepo+'/'+$Path
  if(-not[string]::IsNullOrEmpty($Query)){$uriText+='?'+$Query}
  return [Uri]$uriText
@@ -171,7 +174,7 @@ function Get-GfxGitHubBranch {
 }
 function Assert-GfxGitRef {
  param([string]$Ref)
- if([string]::IsNullOrWhiteSpace($Ref) -or $Ref.Length -gt 120 -or $Ref -match '[\x00-\x20?#]' -or $Ref -match '(^/|//|\\.\\.|\\\\|@\{)'){throw 'Git ref is invalid.'}
+ if([string]::IsNullOrWhiteSpace($Ref) -or $Ref.Length -gt 120 -or $Ref -match '[\x00-\x20?#]' -or $Ref -match '(^/|//|\.\.|\\|@\{)'){throw 'Git ref is invalid.'}
 }
 function Get-GfxGitHubCommit {
  [CmdletBinding()]param([Parameter(Mandatory=$true)][string]$Ref)
