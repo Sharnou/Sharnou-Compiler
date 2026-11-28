@@ -66,7 +66,7 @@ Invoke-ExpectedFailure -Name 'reject out-of-range vector width' -Json ($fixture.
 Invoke-ExpectedFailure -Name 'reject missing vertex position output' -Json ($fixture.Replace('"semantic": "SV_Position"','"semantic": "POSITION_OUT"')) -ExpectedCode 'E010'
 Invoke-ExpectedFailure -Name 'reject unknown CFG branch target' -Json ($fixture.Replace('"trueTarget": "left"','"trueTarget": "missing_block"')) -ExpectedCode 'F008'
 Invoke-ExpectedFailure -Name 'reject unreachable basic block' -Json ($fixture.Replace('"trueTarget": "left"','"trueTarget": "join"')) -ExpectedCode 'F011'
-Invoke-ExpectedFailure -Name 'reject malformed phi predecessor list' -Json ($fixture.Replace('"block": "left"','"block": "right"')) -ExpectedCode 'V011'
+Invoke-ExpectedFailure -Name 'reject malformed phi predecessor list' -Json ($fixture.Replace('"block": "right"','"block": "zz"')) -ExpectedCode 'V011'
 Invoke-ExpectedFailure -Name 'reject malformed IEEE-754 bit pattern' -Json ($fixture.Replace('"literal": "3F800000"','"literal": "3F8000GG"')) -ExpectedCode 'V002'
 Invoke-ExpectedFailure -Name 'reject non-Boolean constant representation' -Json ($fixture.Replace('"literal": true','"literal": 1')) -ExpectedCode 'V001'
 Invoke-ExpectedFailure -Name 'reject unknown instruction opcode' -Json ($fixture.Replace('"op": "load_input"','"op": "load_gpu_magic"')) -ExpectedCode 'V007'
@@ -111,6 +111,20 @@ $chooseFunction = @($wrongReturn.functions | Where-Object { $_.id -ceq 'fn_choos
 $chooseFunction.returnType = 'f32'
 $wrongReturnJson = ConvertTo-Json -InputObject $wrongReturn -Depth 100 -Compress
 Invoke-ExpectedFailure -Name 'reject return type mismatch' -Json $wrongReturnJson -ExpectedCode 'V036'
+
+
+$typeCycle = ConvertFrom-SgirJsonText -Json $fixture
+$frameType = @($typeCycle.types | Where-Object { $_.id -ceq 'frame_data' })[0]
+$frameType.fields[0].type = 'frame_data'
+$typeCycleJson = ConvertTo-Json -InputObject $typeCycle -Depth 100 -Compress
+Invoke-ExpectedFailure -Name 'reject recursive aggregate type cycles' -Json $typeCycleJson -ExpectedCode 'T010'
+
+$badReturnDominance = ConvertFrom-SgirJsonText -Json $fixture
+$chooseForReturn = @($badReturnDominance.functions | Where-Object { $_.id -ceq 'fn_choose' })[0]
+$joinForReturn = @($chooseForReturn.blocks | Where-Object { $_.id -ceq 'join' })[0]
+$joinForReturn.terminator.value = 'left_value'
+$badReturnDominanceJson = ConvertTo-Json -InputObject $badReturnDominance -Depth 100 -Compress
+Invoke-ExpectedFailure -Name 'reject return value not dominated by its definition' -Json $badReturnDominanceJson -ExpectedCode 'V038'
 
 $nullArrayDocument = ConvertFrom-SgirJsonText -Json $fixture
 $nullArrayDocument.resources = $null
