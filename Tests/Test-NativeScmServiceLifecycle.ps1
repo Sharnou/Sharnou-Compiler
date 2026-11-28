@@ -224,6 +224,39 @@ function Wait-ProcessGone {
     throw "Service process $ProcessId remains alive after SCM reported STOPPED."
 }
 
+function Assert-TestCompilerGuards {
+    $probeOutput = Join-Path $buildRoot 'must-not-be-generated.exe'
+    if (Test-Path -LiteralPath $probeOutput) { Remove-Item -LiteralPath $probeOutput -Force }
+
+    $rejectedWithoutHost = $false
+    try {
+        & $compiler -Source $source -Output $probeOutput -EnableNativeScmServiceTestMode
+    } catch {
+        $rejectedWithoutHost = $_.Exception.Message -match 'require the isolated native SCM service compiler mode'
+    }
+    if (-not $rejectedWithoutHost -or (Test-Path -LiteralPath $probeOutput)) {
+        throw 'Compiler accepted test mode without the native SCM host boundary.'
+    }
+
+    $rejectedWithoutTestFlag = $false
+    try {
+        & $compiler -Source $source -Output $probeOutput -EnableNativeScmServiceHost -NativeScmServiceName (New-ServiceName) -NativeScmServiceTestFault 'Dispatcher'
+    } catch {
+        $rejectedWithoutTestFlag = $_.Exception.Message -match 'require EnableNativeScmServiceTestMode'
+    }
+    if (-not $rejectedWithoutTestFlag -or (Test-Path -LiteralPath $probeOutput)) {
+        throw 'Compiler accepted a fault-injection selector without the explicit test-mode flag.'
+    }
+    $script:Evidence.Add([pscustomobject]@{
+        timestamp_utc = [DateTime]::UtcNow.ToString('o')
+        test = 'compiler-test-mode-boundary'
+        result = 'PASS'
+        test_mode_requires_native_scm_host = $true
+        fault_injection_requires_explicit_test_flag = $true
+        executable_emitted_by_negative_tests = $false
+    })
+}
+
 function New-ServiceImage {
     param(
         [Parameter(Mandatory = $true)][string] $Name,
@@ -252,8 +285,19 @@ function New-ServiceImage {
     if (-not (Test-Path -LiteralPath $file -PathType Leaf)) {
         throw "Sharnou compiler did not emit '$file'."
     }
+    $productionVerifierRejectedTestImage = $false
     if ($TestMode) {
         & $verifier -Path $file -NativeScmServiceHost -NativeScmServiceTestImage
+        $rejectionReason = ''
+        try {
+            & $verifier -Path $file -NativeScmServiceHost
+        } catch {
+            $rejectionReason = $_.Exception.Message
+            $productionVerifierRejectedTestImage = $rejectionReason -match 'unexpected thunk count|unexpected API|test-only marker'
+        }
+        if (-not $productionVerifierRejectedTestImage) {
+            throw "Production verifier did not reject marked R5.1.d test image. Reason: $rejectionReason"
+        }
     } else {
         & $verifier -Path $file -NativeScmServiceHost
     }
@@ -264,6 +308,7 @@ function New-ServiceImage {
         image_bytes = (Get-Item -LiteralPath $file).Length
         image_sha256 = $hash
         test_mode = [bool]$TestMode
+        production_verifier_rejected_test_image = [bool]$productionVerifierRejectedTestImage
         fault = $Fault
         action = $Action
     }
@@ -390,6 +435,7 @@ $transcriptStarted = $false
 try {
     Start-Transcript -LiteralPath $transcript -Force | Out-Null
     $transcriptStarted = $true
+    Assert-TestCompilerGuards
 
     # This marked test image directly calls the generated HandlerEx callback.
     # It proves callback behavior only; it is not an OS shutdown broadcast test.
