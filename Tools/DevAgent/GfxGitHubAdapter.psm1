@@ -5,6 +5,9 @@ $script:GfxMaxJsonBytes=8388608
 $script:GfxMaxFileBytes=1048576
 $script:GfxMaxPages=5
 $script:GfxTransportOverride=$null
+$script:GfxTaskJournalModulePath=Join-Path $PSScriptRoot 'GfxTaskJournal.psm1'
+if(-not(Test-Path -LiteralPath $script:GfxTaskJournalModulePath -PathType Leaf)){throw 'DGA-GFX-0.4 requires the DGA-GFX-0.3 task journal module.'}
+Import-Module -Name $script:GfxTaskJournalModulePath -Scope Local -Force
 
 function Get-GfxCredentialRoot {
  if([string]::IsNullOrWhiteSpace($env:LOCALAPPDATA)){throw 'LOCALAPPDATA is unavailable.'}
@@ -372,4 +375,72 @@ function Test-GfxGitHubEvidenceObject {
  }
  return [pscustomobject][ordered]@{valid=($errors.Count -eq 0);errors=@($errors.ToArray());workflowRunCount=$(if($Evidence.workflowRuns -is [Array]){$Evidence.workflowRuns.Count}else{0});artifactCount=$(if($Evidence.artifacts -is [Array]){$Evidence.artifacts.Count}else{0})}
 }
-Export-ModuleMember -Function Get-GfxGitHubCredentialStatus,Set-GfxGitHubCredential,Remove-GfxGitHubCredential,Get-GfxGitHubRepository,Get-GfxGitHubBranch,Get-GfxGitHubCommit,Get-GfxGitHubFile,Get-GfxGitHubPullRequest,Get-GfxGitHubPullRequests,Get-GfxGitHubWorkflowRuns,Get-GfxGitHubRunArtifacts,Get-GfxGitHubCommitEvidence,Get-GfxGitHubPullRequestEvidence,Test-GfxGitHubEvidenceObject
+function Get-GfxAdapterSha256 {
+ param([byte[]]$Bytes)
+ $sha=[Security.Cryptography.SHA256]::Create()
+ try{return ([BitConverter]::ToString($sha.ComputeHash($Bytes)).Replace('-','').ToLowerInvariant())}finally{$sha.Dispose()}
+}
+function Save-GfxGitHubEvidenceCheckpoint {
+ [CmdletBinding()]param([Parameter(Mandatory=$true)]$Evidence,[string]$StateDirectory='')
+ $validation=Test-GfxGitHubEvidenceObject -Evidence $Evidence
+ if(-not $validation.valid){throw ('Refusing to journal invalid GitHub evidence: '+($validation.errors -join '; '))}
+ if([string]::IsNullOrWhiteSpace($StateDirectory)){
+  if([string]::IsNullOrWhiteSpace($env:LOCALAPPDATA)){throw 'LOCALAPPDATA is unavailable; StateDirectory must be supplied.'}
+  $StateDirectory=Join-Path $env:LOCALAPPDATA 'Sharnou\DevAgent\DgaGfxState'
+ }
+ $maxRuns=250;$maxArtifacts=500
+ $runs=@($Evidence.workflowRuns|Select-Object -First $maxRuns|ForEach-Object{
+  [pscustomobject][ordered]@{runId=[long]$_.runId;workflowId=[long]$_.workflowId;runNumber=[int]$_.runNumber;attempt=[int]$_.attempt;event=[string]$_.event;status=[string]$_.status;conclusion=[string]$_.conclusion;headSha=[string]$_.headSha;createdAtUtc=[string]$_.createdAtUtc;updatedAtUtc=[string]$_.updatedAtUtc;htmlUrl=[string]$_.htmlUrl}
+ })
+ $artifacts=@($Evidence.artifacts|Select-Object -First $maxArtifacts|ForEach-Object{
+  [pscustomobject][ordered]@{artifactId=[long]$_.artifactId;runId=[long]$_.runId;name=[string]$_.name;sizeBytes=[long]$_.sizeBytes;expired=[bool]$_.expired;digest=[string]$_.digest;createdAtUtc=[string]$_.createdAtUtc;expiresAtUtc=[string]$_.expiresAtUtc;archiveUrl=[string]$_.archiveUrl}
+ })
+ $truncated=[bool]($Evidence.truncated -or $Evidence.workflowRuns.Count -gt $maxRuns -or $Evidence.artifacts.Count -gt $maxArtifacts)
+ $state=[pscustomobject][ordered]@{
+  schemaVersion='sharnou.devagent.github-checkpoint/1';payloadKind='metadata-only';provider=[string]$Evidence.provider;apiVersion=[string]$Evidence.apiVersion
+  repository=[pscustomobject][ordered]@{fullName=[string]$Evidence.repository.fullName;repositoryId=[long]$Evidence.repository.repositoryId;defaultBranch=[string]$Evidence.repository.defaultBranch;visibility=[string]$Evidence.repository.visibility}
+  capturedAtUtc=[string]$Evidence.capturedAtUtc
+  commit=[pscustomobject][ordered]@{sha=[string]$Evidence.commit.sha;treeSha=[string]$Evidence.commit.treeSha;messageSha256=[string]$Evidence.commit.messageSha256;authorDateUtc=[string]$Evidence.commit.authorDateUtc;committerDateUtc=[string]$Evidence.commit.committerDateUtc}
+  workflowRuns=$runs;artifacts=$artifacts;truncated=$truncated
+  omittedWorkflowRunCount=[Math]::Max(0,$Evidence.workflowRuns.Count-$runs.Count)
+  omittedArtifactCount=[Math]::Max(0,$Evidence.artifacts.Count-$artifacts.Count)
+ }
+ if($null -ne $Evidence.PSObject.Properties['pullRequest'] -and $null -ne $Evidence.pullRequest){
+  Add-Member -InputObject $state -NotePropertyName pullRequest -NotePropertyValue ([pscustomobject][ordered]@{number=[int]$Evidence.pullRequest.number;state=[string]$Evidence.pullRequest.state;draft=[bool]$Evidence.pullRequest.draft;merged=[bool]$Evidence.pullRequest.merged;baseBranch=[string]$Evidence.pullRequest.baseBranch;headBranch=[string]$Evidence.pullRequest.headBranch;baseSha=[string]$Evidence.pullRequest.baseSha;headSha=[string]$Evidence.pullRequest.headSha;htmlUrl=[string]$Evidence.pullRequest.htmlUrl})
+ }
+ $utf8=New-Object Text.UTF8Encoding($false)
+ $json=ConvertTo-Json -InputObject $state -Depth 12 -Compress
+ $stateBytes=$utf8.GetBytes($json)
+ if($stateBytes.Length -gt 245760){throw 'Bounded GitHub evidence snapshot exceeds the 240 KiB journal payload budget.'}
+ $evidenceSha=Get-GfxAdapterSha256 $stateBytes
+ $inputSha=Get-GfxAdapterSha256 ($utf8.GetBytes('github-evidence-input/'+$script:GfxRepo+'/'+[string]$Evidence.commit.sha))
+ $scopeSha=Get-GfxAdapterSha256 ($utf8.GetBytes('dga-gfx-0.4/readonly-github-evidence/v1'))
+ $key='dga-gfx-0.4/github-evidence/'+[string]$Evidence.commit.sha+'/'+$evidenceSha
+ $null=Initialize-GfxTaskJournal -StateDirectory $StateDirectory -CampaignId 'sharnou.devagent.graphics-automation' -Purpose 'durable_dga_gfx_milestone_execution'
+ $plan=New-GfxPlannedTask -StateDirectory $StateDirectory -MilestoneId 'DGA-GFX-0.4' -TaskKind 'qualification' -InputSha256 $inputSha -ScopeSha256 $scopeSha -IdempotencyKey $key
+ $taskId=[string]$plan.taskId
+ $status=Get-GfxTaskJournalStatus -StateDirectory $StateDirectory
+ if($status.integrity -cne 'PASS' -or $status.campaignId -cne 'sharnou.devagent.graphics-automation' -or $status.purpose -cne 'durable_dga_gfx_milestone_execution'){throw 'DGA task journal identity/integrity validation failed.'}
+ if($status.orphanCheckpointFiles.Count -gt 0 -or $status.abandonedTemporaryFiles -gt 0){throw 'DGA task journal contains orphaned checkpoint or temporary files; refusing evidence write.'}
+ $matches=@($status.tasks|Where-Object{$_.taskId -ceq $taskId})
+ if($matches.Count -ne 1){throw 'DGA evidence task identity did not resolve to exactly one journal task.'}
+ $task=$matches[0]
+ if($task.state -eq 'FAILED' -or $task.state -eq 'CANCELLED'){throw 'Existing DGA evidence task is terminally failed or cancelled; a new evidence identity is required.'}
+ if($task.state -eq 'PLANNED'){$null=Start-GfxTask -StateDirectory $StateDirectory -TaskId $taskId -SessionId 'dga-gfx04-evidence'}
+ elseif($task.state -eq 'INTERRUPTED'){$null=Resume-GfxTask -StateDirectory $StateDirectory -TaskId $taskId -SessionId 'dga-gfx04-evidence'}
+ elseif($task.state -notin @('RUNNING','COMPLETED')){throw 'DGA evidence task has an unsupported lifecycle state.'}
+ $checkpoint=Get-GfxTaskCheckpoint -StateDirectory $StateDirectory -TaskId $taskId
+ if($task.state -eq 'COMPLETED'){
+  if($null -eq $checkpoint -or $checkpoint.state.evidenceSha256 -cne $evidenceSha){throw 'Completed DGA evidence task does not match the requested checkpoint.'}
+  return [pscustomobject][ordered]@{status='DUPLICATE_NOOP';taskId=$taskId;evidenceSha256=$evidenceSha;checkpointSequence=$checkpoint.checkpointSequence;state='COMPLETED';truncated=$truncated;persisted=$true}
+ }
+ if($null -eq $checkpoint){$saved=Save-GfxTaskCheckpoint -StateDirectory $StateDirectory -TaskId $taskId -CheckpointState ([pscustomobject][ordered]@{evidenceSha256=$evidenceSha;snapshot=$state})}
+ elseif($checkpoint.state.evidenceSha256 -cne $evidenceSha){throw 'Existing evidence checkpoint conflicts with the requested immutable snapshot.'}
+ $complete=Complete-GfxTask -StateDirectory $StateDirectory -TaskId $taskId -OutputSha256 $evidenceSha
+ $final=Get-GfxTaskJournalStatus -StateDirectory $StateDirectory
+ $finalTask=@($final.tasks|Where-Object{$_.taskId -ceq $taskId})
+ if($finalTask.Count -ne 1 -or $finalTask[0].state -ne 'COMPLETED' -or $final.integrity -cne 'PASS'){throw 'DGA evidence checkpoint did not reach a verified COMPLETED state.'}
+ $checkpoint=Get-GfxTaskCheckpoint -StateDirectory $StateDirectory -TaskId $taskId
+ return [pscustomobject][ordered]@{status=$complete.status;taskId=$taskId;evidenceSha256=$evidenceSha;checkpointFileName=$checkpoint.fileName;checkpointSha256=$checkpoint.checkpointSha256;checkpointSequence=$checkpoint.checkpointSequence;state='COMPLETED';recordCount=$final.recordCount;truncated=$truncated;persisted=$true}
+}
+Export-ModuleMember -Function Get-GfxGitHubCredentialStatus,Set-GfxGitHubCredential,Remove-GfxGitHubCredential,Get-GfxGitHubRepository,Get-GfxGitHubBranch,Get-GfxGitHubCommit,Get-GfxGitHubFile,Get-GfxGitHubPullRequest,Get-GfxGitHubPullRequests,Get-GfxGitHubWorkflowRuns,Get-GfxGitHubRunArtifacts,Get-GfxGitHubCommitEvidence,Get-GfxGitHubPullRequestEvidence,Test-GfxGitHubEvidenceObject,Save-GfxGitHubEvidenceCheckpoint
