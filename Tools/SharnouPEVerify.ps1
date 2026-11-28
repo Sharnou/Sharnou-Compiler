@@ -84,6 +84,14 @@ $opt = $pe + 24
 if ((Read-U16 -Bytes $bytes -Offset $opt) -ne 0x020B) { Fail-PE 'Optional header is not PE32+.' }
 $entryRva = [UInt64](Read-U32 -Bytes $bytes -Offset ($opt + 16))
 $imageBase = Read-U64 -Bytes $bytes -Offset ($opt + 24)
+$subsystem = Read-U16 -Bytes $bytes -Offset ($opt + 68)
+$coffCharacteristics = Read-U16 -Bytes $bytes -Offset ($pe + 22)
+if ($NativeScmServiceHost) {
+    if ($subsystem -ne 3) { Fail-PE 'Native SCM service image must use the Windows CUI subsystem.' }
+    if (($coffCharacteristics -band 0x0002) -eq 0 -or ($coffCharacteristics -band 0x2000) -ne 0) {
+        Fail-PE 'Native SCM image must be an executable image and must not be marked as a DLL.'
+    }
+}
 $sectionAlignment = [UInt64](Read-U32 -Bytes $bytes -Offset ($opt + 32))
 $fileAlignment = [UInt64](Read-U32 -Bytes $bytes -Offset ($opt + 36))
 $sizeImage = [UInt64](Read-U32 -Bytes $bytes -Offset ($opt + 56))
@@ -303,7 +311,13 @@ while ($true) {
     }
     $dllName = Read-AsciiZAtRva -Rva $nameRva -Sections $sections.ToArray() -Bytes $bytes
     $null = $foundDlls.Add($dllName)
-    $observedImportDescriptors.Add([pscustomobject]@{ Dll = $dllName; OriginalFirstThunk = $oft; FirstThunk = $firstThunk })
+    $descriptorImportNames = [System.Collections.Generic.List[string]]::new()
+    $observedImportDescriptors.Add([pscustomobject]@{
+        Dll = $dllName
+        OriginalFirstThunk = $oft
+        FirstThunk = $firstThunk
+        Imports = $descriptorImportNames
+    })
     $lookupRva = if ($oft -ne 0) { $oft } else { $firstThunk }
     $thunkTerminated = $false
     for ($thunkIndex = 0; $thunkIndex -lt 128; $thunkIndex++) {
@@ -316,6 +330,7 @@ while ($true) {
         $importName = Read-AsciiZAtRva -Rva ($thunkValue + 2) -Sections $sections.ToArray() -Bytes $bytes
         if ([string]::IsNullOrWhiteSpace($importName)) { Fail-PE ("Import-by-name record has an empty API name: descriptor={0}, DLL={1}, thunk={2}, lookupRva=0x{3:X8}, hintOffset=0x{4:X8}, thunkValue=0x{5:X8}." -f $descriptorIndex, $dllName, $thunkIndex, $thunkRva, $hintOffset, $thunkValue) }
         $null = $foundImports.Add($importName)
+        $descriptorImportNames.Add($importName)
         $iatEntryRva = $firstThunk + ([UInt64]$thunkIndex * 8)
         $iatEntryOffset = Convert-RvaToOffset -Rva $iatEntryRva -Size 8 -Sections $sections.ToArray() -FileSize $bytes.Length
         if ($NativeScmServiceHost -and (Read-U64 -Bytes $bytes -Offset $iatEntryOffset) -ne $thunkValue) {
@@ -349,6 +364,32 @@ if ($NativeScmServiceHost) {
         Fail-PE 'Native SCM ADVAPI32 descriptor uses unexpected lookup/IAT locations or descriptor order.'
     }
     foreach ($dll in $expectedServiceDlls) { if (-not $foundDlls.Contains($dll)) { Fail-PE "Native SCM service image is missing required DLL '$dll'." } }
+
+    # Verify the API-to-DLL mapping and thunk cardinality, not only a flat set of
+    # API names. This prevents a malformed image from satisfying the name set by
+    # putting a Kernel32 import under ADVAPI32 (or adding duplicate thunk names).
+    $expectedServiceImportGroups = @(
+        [pscustomobject]@{
+            Dll = 'KERNEL32.dll'
+            Names = @('ExitProcess', 'GetLastError', 'CreateEventW', 'SetEvent', 'WaitForSingleObject', 'CloseHandle')
+        },
+        [pscustomobject]@{
+            Dll = 'ADVAPI32.dll'
+            Names = @('StartServiceCtrlDispatcherW', 'RegisterServiceCtrlHandlerExW', 'SetServiceStatus')
+        }
+    )
+    for ($groupIndex = 0; $groupIndex -lt $expectedServiceImportGroups.Count; $groupIndex++) {
+        $expectedGroup = $expectedServiceImportGroups[$groupIndex]
+        $observedGroup = $observedImportDescriptors[$groupIndex]
+        if ($observedGroup.Imports.Count -ne $expectedGroup.Names.Count) {
+            Fail-PE "Native SCM descriptor '$($expectedGroup.Dll)' has an unexpected thunk count."
+        }
+        for ($apiIndex = 0; $apiIndex -lt $expectedGroup.Names.Count; $apiIndex++) {
+            if ($observedGroup.Imports[$apiIndex] -cne $expectedGroup.Names[$apiIndex]) {
+                Fail-PE "Native SCM descriptor '$($expectedGroup.Dll)' has an unexpected API at thunk index $apiIndex."
+            }
+        }
+    }
     if ($foundImports.Count -ne $expectedServiceApis.Count) { Fail-PE 'Native SCM service image import table contains an unexpected or missing API.' }
     foreach ($api in $expectedServiceApis) { if (-not $foundImports.Contains($api)) { Fail-PE "Native SCM service image is missing required API '$api'." } }
     if ($importSize -ne 0x3C -or $iatRva -ne ([UInt64]$idata.Rva + 0x70) -or $iatSize -ne 0x60) {
