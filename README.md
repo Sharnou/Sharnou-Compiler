@@ -92,3 +92,9 @@ The bootstrap is PowerShell/.NET and emits PE32+ output itself. No MSVC, Clang, 
 ## Autonomous SharnouDevAgent roadmap
 
 The requested autonomous development-agent architecture is documented in [Docs/SHARNOU-DEVAGENT-AUTONOMOUS-ARCHITECTURE.md](Docs/SHARNOU-DEVAGENT-AUTONOMOUS-ARCHITECTURE.md) and tracked in [issue #14](https://github.com/Sharnou/Sharnou-Compiler/issues/14). The existing native DevAgent prototype on draft PR #7 is a test orchestrator, not an AI source-generating agent. The roadmap requires a safe typed tool broker, local in-process model inference, durable knowledge/task memory, validated agent profiles, bounded repair transactions, static reverse engineering, and optional external-provider adapters. No autonomous source execution is enabled by this documentation change.
+
+### Automatic Sharnou graphics milestone campaign
+
+The requested GFX campaign is defined in [Docs/DEVAGENT-GFX-MILESTONE-AUTOMATION.md](Docs/DEVAGENT-GFX-MILESTONE-AUTOMATION.md), with the machine-readable plan at [Projects/DevAgent/GfxCampaign.v1.json](Projects/DevAgent/GfxCampaign.v1.json) and its contract at [Schemas/DevAgent/GfxCampaign.v1.schema.json](Schemas/DevAgent/GfxCampaign.v1.schema.json). The plan covers GFX-0.1 through GFX-0.8 and GFX-A.1 through GFX-A.3, including dependencies, path allowlists, acceptance gates and draft-PR-only policy.
+
+This is a campaign contract, not an active code generator. SharnouDevAgent still needs a genuine local inference runtime, typed patch/rollback tools, durable restart recovery, an accepted process broker and a native GitHub/evidence adapter before it can autonomously generate and qualify these milestones. Its activation state therefore remains BLOCKED; direct default-branch writes, automatic merges and releases are prohibited.

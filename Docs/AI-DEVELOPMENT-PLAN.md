@@ -315,3 +315,21 @@ R5.1.a and R5.1.b have passed their bounded exact-head Windows qualification on 
 - PR #36 records R5.2/R5.3 design only and does not waive R5.1.c/.d. The Low-IL AppContainer DPAPI subtest remains INCONCLUSIVE because the Windows PowerShell runner could not load `System.Security`; it is not accepted evidence.
 
 This status overlay changes no milestone scope and does not approve merging any PR, installing a persistent service, enabling model-facing execution, or deploying an autonomous agent. Model-facing and autonomous execution remain DISABLED; Phase 2B.8 remains NOT SECURITY ACCEPTED.
+
+
+## SharnouDevAgent automatic GFX campaign - 2026-11-28
+
+The user has requested automatic generation, verification, repair and draft-PR submission for all eleven graphics milestones. The machine-readable campaign contract is Projects/DevAgent/GfxCampaign.v1.json, validated against Schemas/DevAgent/GfxCampaign.v1.schema.json; the operating contract is Docs/DEVAGENT-GFX-MILESTONE-AUTOMATION.md.
+
+- Scope: GFX-0.1 through GFX-0.8 and GFX-A.1 through GFX-A.3.
+- Existing drafts: GFX-0.1 PR #39; GFX-0.2 PR #41. They must be inspected/reconciled, not regenerated or assumed accepted.
+- Campaign policy: isolated worktrees, bounded repairs, typed tools only, exact-head Windows evidence, physical-GPU captures where required, one draft PR per milestone, owner acceptance before downstream integration, no automatic merge/release.
+- Current implementation: DGA-GFX-0.1 campaign contract only. The native DevAgent local inference runtime, typed patch/rollback engine, durable restart recovery, accepted process broker and native GitHub/Actions adapter are not implemented/qualified on default. The campaign activation state is therefore BLOCKED.
+- Required DevAgent sequence: DGA-0.2 deterministic campaign/DAG/evidence validator; DGA-0.3 durable task journal; DGA-0.4 read-only repository/Actions adapter; DGA-0.5 genuine in-process local inference; DGA-0.6 typed patch transactions; DGA-0.7 qualified process broker and security gates; DGA-0.8 specialist orchestration/review/repair/evidence; DGA-0.9 campaign runner and draft-PR lifecycle.
+
+This approval of the desired campaign outcome does not waive Phase 2B.8, enable model-facing process execution, authorize arbitrary commands, or authorize automatic merges/releases. No campaign milestone is marked complete by the manifest alone.
+
+
+### DGA-GFX-0.1 campaign PR status - 2026-11-28
+
+Draft PR #42 is open at exact head 3434994d90f603adf82d8460f0977af8b59eb15a, based on default HEAD 36b07383cb0ee1996298724202454eb8aec57d98. Static JSON and dependency-DAG reconciliation found 11 milestone IDs, no missing dependency references and no cycle. This remains a declarative campaign contract only; its executor is not implemented or activated. DGA-0.2 is next.

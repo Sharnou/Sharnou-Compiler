@@ -489,3 +489,21 @@ PR #24 candidate head advanced to bd411c2fc777006f9b1160ab8d3d5992c2a15afa. Stag
 - PR #36 remains OPEN / DRAFT and design-only for R5.2/R5.3. R5.1.c real Sharnou-generated SCM host and R5.1.d actual SCM lifecycle/failure/cleanup qualification remain mandatory prerequisites. Do not implement R5.2 service identity/key or R5.3 pipe transport before both R5.1.c and R5.1.d pass.
 - The Low-IL AppContainer DPAPI protection subtest remains INCONCLUSIVE because the Windows PowerShell runner could not load `System.Security` (FileNotFoundException). It is not a pass and remains open.
 - **Next bounded task:** R5.1.c inert Sharnou-generated service image, actual PE import/relocation/exception verification, and disposable Windows SCM lifecycle smoke tests. Keep model-facing/autonomous execution disabled; Phase 2B.8 remains NOT SECURITY ACCEPTED.
+
+
+### B5 - DevAgent cannot yet execute the automatic GFX campaign
+
+- Tracking: issue #14 (autonomous SharnouDevAgent); GFX program issue #40.
+- DGA-GFX-0.1 adds Projects/DevAgent/GfxCampaign.v1.json, Schemas/DevAgent/GfxCampaign.v1.schema.json, and Docs/DEVAGENT-GFX-MILESTONE-AUTOMATION.md on isolated branch devagent-gfx-campaign-automation-20261128.
+- The manifest contains exactly eleven milestones: GFX-0.1 through GFX-0.8 and GFX-A.1 through GFX-A.3, with dependencies, path allowlists, specialist roles, outputs, hard stops and exact evidence policies.
+- **Status: CAMPAIGN CONTRACT PRESENT / NATIVE AUTOMATION NOT IMPLEMENTED.** Default branch still lacks a production DevAgent local inference runtime, typed patch/rollback engine, durable journal/restart recovery, accepted model-facing broker and native GitHub/Actions adapter. Existing PR #7 is not safe for model-produced commands.
+- GFX-0.1/0.2 remain draft PRs #39/#41; GFX-0.2 has no confirmed exact-head Windows pass/artifact. No downstream GFX milestone is READY or accepted.
+- Next implementation order: DGA-0.2 deterministic manifest/DAG/evidence validator; DGA-0.3 durable task journal; DGA-0.4 read-only native repository/Actions adapter; DGA-0.5 actual local inference; DGA-0.6 typed patch transactions; DGA-0.7 broker/security qualification; DGA-0.8 specialist/review/repair/evidence loop; DGA-0.9 campaign scheduler and draft-PR writer.
+- Campaign policy forbids direct default-branch writes, arbitrary model commands, auto merge/release, unapproved dependencies and any bypass of Phase 2B.8. Model-facing and autonomous execution remain DISABLED.
+
+
+#### B5 follow-up - DGA-GFX-0.1 draft PR and manifest reconciliation
+
+Draft PR #42 is open at head 3434994d90f603adf82d8460f0977af8b59eb15a, based on default HEAD 36b07383cb0ee1996298724202454eb8aec57d98. It contains seven documentation/schema/manifest files.
+
+Static checks confirmed both JSON documents parse, all eleven milestone IDs exist, all dependency references resolve, the DAG is acyclic and the declared top-level/milestone property names match the schema. This is not full JSON Schema validation and not Windows/PowerShell execution. The campaign activation remains BLOCKED; DGA-0.2 is the next implementation task.

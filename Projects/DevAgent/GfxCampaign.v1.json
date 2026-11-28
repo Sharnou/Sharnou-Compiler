@@ -1,0 +1,488 @@
+{
+  "schemaVersion": "sharnou.devagent.gfx-campaign/1",
+  "campaignId": "sharnou.graphics-compiler",
+  "repository": "Sharnou/Sharnou-Compiler",
+  "defaultBranch": "Sharnou-Compiler",
+  "requestedMode": "automatic_generate_validate_and_open_draft_prs",
+  "activation": {
+    "state": "BLOCKED_UNTIL_DEVAGENT_PREREQUISITES_PASS",
+    "blockingGates": [
+      "SharnouDevAgent has no qualified in-process local inference runtime that can generate source patches.",
+      "Typed workspace patch/apply/rollback tools are not implemented as an active native DevAgent capability.",
+      "The native process broker and durable restart-recovery security gates remain unaccepted; model-facing process execution is disabled.",
+      "A native GitHub repository adapter with protected credentials and exact-head artifact retrieval is not yet implemented.",
+      "An exact-head Windows PowerShell 5.1 qualification result for GFX-0.2 has not been confirmed."
+    ],
+    "automaticMerge": false
+  },
+  "executionPolicy": {
+    "directDefaultBranchWrites": false,
+    "automaticMerge": false,
+    "automaticRelease": false,
+    "draftPullRequestsOnly": true,
+    "maxConcurrentMilestones": 2,
+    "maxRepairAttemptsPerMilestone": 3,
+    "maxFilesPerPatch": 12,
+    "maxChangedBytesPerPatch": 1048576,
+    "requireIsolatedWorktree": true,
+    "requireBaselineSnapshot": true,
+    "requireExactHeadWindowsEvidence": true,
+    "requireIndependentPatchReview": true,
+    "requireHumanAcceptanceBeforeDownstreamIntegration": true,
+    "allowArbitraryCommands": false,
+    "allowDownloadedExecutableExecution": false,
+    "allowUnapprovedCompilerDependencies": false
+  },
+  "generationRequirements": {
+    "localInProcessInference": false,
+    "typedWorkspacePatchTools": false,
+    "qualifiedProcessBroker": false,
+    "durableJournalAndRestartRecovery": false,
+    "nativeGitHubRepositoryAdapter": false,
+    "exactHeadEvidenceCollector": false,
+    "primarySourceResearch": false,
+    "optionalRemoteProviders": false
+  },
+  "milestones": [
+    {
+      "id": "GFX-0.1",
+      "title": "Graphics compiler architecture",
+      "workstream": "shader_compiler",
+      "status": "draft_pr_open",
+      "existingPullRequest": 39,
+      "existingPullRequestUrl": "https://github.com/Sharnou/Sharnou-Compiler/pull/39",
+      "sourceBranch": "graphics-compiler-gfx01-architecture-20261128",
+      "sourceHeadSha": "da35987afb7db46736b152bc6c249634a886e836",
+      "dependsOn": [],
+      "agentRoles": [
+        "Graphics Compiler Architect",
+        "D3D11 Backend Architect",
+        "Security and Dependency Reviewer"
+      ],
+      "allowedPaths": [
+        "Docs/GFX-0-1-*",
+        "Docs/SHARNOU-GRAPHICS-COMPILER-LEARNING-PATH.md",
+        "Docs/Renderer-Roadmap-3D-MMORPG.md",
+        "README.md"
+      ],
+      "deliverables": [
+        "Review the architecture proposal, component boundaries, SGIR/1 interface and native-compiler versus shader-compiler boundary.",
+        "Resolve review findings and update the architecture decision record without changing approved compiler dependencies.",
+        "Produce a reviewed dependency and acceptance map for the shader and asset analysis workstreams."
+      ],
+      "acceptanceGates": [
+        "Architecture review records accepted/rejected decisions and unresolved questions.",
+        "The shader compiler, asset analyzer and native PE compiler responsibilities remain distinct.",
+        "All later milestones have explicit dependencies, source ownership, acceptance tests and runtime evidence rules."
+      ],
+      "hardStops": [
+        "Do not represent the draft architecture as accepted or implemented.",
+        "Do not approve DXC, Clang, MSVC, external compiler execution or an implicit D3DCompiler runtime dependency."
+      ],
+      "requiresRealWindowsRuntimeEvidence": false,
+      "requiresPhysicalGpuEvidence": false,
+      "requiredOwnerDecisions": []
+    },
+    {
+      "id": "GFX-0.2",
+      "title": "SGIR/1 schema and verifier",
+      "workstream": "shader_compiler",
+      "status": "draft_pr_open_windows_not_verified",
+      "existingPullRequest": 41,
+      "existingPullRequestUrl": "https://github.com/Sharnou/Sharnou-Compiler/pull/41",
+      "sourceBranch": "graphics-compiler-gfx02-sgir-20261128",
+      "sourceHeadSha": "d331970ab3fd463e3977aaba04fccd12bd523dad",
+      "dependsOn": [
+        "GFX-0.1"
+      ],
+      "agentRoles": [
+        "Graphics IR Engineer",
+        "Compiler Verification Engineer",
+        "Test and QA Engineer",
+        "Security Reviewer"
+      ],
+      "allowedPaths": [
+        "Tools/SharnouGraphicsIR.ps1",
+        "Schemas/SGIR/**",
+        "Examples/GraphicsIR/**",
+        "Tests/Test-SharnouGraphicsIR.ps1",
+        "Docs/GFX-0-2-*",
+        "README.md"
+      ],
+      "deliverables": [
+        "Finish exact-head PowerShell 5.1 validation and fix every failing SGIR/1 test.",
+        "Freeze SGIR/1 canonical serialization, schema, type rules, resource contract and CFG/SSA invariants.",
+        "Produce a malformed-IR negative corpus, deterministic content hashes and a hash-bound qualification artifact."
+      ],
+      "acceptanceGates": [
+        "All SGIR positive, negative, malformed JSON, schema, CFG, SSA, determinism and canonical-output tests pass on Windows PowerShell 5.1.",
+        "The existing compiler Test.ps1 gate passes on the same exact commit.",
+        "The evidence manifest binds the tested commit, source hashes, test outcomes and artifact digest."
+      ],
+      "hardStops": [
+        "Do not start GFX-0.3 until GFX-0.1 and GFX-0.2 have been reviewed and accepted.",
+        "Do not claim Windows CI success from static JSON parsing or from the presence of a workflow file."
+      ],
+      "requiresRealWindowsRuntimeEvidence": true,
+      "requiresPhysicalGpuEvidence": false,
+      "requiredOwnerDecisions": []
+    },
+    {
+      "id": "GFX-0.3",
+      "title": "Shader lexer, parser and typed AST",
+      "workstream": "shader_compiler",
+      "status": "planned",
+      "dependsOn": [
+        "GFX-0.1",
+        "GFX-0.2"
+      ],
+      "agentRoles": [
+        "Shader Language Architect",
+        "Lexer and Parser Engineer",
+        "Compiler Frontend Engineer",
+        "Test and QA Engineer"
+      ],
+      "allowedPaths": [
+        "Stage0/Graphics/**",
+        "Tools/Graphics/**",
+        "Schemas/ShaderLanguage/**",
+        "Examples/GraphicsShaders/**",
+        "Tests/GraphicsShaderFrontend/**",
+        "Docs/GFX-0-3-*"
+      ],
+      "deliverables": [
+        "Define a small explicit .shshader grammar and stage/entry-point declarations.",
+        "Implement source-mapped lexing, parsing, AST construction, symbol scopes and typed declarations.",
+        "Lower accepted AST nodes into the frozen SGIR/1 contract without bypassing its verifier."
+      ],
+      "acceptanceGates": [
+        "Positive grammar corpus covers declarations, functions, structs, scalar/vector/matrix expressions and vertex/pixel entry points.",
+        "Negative corpus checks malformed tokens, syntax, duplicate symbols, invalid scopes, type errors and exact line/column spans.",
+        "Every emitted SGIR module passes the independent SGIR/1 verifier; invalid source emits no SGIR artifact."
+      ],
+      "hardStops": [
+        "Do not silently accept unsupported syntax or insert implicit narrowing conversions.",
+        "Do not duplicate SGIR validation inside IDE-only code."
+      ],
+      "requiresRealWindowsRuntimeEvidence": true,
+      "requiresPhysicalGpuEvidence": false,
+      "requiredOwnerDecisions": []
+    },
+    {
+      "id": "GFX-0.4",
+      "title": "Shader semantic and static analysis",
+      "workstream": "shader_compiler",
+      "status": "planned",
+      "dependsOn": [
+        "GFX-0.3"
+      ],
+      "agentRoles": [
+        "Shader Semantic Analysis Engineer",
+        "Static Analysis Engineer",
+        "Graphics Performance Analyst"
+      ],
+      "allowedPaths": [
+        "Stage0/Graphics/Analysis/**",
+        "Tools/Graphics/Analysis/**",
+        "Tests/GraphicsShaderAnalysis/**",
+        "Docs/GFX-0-4-*"
+      ],
+      "deliverables": [
+        "Implement typed-AST and verified-SGIR semantic checks for stage interfaces, types, resource bindings and constant-buffer declarations.",
+        "Add shader hazards for derivatives, invalid sampling, undefined values, numeric edge cases and unsupported target features.",
+        "Generate stable source-located diagnostic records with remediation and evidence-backed cost estimates."
+      ],
+      "acceptanceGates": [
+        "Every diagnostic has a stable code, severity, source range, affected symbol and remediation.",
+        "Positive and negative fixtures cover stage/resource/type/layout semantics and unsupported capabilities.",
+        "Performance analysis is explicitly labelled estimated unless obtained from an actual GPU measurement."
+      ],
+      "hardStops": [
+        "Do not report estimated shader cost as measured GPU time, occupancy or hardware register count.",
+        "Do not permit unsupported required effects to be silently downgraded."
+      ],
+      "requiresRealWindowsRuntimeEvidence": true,
+      "requiresPhysicalGpuEvidence": false,
+      "requiredOwnerDecisions": []
+    },
+    {
+      "id": "GFX-0.5",
+      "title": "D3D11 lowering and shader reflection",
+      "workstream": "shader_compiler",
+      "status": "planned",
+      "dependsOn": [
+        "GFX-0.4"
+      ],
+      "agentRoles": [
+        "D3D11 Shader Backend Engineer",
+        "Shader Reflection Engineer",
+        "Compiler Backend Reviewer"
+      ],
+      "allowedPaths": [
+        "Stage0/Graphics/D3D11/**",
+        "Tools/Graphics/D3D11/**",
+        "Tests/GraphicsD3D11Backend/**",
+        "Docs/GFX-0-5-*"
+      ],
+      "deliverables": [
+        "Implement deterministic lowering from verified SGIR/1 into the approved D3D11 shader input representation.",
+        "Generate precise stage, resource and constant-buffer metadata for the backend.",
+        "Reflect compiled shader objects and compare actual inputs, outputs, register bindings and constant-buffer layouts with Sharnou's contract."
+      ],
+      "acceptanceGates": [
+        "Backend positive and negative fixtures cover supported and rejected SGIR operations.",
+        "Backend reflection exactly matches the expected Sharnou stage/resource/constant-buffer contract.",
+        "Failed lowering or reflection cannot publish a shader package or replace a last-known-good cache entry."
+      ],
+      "hardStops": [
+        "No DXC, Clang, MSVC, fxc.exe, dxc.exe or arbitrary compiler subprocess.",
+        "No D3DCompiler_47.dll dependency until its exact deployment/runtime policy receives an explicit owner decision."
+      ],
+      "requiresRealWindowsRuntimeEvidence": true,
+      "requiresPhysicalGpuEvidence": false,
+      "requiredOwnerDecisions": [
+        "Decide whether to approve an in-process D3DCompiler_47.dll D3DCompile/D3DReflect bridge for the D3D11 SM5 target or require a Sharnou-owned alternative."
+      ]
+    },
+    {
+      "id": "GFX-0.6",
+      "title": "Actual shader execution and indexed 3D mesh",
+      "workstream": "gpu_runtime",
+      "status": "planned",
+      "dependsOn": [
+        "GFX-0.5"
+      ],
+      "agentRoles": [
+        "Sharnou Engine Rendering Engineer",
+        "D3D11 Runtime Engineer",
+        "Graphics QA Engineer"
+      ],
+      "allowedPaths": [
+        "Engine/**",
+        "Stage0/Graphics/Runtime/**",
+        "Tests/GraphicsRuntime/**",
+        "Examples/GraphicsRuntime/**",
+        "Docs/GFX-0-6-*"
+      ],
+      "deliverables": [
+        "Load verified runtime shader packages through the Sharnou Engine D3D11 device/resource ownership layer.",
+        "Create vertex and index buffers, input layout, shaders, viewport, depth target and camera transforms.",
+        "Draw an actual indexed 3D mesh and capture deterministic runtime evidence."
+      ],
+      "acceptanceGates": [
+        "The native Sharnou Engine executable creates and validates the actual D3D11 resources and shader objects.",
+        "A real indexed mesh draw produces verified pixels; a clear/present-only loop is insufficient.",
+        "Capture records executable, shader package, source asset, GPU adapter, driver, display mode, scene settings and output hashes."
+      ],
+      "hardStops": [
+        "Do not claim a mesh render from a static screenshot, generated image or clear/present test.",
+        "Do not use WARP-only results as proof of high-performance physical-GPU performance."
+      ],
+      "requiresRealWindowsRuntimeEvidence": true,
+      "requiresPhysicalGpuEvidence": true,
+      "requiredOwnerDecisions": []
+    },
+    {
+      "id": "GFX-A.1",
+      "title": "glTF/GLB geometry and scene analyzer",
+      "workstream": "asset_analysis",
+      "status": "planned",
+      "dependsOn": [
+        "GFX-0.1"
+      ],
+      "agentRoles": [
+        "glTF Asset Engineer",
+        "Geometry Validation Engineer",
+        "Asset Pipeline QA"
+      ],
+      "allowedPaths": [
+        "Stage0/Graphics/Assets/Gltf/**",
+        "Tools/Graphics/Assets/Gltf/**",
+        "Tests/GraphicsAssets/Gltf/**",
+        "Docs/GFX-A-1-*"
+      ],
+      "deliverables": [
+        "Implement bounded glTF JSON and GLB container parsing.",
+        "Validate buffers, buffer views, accessors, index bounds, primitive topology, node transforms, hierarchy, materials and required extensions.",
+        "Analyze mesh positions, normals, tangents, UVs, bounds, winding, skin attributes and geometry-memory estimates."
+      ],
+      "acceptanceGates": [
+        "Positive and negative corpus includes GLB chunk errors, accessor overflows, bad indices, non-finite geometry, invalid hierarchy and unsupported required extensions.",
+        "All length, offset, alignment and multiplication arithmetic is overflow checked before allocation or indexing.",
+        "Analysis output is deterministic, source-located and read-only against imported assets."
+      ],
+      "hardStops": [
+        "Reject unknown required glTF extensions instead of silently dropping content.",
+        "Do not claim successful GPU upload, rendering or transcoding from structural parsing alone."
+      ],
+      "requiresRealWindowsRuntimeEvidence": true,
+      "requiresPhysicalGpuEvidence": false,
+      "requiredOwnerDecisions": []
+    },
+    {
+      "id": "GFX-A.2",
+      "title": "KTX2 and PBR material analyzer",
+      "workstream": "asset_analysis",
+      "status": "planned",
+      "dependsOn": [
+        "GFX-A.1"
+      ],
+      "agentRoles": [
+        "KTX2 Texture Engineer",
+        "PBR Material Engineer",
+        "Asset Pipeline QA"
+      ],
+      "allowedPaths": [
+        "Stage0/Graphics/Assets/Ktx2/**",
+        "Tools/Graphics/Assets/Ktx2/**",
+        "Tests/GraphicsAssets/Ktx2/**",
+        "Docs/GFX-A-2-*"
+      ],
+      "deliverables": [
+        "Implement bounded KTX2 header, level-index, metadata and DFD parsing.",
+        "Validate KHR_texture_basisu references, texture dimensions, levels, faces, layers, payload ranges and supercompression metadata.",
+        "Analyze PBR material slots, texture color spaces, normal/roughness/metallic/AO channel conventions and sampler compatibility."
+      ],
+      "acceptanceGates": [
+        "Positive and negative KTX2 fixtures cover malformed headers, overflowed ranges, invalid DFD/level metadata and unsupported required formats.",
+        "PBR checks validate glTF material references and distinguish required from optional texture inputs.",
+        "The analyzer never reports successful Basis transcoding or GPU upload unless a separately accepted runtime path performs and verifies it."
+      ],
+      "hardStops": [
+        "Do not substitute AVIF for 3D KTX2 material textures.",
+        "Do not add an unapproved third-party transcoder or download a compiler/toolchain."
+      ],
+      "requiresRealWindowsRuntimeEvidence": true,
+      "requiresPhysicalGpuEvidence": false,
+      "requiredOwnerDecisions": []
+    },
+    {
+      "id": "GFX-A.3",
+      "title": "Skeleton and animation analyzer",
+      "workstream": "asset_analysis",
+      "status": "planned",
+      "dependsOn": [
+        "GFX-A.1"
+      ],
+      "agentRoles": [
+        "Skeletal Animation Engineer",
+        "glTF Runtime Engineer",
+        "Animation QA"
+      ],
+      "allowedPaths": [
+        "Stage0/Graphics/Assets/Animation/**",
+        "Tools/Graphics/Assets/Animation/**",
+        "Tests/GraphicsAssets/Animation/**",
+        "Docs/GFX-A-3-*"
+      ],
+      "deliverables": [
+        "Validate skin joints, skeleton hierarchy, inverse-bind matrices, joint indices and normalized skin weights.",
+        "Validate animation samplers, input/output accessors, interpolation modes, channel targets and duration ranges.",
+        "Cross-check animation targets against the parsed scene and skeleton and produce deterministic diagnostics."
+      ],
+      "acceptanceGates": [
+        "Positive and negative fixtures cover valid skins, missing joints, bad weights, invalid matrices, out-of-range channels and incompatible target nodes.",
+        "Animation channel and accessor references resolve against the validated glTF asset graph.",
+        "No invented or silently repaired skeleton/animation links are emitted."
+      ],
+      "hardStops": [
+        "Do not mark animation runtime support complete from data parsing or metadata inspection.",
+        "Do not change the imported source asset during analysis."
+      ],
+      "requiresRealWindowsRuntimeEvidence": true,
+      "requiresPhysicalGpuEvidence": false,
+      "requiredOwnerDecisions": []
+    },
+    {
+      "id": "GFX-0.7",
+      "title": "Sharnou IDE graphics workbench",
+      "workstream": "ide",
+      "status": "planned",
+      "dependsOn": [
+        "GFX-0.3",
+        "GFX-0.4",
+        "GFX-0.5",
+        "GFX-A.1",
+        "GFX-A.2",
+        "GFX-A.3",
+        "GFX-0.6"
+      ],
+      "agentRoles": [
+        "Sharnou IDE Engineer",
+        "Graphics UX Engineer",
+        "Compiler Integration Engineer"
+      ],
+      "allowedPaths": [
+        "IDE/**",
+        "Tools/Graphics/IDE/**",
+        "Tests/GraphicsIDE/**",
+        "Docs/GFX-0-7-*"
+      ],
+      "deliverables": [
+        "Integrate shader source diagnostics, SGIR inspection and compilation stage status using the same compiler/analyzer libraries as command-line builds.",
+        "Add resource/constant-buffer viewers, glTF hierarchy and mesh inspection, KTX2/PBR inspection and skeleton/animation views.",
+        "Provide a real D3D11 preview surface and visible fallback/capability state."
+      ],
+      "acceptanceGates": [
+        "IDE diagnostics match command-line diagnostics for the same source revision.",
+        "Views consume versioned structured compiler/analyzer outputs and do not reimplement shader or asset semantics.",
+        "Preview labels actual GPU execution, reduced capability and fallback materials accurately."
+      ],
+      "hardStops": [
+        "Do not add an independent UI-only shader parser.",
+        "Do not describe a static mock preview as a functioning GPU viewport."
+      ],
+      "requiresRealWindowsRuntimeEvidence": true,
+      "requiresPhysicalGpuEvidence": true,
+      "requiredOwnerDecisions": []
+    },
+    {
+      "id": "GFX-0.8",
+      "title": "GPU profiling and rendering optimization",
+      "workstream": "gpu_runtime",
+      "status": "planned",
+      "dependsOn": [
+        "GFX-0.6",
+        "GFX-0.7"
+      ],
+      "agentRoles": [
+        "GPU Performance Engineer",
+        "D3D11 Profiling Engineer",
+        "Performance QA"
+      ],
+      "allowedPaths": [
+        "Engine/Graphics/Profiling/**",
+        "IDE/Graphics/Profiling/**",
+        "Tests/GraphicsProfiling/**",
+        "Docs/GFX-0-8-*"
+      ],
+      "deliverables": [
+        "Add non-blocking timestamp/disjoint query rings around actual render passes.",
+        "Measure CPU submission and GPU execution times with adapter/driver/scene metadata.",
+        "Add per-pass diagnostics for draw count, triangles, shader changes, resource memory and measured bottlenecks, then optimize only after a repeatable baseline exists."
+      ],
+      "acceptanceGates": [
+        "Timestamp deltas are accepted only when the corresponding disjoint query is valid.",
+        "GPU query polling is asynchronous and does not force a per-frame CPU/GPU stall.",
+        "Before/after optimization reports use the same scene, camera, adapter, driver and capture settings and contain measured results."
+      ],
+      "hardStops": [
+        "Do not report estimates as measured GPU time or occupancy.",
+        "Do not optimize from synthetic counters or unreproducible scene captures."
+      ],
+      "requiresRealWindowsRuntimeEvidence": true,
+      "requiresPhysicalGpuEvidence": true,
+      "requiredOwnerDecisions": []
+    }
+  ],
+  "globalAcceptance": [
+    "The native DevAgent must load and validate this campaign as data; milestone state cannot be inferred from a title, PR label or model assertion.",
+    "A milestone becomes windows_qualified only when an exact-head Windows result and its hash-bound evidence artifact have been retrieved and verified.",
+    "A milestone becomes accepted only after its acceptance gates pass and an owner/reviewer accepts the draft PR; the agent never merges or releases.",
+    "Every generation runs in an isolated worktree with a baseline hash, allowlisted paths, bounded patch sizes, bounded repair attempts and automatic rollback on any failed mandatory gate.",
+    "The frozen M1-M6 83-case provenance issue remains separate; do not claim its coverage on a branch that does not contain and execute the exact baseline sources.",
+    "No graphics milestone may introduce MSVC, Clang, Visual Studio, MSBuild, external shader compiler executables, arbitrary command execution or unapproved compiler/runtime dependencies.",
+    "Runtime rendering and profiling milestones require genuine Windows execution and physical-GPU evidence where specified; static validators and WARP-only tests are not substitutes.",
+    "Design-only milestones may use deterministic document/schema checks, but must not be described as Windows runtime acceptance; code-bearing milestones require exact-head Windows evidence where the manifest says so."
+  ]
+}
