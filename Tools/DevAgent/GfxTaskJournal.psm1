@@ -230,12 +230,12 @@ function Get-GfxStoreStatus {
 }
 function Initialize-GfxTaskJournal {
  [CmdletBinding()]param([Parameter(Mandatory=$true)][string]$StateDirectory)
- $paths=Get-GfxStatePaths $StateDirectory;$mutex=Enter-GfxLock $paths.root
+ $paths=Get-GfxStatePaths -StateDirectory $StateDirectory;$mutex=Enter-GfxLock $paths.root
  try{Ensure-GfxDirectories $paths;$store=Read-GfxJournalUnlocked $paths;if(-not $store.initialized){$store.journalId=[Guid]::NewGuid().ToString('N');$p=[pscustomobject][ordered]@{campaignId='sharnou.graphics-compiler';purpose='durable_gfx_campaign_execution'};$null=Add-GfxJournalRecordUnlocked $store 'JournalCreated' $null $p 'journal-created/v1';$store=Read-GfxJournalUnlocked $paths};return (Get-GfxStoreStatus $store)}finally{Exit-GfxLock $mutex}
 }
 function Get-GfxTaskJournalStatus {
  [CmdletBinding()]param([Parameter(Mandatory=$true)][string]$StateDirectory)
- $paths=Get-GfxStatePaths $StateDirectory;$mutex=Enter-GfxLock $paths.root
+ $paths=Get-GfxStatePaths -StateDirectory $StateDirectory;$mutex=Enter-GfxLock $paths.root
  try{Ensure-GfxDirectories $paths;return (Get-GfxStoreStatus (Read-GfxJournalUnlocked $paths))}finally{Exit-GfxLock $mutex}
 }
 function New-GfxPlannedTask {
@@ -245,14 +245,14 @@ function New-GfxPlannedTask {
  if($Attempt -lt 1 -or $Attempt -gt 3){throw 'Attempt must be 1-3.'}
  Assert-GfxIdempotencyKey $IdempotencyKey;$taskId=Get-GfxStableId 't' $IdempotencyKey
  $payload=[pscustomobject][ordered]@{milestoneId=$MilestoneId;taskKind=$TaskKind;inputSha256=$InputSha256;scopeSha256=$ScopeSha256;attempt=$Attempt}
- $paths=Get-GfxStatePaths $StateDirectory;$mutex=Enter-GfxLock $paths.root
+ $paths=Get-GfxStatePaths -StateDirectory $StateDirectory;$mutex=Enter-GfxLock $paths.root
  try{$store=Read-GfxJournalUnlocked $paths;if(-not $store.initialized){throw 'Initialize journal before planning.'};$dup=Resolve-GfxIdempotency $store 'TaskPlanned' $taskId $payload $IdempotencyKey;if($null -ne $dup){return $dup};$r=Add-GfxJournalRecordUnlocked $store 'TaskPlanned' $taskId $payload $IdempotencyKey;return [pscustomobject][ordered]@{status=$r.status;taskId=$taskId;sequence=$r.sequence;eventId=$r.eventId;recordSha256=$r.recordSha256}}finally{Exit-GfxLock $mutex}
 }
 function Start-GfxTask {
  [CmdletBinding()]param([Parameter(Mandatory=$true)][string]$StateDirectory,[Parameter(Mandatory=$true)][string]$TaskId,[Parameter(Mandatory=$true)][string]$SessionId)
  if($SessionId -cnotmatch '^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$'){throw 'SessionId invalid.'}
  $key='start/'+$TaskId+'/'+$SessionId;$payload=[pscustomobject][ordered]@{sessionId=$SessionId}
- $paths=Get-GfxStatePaths $StateDirectory;$mutex=Enter-GfxLock $paths.root
+ $paths=Get-GfxStatePaths -StateDirectory $StateDirectory;$mutex=Enter-GfxLock $paths.root
  try{$store=Read-GfxJournalUnlocked $paths;$dup=Resolve-GfxIdempotency $store 'TaskStarted' $TaskId $payload $key;if($null -ne $dup){return $dup};$r=Add-GfxJournalRecordUnlocked $store 'TaskStarted' $TaskId $payload $key;return [pscustomobject][ordered]@{status=$r.status;taskId=$TaskId;sequence=$r.sequence;recordSha256=$r.recordSha256}}finally{Exit-GfxLock $mutex}
 }
 function Save-GfxCheckpointUnlocked {
@@ -280,18 +280,18 @@ function Save-GfxCheckpointUnlocked {
  return [pscustomobject][ordered]@{status=$r.status;taskId=$TaskId;sequence=$r.sequence;checkpointSequence=$n;checkpointFileName=$fileName;checkpointSha256=$checkpointHash;checkpointStateSha256=$stateHash}
 }
 function Save-GfxTaskCheckpoint {
- [CmdletBinding()]param([Parameter(Mandatory=$true)][string]$StateDirectory,[Parameter(Mandatory=$true)][string]$TaskId,[Parameter(Mandatory=$true)]$State)
- $paths=Get-GfxStatePaths $StateDirectory;$mutex=Enter-GfxLock $paths.root
- try{$store=Read-GfxJournalUnlocked $paths;if(-not $store.tasks.ContainsKey($TaskId)){throw 'Unknown task.'};$task=$store.tasks[$TaskId];if($task.state -ne 'RUNNING'){throw 'Checkpoint requires RUNNING state.'};return (Save-GfxCheckpointUnlocked $paths $store $TaskId $task $State)}finally{Exit-GfxLock $mutex}
+ [CmdletBinding()]param([Parameter(Mandatory=$true)][string]$StateDirectory,[Parameter(Mandatory=$true)][string]$TaskId,[Parameter(Mandatory=$true)]$CheckpointState)
+ $paths=Get-GfxStatePaths -StateDirectory $StateDirectory;$mutex=Enter-GfxLock $paths.root
+ try{$store=Read-GfxJournalUnlocked $paths;if(-not $store.tasks.ContainsKey($TaskId)){throw 'Unknown task.'};$task=$store.tasks[$TaskId];if($task.state -ne 'RUNNING'){throw 'Checkpoint requires RUNNING state.'};return (Save-GfxCheckpointUnlocked $paths $store $TaskId $task $CheckpointState)}finally{Exit-GfxLock $mutex}
 }
 function Get-GfxTaskCheckpoint {
  [CmdletBinding()]param([Parameter(Mandatory=$true)][string]$StateDirectory,[Parameter(Mandatory=$true)][string]$TaskId)
- $paths=Get-GfxStatePaths $StateDirectory;$mutex=Enter-GfxLock $paths.root
+ $paths=Get-GfxStatePaths -StateDirectory $StateDirectory;$mutex=Enter-GfxLock $paths.root
  try{$store=Read-GfxJournalUnlocked $paths;if(-not $store.tasks.ContainsKey($TaskId)){throw 'Unknown task.'};$t=$store.tasks[$TaskId];if($t.checkpointSequence -lt 1){return $null};return (Get-GfxCheckpointFile $paths $t.checkpointFileName $TaskId $t.checkpointSequence $store.journalId $t.previousCheckpointSha256)}finally{Exit-GfxLock $mutex}
 }
 function Invoke-GfxTaskEvent {
  param([string]$StateDirectory,[string]$TaskId,[string]$EventType,$Payload,[string]$Key)
- $paths=Get-GfxStatePaths $StateDirectory;$mutex=Enter-GfxLock $paths.root
+ $paths=Get-GfxStatePaths -StateDirectory $StateDirectory;$mutex=Enter-GfxLock $paths.root
  try{$store=Read-GfxJournalUnlocked $paths;$dup=Resolve-GfxIdempotency $store $EventType $TaskId $Payload $Key;if($null -ne $dup){return $dup};$r=Add-GfxJournalRecordUnlocked $store $EventType $TaskId $Payload $Key;return [pscustomobject][ordered]@{status=$r.status;taskId=$TaskId;eventType=$EventType;sequence=$r.sequence;recordSha256=$r.recordSha256}}finally{Exit-GfxLock $mutex}
 }
 function Complete-GfxTask {
@@ -312,12 +312,12 @@ function Cancel-GfxTask {
 function Resume-GfxTask {
  [CmdletBinding()]param([Parameter(Mandatory=$true)][string]$StateDirectory,[Parameter(Mandatory=$true)][string]$TaskId,[Parameter(Mandatory=$true)][string]$SessionId)
  if($SessionId -cnotmatch '^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$'){throw 'SessionId invalid.'}
- $paths=Get-GfxStatePaths $StateDirectory;$mutex=Enter-GfxLock $paths.root
+ $paths=Get-GfxStatePaths -StateDirectory $StateDirectory;$mutex=Enter-GfxLock $paths.root
  try{$store=Read-GfxJournalUnlocked $paths;if(-not $store.tasks.ContainsKey($TaskId)){throw 'Unknown task.'};$t=$store.tasks[$TaskId];$p=[pscustomobject][ordered]@{sessionId=$SessionId;checkpointSha256=[string]$t.checkpointSha256};$key='resume/'+$TaskId+'/'+$SessionId+'/'+[string]$t.checkpointSha256;$dup=Resolve-GfxIdempotency $store 'TaskResumed' $TaskId $p $key;if($null -ne $dup){return $dup};$r=Add-GfxJournalRecordUnlocked $store 'TaskResumed' $TaskId $p $key;return [pscustomobject][ordered]@{status=$r.status;taskId=$TaskId;sequence=$r.sequence;checkpointSha256=[string]$t.checkpointSha256}}finally{Exit-GfxLock $mutex}
 }
 function Recover-GfxTaskJournal {
  [CmdletBinding()]param([Parameter(Mandatory=$true)][string]$StateDirectory)
- $paths=Get-GfxStatePaths $StateDirectory;$mutex=Enter-GfxLock $paths.root
+ $paths=Get-GfxStatePaths -StateDirectory $StateDirectory;$mutex=Enter-GfxLock $paths.root
  try{
   $store=Read-GfxJournalUnlocked $paths;if(-not $store.initialized){throw 'Cannot recover an uninitialized journal.'}
   $recovered=New-Object System.Collections.ArrayList

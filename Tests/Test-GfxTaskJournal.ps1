@@ -27,13 +27,13 @@ try{
  $startAgain=Start-GfxTask -StateDirectory $script:State -TaskId $taskId -SessionId 'worker-session-01'
  Assert-GfxJournal ($startAgain.status -eq 'DUPLICATE_NOOP') 'replayed start is idempotent'
  $state=[pscustomobject][ordered]@{phase='analysis';completedUnits=7;sourceRevision='9db82798bd3e4f97f16cbfa74baee85687932ce1';findings=@('dependency graph reviewed','resume boundary verified')}
- $cp=Save-GfxTaskCheckpoint -StateDirectory $script:State -TaskId $taskId -State $state
+ $cp=Save-GfxTaskCheckpoint -StateDirectory $script:State -TaskId $taskId -CheckpointState $state
  Assert-GfxJournal ($cp.status -eq 'APPENDED' -and $cp.checkpointSequence -eq 1 -and (Test-Path -LiteralPath (Join-Path (Join-Path $script:State 'checkpoints') $cp.checkpointFileName))) 'persists immutable hash-bound checkpoint'
- $cpAgain=Save-GfxTaskCheckpoint -StateDirectory $script:State -TaskId $taskId -State $state
+ $cpAgain=Save-GfxTaskCheckpoint -StateDirectory $script:State -TaskId $taskId -CheckpointState $state
  Assert-GfxJournal ($cpAgain.status -eq 'DUPLICATE_NOOP' -and $cpAgain.checkpointSha256 -eq $cp.checkpointSha256) 'checkpoint retry is idempotent'
  $loaded=Get-GfxTaskCheckpoint -StateDirectory $script:State -TaskId $taskId
  Assert-GfxJournal ($loaded.stateSha256 -eq $cp.checkpointStateSha256 -and $loaded.state.phase -eq 'analysis') 'restores state after digest verification'
- Assert-GfxThrows {Save-GfxTaskCheckpoint -StateDirectory $script:State -TaskId $taskId -State ([pscustomobject]@{apiToken='do-not-persist'})} 'rejects credential-shaped checkpoint keys'
+ Assert-GfxThrows {Save-GfxTaskCheckpoint -StateDirectory $script:State -TaskId $taskId -CheckpointState ([pscustomobject]@{apiToken='do-not-persist'})} 'rejects credential-shaped checkpoint keys'
  $recovery=Recover-GfxTaskJournal -StateDirectory $script:State
  Assert-GfxJournal ($recovery.recoveredCount -eq 1 -and $recovery.status.tasks[0].state -eq 'INTERRUPTED') 'restart recovery marks task interrupted'
  $recordCount=$recovery.status.recordCount
@@ -59,7 +59,7 @@ try{
  Assert-GfxJournal ($cancelled.state -eq 'CANCELLED') 'records explicit cancellation'
  $fourth=New-GfxPlannedTask -StateDirectory $script:State -MilestoneId 'GFX-A.3' -TaskKind 'design' -InputSha256 ('9'*64) -ScopeSha256 ('a'*64) -IdempotencyKey 'test/dga03/fourth-task'
  $null=Start-GfxTask -StateDirectory $script:State -TaskId $fourth.taskId -SessionId 'worker-session-05'
- $null=Save-GfxTaskCheckpoint -StateDirectory $script:State -TaskId $fourth.taskId -State ([pscustomobject]@{step='tamper-test'})
+ $null=Save-GfxTaskCheckpoint -StateDirectory $script:State -TaskId $fourth.taskId -CheckpointState ([pscustomobject]@{step='tamper-test'})
  $cpPath=Join-Path (Join-Path $script:State 'checkpoints') ($fourth.taskId+'.000001.checkpoint.json')
  $outer=Copy-GfxJournal (ConvertFrom-Json -InputObject ([IO.File]::ReadAllText($cpPath)))
  $outer.body=$outer.body+' '
