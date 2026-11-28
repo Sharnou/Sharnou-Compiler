@@ -59,6 +59,15 @@ function Assert-SgirArray {
     }
 }
 
+
+function Assert-SgirCount {
+    param([Parameter(Mandatory = $true)][object] $Value, [Parameter(Mandatory = $true)][string] $Where, [int] $Minimum = 0, [Parameter(Mandatory = $true)][int] $Maximum)
+    $count = $Value.Count
+    if ($count -lt $Minimum -or $count -gt $Maximum) {
+        Throw-Sgir 'S014' ("{0} count {1} is outside the permitted range [{2}, {3}]." -f $Where, $count, $Minimum, $Maximum)
+    }
+}
+
 function Assert-SgirString {
     param([object] $Value, [string] $Where)
     if ($Value -isnot [string] -or [string]::IsNullOrWhiteSpace([string]$Value)) {
@@ -308,6 +317,7 @@ function Assert-SgirModule {
 
     $capabilities = Get-SgirValue $Document 'capabilities'
     Assert-SgirArray $capabilities 'module.capabilities'
+    Assert-SgirCount $capabilities 'module.capabilities' 0 8
     $capabilityNames = @($capabilities | ForEach-Object { [string]$_ })
     Assert-SgirUniqueStrings $capabilityNames 'module.capabilities'
     $knownCapabilities = @('shader.pixel','shader.vertex','texture.sample.implicit_lod')
@@ -318,6 +328,7 @@ function Assert-SgirModule {
 
     $types = Get-SgirValue $Document 'types'
     Assert-SgirArray $types 'module.types'
+    Assert-SgirCount $types 'module.types' 0 64
     $typeMap = New-Object 'System.Collections.Generic.Dictionary[string,object]' ([System.StringComparer]::Ordinal)
     foreach ($type in $types) {
         $kind = [string](Get-SgirValue $type 'kind')
@@ -341,6 +352,7 @@ function Assert-SgirModule {
                 Assert-SgirId (Get-SgirValue $type 'id') 'type.id'
                 $fields = Get-SgirValue $type 'fields'
                 Assert-SgirArray $fields 'type.fields'
+                Assert-SgirCount $fields 'type.fields' 1 256
                 $fieldIndex = 0
                 $fieldNames = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::Ordinal)
                 foreach ($field in $fields) {
@@ -383,6 +395,7 @@ function Assert-SgirModule {
 
     $resources = Get-SgirValue $Document 'resources'
     Assert-SgirArray $resources 'module.resources'
+    Assert-SgirCount $resources 'module.resources' 0 128
     $resourceIds = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::Ordinal)
     $bindings = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::Ordinal)
     foreach ($resource in $resources) {
@@ -416,6 +429,7 @@ function Assert-SgirModule {
 
     $entryPoints = Get-SgirValue $Document 'entryPoints'
     Assert-SgirArray $entryPoints 'module.entryPoints'
+    Assert-SgirCount $entryPoints 'module.entryPoints' 1 16
     if ($entryPoints.Count -ceq 0) { Throw-Sgir 'E014' 'A shader module must declare at least one entry point.' }
     $entryNames = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::Ordinal)
     $entryFunctionMap = New-Object 'System.Collections.Generic.Dictionary[string,object]' ([System.StringComparer]::Ordinal)
@@ -435,6 +449,7 @@ function Assert-SgirModule {
         foreach ($direction in @('inputs','outputs')) {
             $interfaces = Get-SgirValue $entry $direction
             Assert-SgirArray $interfaces ("entryPoint.{0}" -f $direction)
+            Assert-SgirCount $interfaces ("entryPoint.{0}" -f $direction) 0 32
             $interfaceIds = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::Ordinal)
             $locations = New-Object 'System.Collections.Generic.HashSet[int]'
             $semantics = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::OrdinalIgnoreCase)
@@ -472,6 +487,7 @@ function Assert-SgirModule {
 
     $functions = Get-SgirValue $Document 'functions'
     Assert-SgirArray $functions 'module.functions'
+    Assert-SgirCount $functions 'module.functions' 1 64
     if ($functions.Count -ceq 0) { Throw-Sgir 'F014' 'A shader module must declare at least one function.' }
     $functionMap = New-Object 'System.Collections.Generic.Dictionary[string,object]' ([System.StringComparer]::Ordinal)
     foreach ($function in $functions) {
@@ -484,6 +500,7 @@ function Assert-SgirModule {
 
         $parameters = Get-SgirValue $function 'parameters'
         Assert-SgirArray $parameters 'function.parameters'
+        Assert-SgirCount $parameters 'function.parameters' 0 32
         $parameterIds = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::Ordinal)
         $expectedIndex = 0
         foreach ($parameter in $parameters) {
