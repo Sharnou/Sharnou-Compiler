@@ -202,8 +202,8 @@ function Read-GfxSafeTensorHeader {
    tensorDataBytes=$dataLength
    tensorCount=$tensorNames.Count
    tensors=@($summaries.ToArray())
-   payloadRead=false
-   payloadExecuted=false
+   payloadRead=$false
+   payloadExecuted=$false
   }
  }finally{
   if($null -ne $stream){$stream.Dispose()}
