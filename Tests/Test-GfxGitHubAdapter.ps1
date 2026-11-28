@@ -132,6 +132,26 @@ $requests=Set-MockQueue @((New-MockResponse -Object $prObject))
 $pr=Get-GfxGitHubPullRequest -PullRequestNumber 44
 Assert-GfxAdapter ($pr.number -eq 44 -and $pr.draft -and -not $pr.merged -and $pr.headSha -eq $sha) 'pull request metadata preserves draft, merge and exact head state'
 
+$requests=Set-MockQueue @((New-MockResponse -Object @($prObject)))
+$singlePrList=Get-GfxGitHubPullRequests -PerPage 100
+Assert-GfxAdapter ($singlePrList.count -eq 1 -and $singlePrList.pullRequests.Count -eq 1 -and $singlePrList.pullRequests[0].number -eq 44) 'pull request collection preserves a one-element JSON array'
+Assert-GfxAdapter ($requests.Count -eq 0) 'single-item pull request collection completes without extra page requests'
+
+$requests=Set-MockQueue @((New-MockResponse -Object @()))
+$emptyPrList=Get-GfxGitHubPullRequests -PerPage 100
+Assert-GfxAdapter ($emptyPrList.count -eq 0 -and $emptyPrList.pullRequests.Count -eq 0 -and -not $emptyPrList.truncated) 'pull request collection preserves an empty JSON array'
+
+$secondPrObject=Copy-Object $prObject
+$secondPrObject.number=45
+$secondPrObject.head.ref='devagent-gfx-readonly-github-adapter-20261128'
+$requests=Set-MockQueue @(
+ (New-MockResponse -Object @($prObject,$secondPrObject)),
+ (New-MockResponse -Object @())
+)
+$pagedPrList=Get-GfxGitHubPullRequests -PerPage 2
+Assert-GfxAdapter ($pagedPrList.count -eq 2 -and $pagedPrList.pullRequests[0].number -eq 44 -and $pagedPrList.pullRequests[1].number -eq 45) 'pull request collection preserves array ordering across pages'
+Assert-GfxAdapter ($requests.Count -eq 0) 'pull request pagination stops after a short final page'
+
 $requests=Set-MockQueue @((New-MockResponse -Object ([pscustomobject]@{total_count=1;workflow_runs=@((Get-TestRun $sha))})))
 $runs=Get-GfxGitHubWorkflowRuns -CommitSha $sha
 Assert-GfxAdapter ($runs.workflowRuns.Count -eq 1 -and $runs.workflowRuns[0].headSha -eq $sha -and $runs.workflowRuns[0].conclusion -eq 'success') 'Actions result is bound to the queried exact commit'
