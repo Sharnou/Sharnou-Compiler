@@ -78,7 +78,7 @@ Test-GfxRejected $valid 'header-size cap is enforced' @{MaxHeaderBytes=2}
 $artifactPath=Join-Path $script:Temp 'artifact.bin'
 [IO.File]::WriteAllBytes($artifactPath,[byte[]](1,2,3,4))
 $hash=(Get-FileHash -LiteralPath $artifactPath -Algorithm SHA256).Hash.ToLowerInvariant()
-$entry=[pscustomobject]@{path='fixture.bin';revision='0123456789abcdef0123456789abcdef01234567';byteCount=4;sha256=$hash;state='PINNED'}
+$entry=[pscustomobject]@{path='fixture.bin';revision='0123456789abcdef0123456789abcdef01234567';byteCount=4;sha256=$hash;state='PINNED';digestEvidence='HUGGINGFACE_XET_POINTER';independentLocalHashRequired=$true}
 $evidence=Test-GfxPinnedArtifactFile -Artifact $entry -Path $artifactPath
 Assert-GfxReader ($evidence.valid -and $evidence.verification -eq 'LOCAL_SHA256_MATCH') 'pinned artifact exact byte count and SHA-256 are independently verified'
 $entry.sha256=('0'*64)

@@ -138,7 +138,7 @@ function Read-GfxSafeTensorHeader {
  if(-not [BitConverter]::IsLittleEndian){throw 'This reader requires a little-endian host.'}
  $stream=$null
  try{
-  $stream=New-Object IO.FileStream($full,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
+  $stream=[IO.File]::Open($full,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
   $lengthBytes=Read-GfxExactBytes -Stream $stream -Count 8 -Name 'Safetensors header-length field'
   $headerLength=[BitConverter]::ToUInt64($lengthBytes,0)
   if($headerLength -lt 2 -or $headerLength -gt [uint64]$MaxHeaderBytes){throw 'Safetensors header length is outside the configured bound.'}
@@ -213,7 +213,8 @@ function Read-GfxSafeTensorHeader {
 function Test-GfxPinnedArtifactFile {
  [CmdletBinding()]
  param([Parameter(Mandatory=$true)]$Artifact,[Parameter(Mandatory=$true)][string]$Path)
- Assert-GfxObjectProperties -Object $Artifact -Expected @('path','revision','byteCount','sha256','state') -Name 'artifact lock entry'
+ Assert-GfxObjectProperties -Object $Artifact -Expected @('path','revision','byteCount','sha256','state','digestEvidence','independentLocalHashRequired') -Name 'artifact lock entry'
+ if($Artifact.digestEvidence -cne 'HUGGINGFACE_XET_POINTER' -or $Artifact.independentLocalHashRequired -ne $true){throw 'Artifact digest provenance must require independent local verification.'}
  if([string]$Artifact.state -cne 'PINNED'){throw 'Artifact lock entry is not fully pinned.'}
  if([string]$Artifact.path -notmatch '^[A-Za-z0-9._/-]+$' -or $Artifact.path.Contains('..') -or $Artifact.path.StartsWith('/')){throw 'Artifact lock path is unsafe.'}
  if([string]$Artifact.revision -notmatch '^[0-9a-f]{40}$'){throw 'Artifact revision must be a full immutable commit SHA.'}
