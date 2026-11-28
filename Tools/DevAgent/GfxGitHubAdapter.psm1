@@ -145,7 +145,7 @@ function New-GfxApiUri {
  return [Uri]$uriText
 }
 function Invoke-GfxApiJson {
- param([Parameter(Mandatory=$true)][string]$Path,[string]$Query='')
+ param([AllowEmptyString()][string]$Path='',[string]$Query='')
  $uri=New-GfxApiUri -Path $Path -Query $Query
  $response=Invoke-GfxHttpGet -Uri $uri -SendAuth $true -MaxBytes $script:GfxMaxJsonBytes
  if($response.StatusCode -lt 200 -or $response.StatusCode -ge 300){
