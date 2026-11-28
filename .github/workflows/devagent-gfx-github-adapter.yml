@@ -9,9 +9,11 @@ on:
       - devagent-gfx-task-journal-20261128
     paths:
       - 'Tools/DevAgent/GfxGitHubAdapter.psm1'
+      - 'Tools/DevAgent/GfxTaskJournal.psm1'
       - 'Tools/DevAgent/Invoke-GfxGitHubAdapter.ps1'
       - 'Schemas/DevAgent/GfxGitHubEvidence.v1.schema.json'
       - 'Tests/Test-GfxGitHubAdapter.ps1'
+      - 'Tests/Test-GfxTaskJournal.ps1'
       - '.github/workflows/devagent-gfx-github-adapter.yml'
       - 'Docs/DEVAGENT-GFX-MILESTONE-AUTOMATION.md'
       - 'Docs/AI-SESSION-STATE.md'
@@ -32,9 +34,11 @@ jobs:
         run: |
           $paths = @(
             'Tools/DevAgent/GfxGitHubAdapter.psm1',
+            'Tools/DevAgent/GfxTaskJournal.psm1',
             'Tools/DevAgent/Invoke-GfxGitHubAdapter.ps1',
             'Schemas/DevAgent/GfxGitHubEvidence.v1.schema.json',
             'Tests/Test-GfxGitHubAdapter.ps1',
+            'Tests/Test-GfxTaskJournal.ps1',
             'Docs/DEVAGENT-GFX-MILESTONE-AUTOMATION.md',
             'Docs/AI-SESSION-STATE.md',
             'Docs/AI-DEVELOPMENT-PLAN.md',
@@ -55,6 +59,10 @@ jobs:
           if ($schema.'$id' -ne 'https://sharnou.dev/schemas/devagent/gfx-github-evidence/v1.json') { throw 'Schema identity mismatch.' }
           if ($schema.additionalProperties -ne $false) { throw 'Evidence schema must reject additional properties.' }
           Write-Host 'PASS: evidence schema JSON and identity.'
+
+      - name: Run DGA-GFX-0.3 task journal regression tests under Windows PowerShell 5.1
+        shell: powershell
+        run: .\Tests\Test-GfxTaskJournal.ps1
 
       - name: Run adapter tests under Windows PowerShell 5.1
         shell: powershell
