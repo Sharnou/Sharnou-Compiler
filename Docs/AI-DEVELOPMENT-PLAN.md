@@ -328,3 +328,8 @@ The user has requested automatic generation, verification, repair and draft-PR s
 - Required DevAgent sequence: DGA-0.2 deterministic campaign/DAG/evidence validator; DGA-0.3 durable task journal; DGA-0.4 read-only repository/Actions adapter; DGA-0.5 genuine in-process local inference; DGA-0.6 typed patch transactions; DGA-0.7 qualified process broker and security gates; DGA-0.8 specialist orchestration/review/repair/evidence; DGA-0.9 campaign runner and draft-PR lifecycle.
 
 This approval of the desired campaign outcome does not waive Phase 2B.8, enable model-facing process execution, authorize arbitrary commands, or authorize automatic merges/releases. No campaign milestone is marked complete by the manifest alone.
+
+
+### DGA-GFX-0.1 campaign PR status — 2026-11-28
+
+Draft PR #42 is open at exact head 3434994d90f603adf82d8460f0977af8b59eb15a, based on default HEAD 36b07383cb0ee1996298724202454eb8aec57d98. Static JSON and dependency-DAG reconciliation found 11 milestone IDs, no missing dependency references and no cycle. This remains a declarative campaign contract only; its executor is not implemented or activated. DGA-0.2 is next.
