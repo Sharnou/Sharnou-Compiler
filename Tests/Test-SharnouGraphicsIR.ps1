@@ -40,6 +40,10 @@ function Invoke-ExpectedFailure {
 
 $fixture = [System.IO.File]::ReadAllText((Resolve-Path -LiteralPath $fixturePath).Path, [System.Text.Encoding]::UTF8)
 $document = ConvertFrom-SgirJsonText -Json $fixture
+$moduleIdValue = Get-SgirValue -Object $document -Name 'moduleId'
+$functionArrayValue = Get-SgirValue -Object $document -Name 'functions'
+Assert-Test -Name 'JSON scalar property remains scalar after property access' -Condition ($moduleIdValue -is [string])
+Assert-Test -Name 'JSON array property remains an array after property access' -Condition ($functionArrayValue -is [System.Array] -and $functionArrayValue.Count -eq 2)
 $result = Assert-SgirModule -Document $document
 Assert-Test -Name 'valid vertex module, typed interfaces, cbuffer and phi CFG' -Condition ($result.Valid -and $result.EntryPointCount -eq 1 -and $result.FunctionCount -eq 2)
 Assert-Test -Name 'canonical SHA-256 is lowercase 64-hex' -Condition ($result.CanonicalSha256 -cmatch '^[0-9a-f]{64}$')
