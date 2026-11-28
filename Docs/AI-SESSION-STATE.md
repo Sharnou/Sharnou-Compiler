@@ -1107,3 +1107,17 @@ After the prior session record, one more isolated diagnostic commit was added to
 - PR #39 is confirmed OPEN/DRAFT/UNMERGED at architecture head da35987afb7db46736b152bc6c249634a886e836. PR #41 is confirmed OPEN/DRAFT/UNMERGED at SGIR candidate head d331970ab3fd463e3977aaba04fccd12bd523dad.
 - No full JSON Schema engine validation, PowerShell execution, Windows CI execution or GPU runtime test was performed in this environment. PR #42 is a contract/documentation PR, not a native DevAgent implementation.
 - Clarification: design-only acceptance is a document/schema gate; it is never labelled Windows runtime PASS. Code-bearing milestones need exact-head Windows evidence where required, and physical-GPU milestones additionally need real adapter captures.
+
+
+### DGA-GFX-0.2 implementation candidate - 2026-11-28
+
+- Isolated implementation branch: devagent-gfx-campaign-planner-20261128, stacked on the DGA-GFX-0.1 campaign branch devagent-gfx-campaign-automation-20261128.
+- Source implementation commit: debf4f18b6459bec9e8b150a7596754fc2ed2208.
+- Added the PowerShell campaign validator/planner, offline CLI, contract tests, a versioned read-only PR snapshot schema, and a Windows PowerShell 5.1 GitHub Actions workflow.
+- Added sourceBaseBranch to the two existing PR records. PR #39 targets Sharnou-Compiler; PR #41 intentionally stacks on graphics-compiler-gfx01-architecture-20261128. The planner must preserve this branch topology and not incorrectly require every PR to target default.
+- Added continuousImprovement to the campaign data model. GFX-0.8 is not the end of graphics compiler development. The policy calls for ongoing primary-source research, source/revision/content-hash provenance, measured baselines, versioned follow-on milestones, independent review and owner acceptance.
+- Planner states and exact-head evidence are not trusted from manifest status alone. Existing PRs need a live snapshot, matching base/head/head SHA, required exact-head Windows artifact, physical-GPU capture where applicable, and explicit owner acceptance.
+- Static pre-commit checks verified exactly eleven milestone IDs, all dependency references resolve, the graph is acyclic, expected deterministic order is stable, and the six implementation/data files are ASCII-only.
+- Windows PowerShell 5.1 execution is NOT YET VERIFIED. The dedicated workflow is being added in the follow-up commit; no DGA-0.2 test pass is claimed until the exact branch head succeeds.
+- Current DevAgent activation remains BLOCKED. The planner does not generate source or run any command. Local inference, patch transactions, durable journal, accepted process broker, GitHub/research adapter, model-facing process execution and autonomous writes remain disabled.
+- Next task after DGA-0.2 qualification: DGA-0.3 append-only journal, hash-bound checkpoints, crash recovery and idempotent reconciliation. Do not bypass the separate Phase 2B.8/R5 native security gates.

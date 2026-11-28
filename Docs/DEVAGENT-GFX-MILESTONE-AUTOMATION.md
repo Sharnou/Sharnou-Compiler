@@ -259,3 +259,42 @@ DGA-0.2 through DGA-0.9 are not claimed implemented by this document. DGA-0.5 mu
 - No GFX milestone can be promoted by model assertion alone.
 
 This deliverable is a durable contract for the future native DevAgent worker, not a claim that autonomous source generation is already running.
+
+
+## DGA-0.2 - Deterministic campaign validator and dependency planner
+
+**Status:** implementation candidate on an isolated branch. Exact-head Windows PowerShell 5.1 qualification is pending.
+
+DGA-0.2 adds a deterministic, offline campaign kernel. It checks the campaign root, schema identity and key schema invariants, supported property sets, the exact eleven milestone IDs, bounded values, execution-policy invariants, specialist/asset path lists, PR metadata, duplicate and dangling dependency edges, self-dependencies, and dependency cycles. It emits a stable topological order that preserves the independent asset-analysis stream.
+
+The PR snapshot contract is separately versioned in Schemas/DevAgent/GfxPullRequestSnapshot.v1.schema.json. A supplied snapshot is reconciled against the manifest's PR number, expected base branch, head branch and exact head SHA. This explicitly supports the current stacked GFX-0.2 PR base: it targets the GFX-0.1 architecture branch, not the default branch. A candidate cannot be accepted from a manifest status, title or unbound green CI result. Required Windows evidence must match the exact PR head, have at least one passing test, zero failures and zero skips, and carry an artifact SHA-256. Physical-GPU work additionally requires tested-head identity, adapter, driver and capture digest. Explicit owner acceptance is a separate condition.
+
+The planner emits BLOCKED, READY, OWNER_REVIEW, ACCEPTED, FAILED or PAUSED states and full blocker reasons. Existing PRs stay BLOCKED without a valid live snapshot. New work becomes READY only when all predecessors are ACCEPTED and the campaign activation gates are satisfied. An invalid manifest is a hard error.
+
+### Run in Windows PowerShell 5.1
+
+    .\Tools\DevAgent\Invoke-GfxCampaignPlanner.ps1
+    .\Tools\DevAgent\Invoke-GfxCampaignPlanner.ps1 -SnapshotPath .\Artifacts\GfxPullRequestSnapshot.v1.json
+    .\Tests\Test-GfxCampaign.ps1
+
+The optional PR snapshot is a typed input contract for the future native read-only GitHub adapter. It is not a manually trusted replacement for live repository reads. The current CLI makes no network calls and performs no repository writes.
+
+### Continuous improvement after GFX-0.8
+
+GFX-0.8 is not a terminal product state. The machine-readable continuousImprovement policy keeps Sharnou Graphics Compiler on an ongoing improvement path across compiler construction and IR, shader language frontends, D3D11/DXGI backends, GPU architecture, geometry analysis, glTF/GLB semantics, KTX2/Basis, PBR, skeletal animation, render graphs, GPU profiling, and professional IDE/viewport tooling.
+
+The intended loop is:
+1. Discover new primary specifications, official platform documentation, peer-reviewed research and reproducible technical reports.
+2. Record source URL, retrieval timestamp, source version/revision, content SHA-256, applicability and contradictory findings. Treat retrieved material as untrusted input.
+3. Compare proposals with the existing compiler/runtime architecture, target hardware, ABI, test corpus and dependency policy.
+4. Establish reproducible baselines; distinguish estimates from measured CPU and physical-GPU performance.
+5. Create a small, versioned follow-on GFX improvement milestone with path ownership, dependencies, positive/negative tests, rollback and evidence requirements.
+6. Generate on an isolated branch, independently review, qualify the exact head on Windows, and require explicit owner acceptance.
+
+Future work may continue in later GFX-EVOL campaigns. Accepted milestones and evidence remain immutable; research does not silently rewrite history. No external compiler/linker/shader tool or runtime dependency is admitted without explicit approval. Automatic merge and release remain prohibited.
+
+**Execution boundary:** DGA-0.2 validates and plans the policy; it does not run a background research daemon or autonomously write source. Continuous scheduled research requires later DGA work: durable journal/recovery, native read-only repository/research adapter, genuine Sharnou-owned local inference, typed patch transactions, accepted process-broker security gates, and the campaign scheduler. When the DevAgent host is stopped, no background progress is claimed.
+
+### DGA-0.2 limitations
+
+This is a repository-specific contract validator, not a complete implementation of every JSON Schema 2020-12 keyword. It cross-checks schema identity and selected structural invariants, then applies strict domain validation and cross-object rules. Windows PowerShell 5.1 ConvertFrom-Json does not expose duplicate JSON object keys for rejection at this layer; duplicate milestone IDs, dependency edges and PR snapshot numbers are rejected. The validator/planner contains no process launch, shell invocation, network call or Git write API.

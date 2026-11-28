@@ -507,3 +507,13 @@ PR #24 candidate head advanced to bd411c2fc777006f9b1160ab8d3d5992c2a15afa. Stag
 Draft PR #42 is open at head 3434994d90f603adf82d8460f0977af8b59eb15a, based on default HEAD 36b07383cb0ee1996298724202454eb8aec57d98. It contains seven documentation/schema/manifest files.
 
 Static checks confirmed both JSON documents parse, all eleven milestone IDs exist, all dependency references resolve, the DAG is acyclic and the declared top-level/milestone property names match the schema. This is not full JSON Schema validation and not Windows/PowerShell execution. The campaign activation remains BLOCKED; DGA-0.2 is the next implementation task.
+
+
+## DGA-GFX-0.2 implementation and qualification
+
+- Branch devagent-gfx-campaign-planner-20261128 adds the deterministic PowerShell validator, topological planner, optional live-PR snapshot contract, evidence/acceptance gates, CLI and test suite. It is stacked on DGA-GFX-0.1 PR #42.
+- The candidate validates both the existing GFX PR chain and exact base branch identities: #39 targets Sharnou-Compiler; #41 targets the GFX-0.1 architecture feature branch.
+- A separate Windows PowerShell 5.1 workflow is added to execute positive/negative validator tests and emit the campaign plan.
+- The campaign continuousImprovement policy explicitly persists after GFX-0.8 and requires source provenance, benchmark baselines, versioned follow-on work, independent review and owner acceptance.
+- Current qualification: static construction checks only. Windows test result is pending; do not mark DGA-0.2 accepted until exact-head CI is green.
+- No autonomous source generation, local inference, process launch, network research, patch transaction, Git write, automatic merge or release is enabled by this increment.

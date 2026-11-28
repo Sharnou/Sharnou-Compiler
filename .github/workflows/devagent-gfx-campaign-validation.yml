@@ -1,0 +1,59 @@
+name: SharnouDevAgent GFX Campaign Validation
+
+on:
+  push:
+    branches:
+      - devagent-gfx-campaign-planner-20261128
+  pull_request:
+    branches:
+      - devagent-gfx-campaign-automation-20261128
+    paths:
+      - 'Projects/DevAgent/GfxCampaign.v1.json'
+      - 'Schemas/DevAgent/GfxCampaign.v1.schema.json'
+      - 'Schemas/DevAgent/GfxPullRequestSnapshot.v1.schema.json'
+      - 'Tools/DevAgent/**'
+      - 'Tests/Test-GfxCampaign.ps1'
+      - '.github/workflows/devagent-gfx-campaign-validation.yml'
+      - 'Docs/DEVAGENT-GFX-MILESTONE-AUTOMATION.md'
+      - 'README.md'
+  workflow_dispatch:
+
+jobs:
+  campaign-validation:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Enforce ASCII source and documentation
+        shell: powershell
+        run: |
+          $paths = @(
+            'Projects/DevAgent/GfxCampaign.v1.json',
+            'Schemas/DevAgent/GfxCampaign.v1.schema.json',
+            'Schemas/DevAgent/GfxPullRequestSnapshot.v1.schema.json',
+            'Tools/DevAgent/GfxCampaign.psm1',
+            'Tools/DevAgent/Invoke-GfxCampaignPlanner.ps1',
+            'Tests/Test-GfxCampaign.ps1',
+            'Docs/DEVAGENT-GFX-MILESTONE-AUTOMATION.md',
+            'README.md'
+          )
+          foreach ($path in $paths) {
+            $fullPath = Join-Path $PWD $path
+            $bytes = [IO.File]::ReadAllBytes($fullPath)
+            if ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF) {
+              throw "UTF-8 BOM is not allowed: $path"
+            }
+            foreach ($byte in $bytes) {
+              if ($byte -gt 127) { throw "Non-ASCII byte in repository text: $path" }
+            }
+          }
+          Write-Host 'PASS: source encoding and BOM policy.'
+
+      - name: Run DGA-0.2 campaign tests under Windows PowerShell 5.1
+        shell: powershell
+        run: .\Tests\Test-GfxCampaign.ps1
+
+      - name: Validate the campaign and emit current readiness plan
+        shell: powershell
+        run: .\Tools\DevAgent\Invoke-GfxCampaignPlanner.ps1

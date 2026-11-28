@@ -98,3 +98,8 @@ The requested autonomous development-agent architecture is documented in [Docs/S
 The requested GFX campaign is defined in [Docs/DEVAGENT-GFX-MILESTONE-AUTOMATION.md](Docs/DEVAGENT-GFX-MILESTONE-AUTOMATION.md), with the machine-readable plan at [Projects/DevAgent/GfxCampaign.v1.json](Projects/DevAgent/GfxCampaign.v1.json) and its contract at [Schemas/DevAgent/GfxCampaign.v1.schema.json](Schemas/DevAgent/GfxCampaign.v1.schema.json). The plan covers GFX-0.1 through GFX-0.8 and GFX-A.1 through GFX-A.3, including dependencies, path allowlists, acceptance gates and draft-PR-only policy.
 
 This is a campaign contract, not an active code generator. SharnouDevAgent still needs a genuine local inference runtime, typed patch/rollback tools, durable restart recovery, an accepted process broker and a native GitHub/evidence adapter before it can autonomously generate and qualify these milestones. Its activation state therefore remains BLOCKED; direct default-branch writes, automatic merges and releases are prohibited.
+
+
+## SharnouDevAgent graphics campaign
+
+The automatic GFX campaign, deterministic dependency planner and post-GFX-0.8 improvement policy are documented in Docs/DEVAGENT-GFX-MILESTONE-AUTOMATION.md. DGA-0.2 validates and plans readiness; it is not yet the autonomous source generator. Follow-on graphics compiler improvements remain expected after GFX-0.8 and must be versioned, benchmarked, reviewed and owner accepted.
