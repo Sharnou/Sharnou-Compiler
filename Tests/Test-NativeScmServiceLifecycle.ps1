@@ -631,7 +631,7 @@ try {
         timestamp_utc = [DateTime]::UtcNow.ToString('o')
         test = 'handlerex-interrogate-stop-shutdown-duplicate-callback'
         result = 'PASS_CALLBACK_LEVEL_ONLY'
-        process_exit_code = $probeProcess.ExitCode
+        process_exit_code = $probeProcess.exit_code
     })
 
     # A production-profile image launched outside SCM must fail naturally with
@@ -646,7 +646,7 @@ try {
         test = 'natural-dispatcher-rejects-non-scm-launch'
         result = 'PASS'
         expected_exit_code = 1063
-        actual_exit_code = $naturalProcess.ExitCode
+        actual_exit_code = $naturalProcess.exit_code
     })
 
     # Three genuine SCM start/stop cycles: START_PENDING, RUNNING, INTERROGATE,
