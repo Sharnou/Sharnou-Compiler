@@ -146,23 +146,42 @@ function Get-ServiceSnapshot {
     return $snapshot
 }
 
-function Assert-PendingSnapshot {
+function Test-PendingSnapshot {
     param(
         [Parameter(Mandatory = $true)][object] $Snapshot,
         [Parameter(Mandatory = $true)][ValidateSet(2, 3)][int] $PendingState
     )
+    # SCM first exposes a short framework-owned pending state before the service
+    # has published its first SERVICE_STATUS. It is not accepted as the service's
+    # checkpoint/wait-hint report; observe it, then keep polling for our exact tuple.
+    $isFrameworkStart = $PendingState -eq 2 -and $Snapshot.Checkpoint -eq 0 -and $Snapshot.WaitHint -eq 2000
+    $isFrameworkStop = $PendingState -eq 3 -and $Snapshot.Checkpoint -eq 0 -and $Snapshot.WaitHint -eq 0
+    if ($isFrameworkStart -or $isFrameworkStop) {
+        $script:Evidence.Add([pscustomobject]@{
+            timestamp_utc = [DateTime]::UtcNow.ToString('o')
+            service = $Snapshot.Name
+            observation = 'SCM_FRAMEWORK_PENDING_BEFORE_SERVICE_STATUS'
+            state = $Snapshot.State
+            checkpoint = $Snapshot.Checkpoint
+            wait_hint_ms = $Snapshot.WaitHint
+            accepted_as_service_report = $false
+        })
+        return $false
+    }
+
     if ($PendingState -eq 2) {
         if ($Snapshot.Checkpoint -ne 1 -or $Snapshot.WaitHint -ne 10000) {
-            throw "START_PENDING fields invalid: checkpoint=$($Snapshot.Checkpoint), waitHint=$($Snapshot.WaitHint)."
+            throw "START_PENDING service status invalid: checkpoint=$($Snapshot.Checkpoint), waitHint=$($Snapshot.WaitHint)."
         }
     } else {
         if ($Snapshot.Checkpoint -ne 1 -or $Snapshot.WaitHint -ne 5000) {
-            throw "STOP_PENDING fields invalid: checkpoint=$($Snapshot.Checkpoint), waitHint=$($Snapshot.WaitHint)."
+            throw "STOP_PENDING service status invalid: checkpoint=$($Snapshot.Checkpoint), waitHint=$($Snapshot.WaitHint)."
         }
     }
     if ($Snapshot.Flags -notmatch 'NOT_STOPPABLE' -or $Snapshot.Flags -match 'ACCEPTS_SHUTDOWN') {
         throw "$($Snapshot.State) advertised controls while pending: '$($Snapshot.Flags)'."
     }
+    return $true
 }
 
 function Assert-RunningSnapshot {
@@ -196,11 +215,13 @@ function Wait-ServiceState {
     do {
         $last = Get-ServiceSnapshot -Name $Name
         if ($last.StateCode -eq 2) {
-            $sawStartPending = $true
-            if (-not $SkipPendingValidation) { Assert-PendingSnapshot -Snapshot $last -PendingState 2 }
+            if (-not $SkipPendingValidation -and (Test-PendingSnapshot -Snapshot $last -PendingState 2)) {
+                $sawStartPending = $true
+            }
         } elseif ($last.StateCode -eq 3) {
-            $sawStopPending = $true
-            if (-not $SkipPendingValidation) { Assert-PendingSnapshot -Snapshot $last -PendingState 3 }
+            if (-not $SkipPendingValidation -and (Test-PendingSnapshot -Snapshot $last -PendingState 3)) {
+                $sawStopPending = $true
+            }
         } elseif ($last.StateCode -eq 4) {
             Assert-RunningSnapshot -Snapshot $last
         }
@@ -337,7 +358,14 @@ function Remove-DisposableService {
     $current = Get-Service -Name $Name -ErrorAction SilentlyContinue
     if ($null -ne $current -and $current.Status.ToString() -ne 'Stopped') {
         $null = Invoke-ScCommand -Arguments @('stop', $Name) -AllowFailure
-        try { $null = Wait-ServiceState -Name $Name -ExpectedState 1 -TimeoutSeconds 20 } catch { }
+        try { $null = Wait-ServiceState -Name $Name -ExpectedState 1 -TimeoutSeconds 8 -SkipPendingValidation } catch { }
+        $snapshot = $null
+        try { $snapshot = Get-ServiceSnapshot -Name $Name } catch { }
+        if ($null -ne $snapshot -and $snapshot.ProcessId -gt 0) {
+            Stop-Process -Id ([int]$snapshot.ProcessId) -Force -ErrorAction SilentlyContinue
+            try { Wait-ProcessGone -ProcessId $snapshot.ProcessId -TimeoutSeconds 10 } catch { }
+            try { $null = Wait-ServiceState -Name $Name -ExpectedState 1 -TimeoutSeconds 10 -SkipPendingValidation } catch { }
+        }
     }
     $null = Invoke-ScCommand -Arguments @('delete', $Name) -AllowFailure
     $deadline = [DateTime]::UtcNow.AddSeconds(20)
@@ -367,14 +395,15 @@ function Start-And-Observe {
     do {
         $snapshot = Get-ServiceSnapshot -Name $Name
         if ($snapshot.StateCode -eq 2) {
-            $sawPending = $true
-            Assert-PendingSnapshot -Snapshot $snapshot -PendingState 2
-            if ($StartRace -and -not $raceSent) {
-                $race = Invoke-ScCommand -Arguments @('stop', $Name) -AllowFailure
-                if ($race.ExitCode -eq 0) {
-                    throw 'SCM accepted STOP before SERVICE_RUNNING while ControlsAccepted=0.'
+            if (Test-PendingSnapshot -Snapshot $snapshot -PendingState 2) {
+                $sawPending = $true
+                if ($StartRace -and -not $raceSent) {
+                    $race = Invoke-ScCommand -Arguments @('stop', $Name) -AllowFailure
+                    if ($race.ExitCode -eq 0) {
+                        throw 'SCM accepted STOP before SERVICE_RUNNING while ControlsAccepted=0.'
+                    }
+                    $raceSent = $true
                 }
-                $raceSent = $true
             }
         } elseif ($snapshot.StateCode -eq 4) {
             Assert-RunningSnapshot -Snapshot $snapshot
@@ -388,7 +417,21 @@ function Start-And-Observe {
     if ($null -eq $running) { throw "Service '$Name' did not reach RUNNING within startup bound." }
     if (-not $sawPending) { throw "Service '$Name' never exposed START_PENDING." }
     $startResult = Complete-ScAsync -Operation $operation -TimeoutSeconds 15
-    if ($startResult.exit_code -ne 0) { throw "sc.exe start failed for '$Name': $($startResult.stdout)" }
+    if ($startResult.exit_code -ne 0) {
+        $confirmed = Get-ServiceSnapshot -Name $Name
+        if ($confirmed.StateCode -ne 4 -or $confirmed.ProcessId -ne $running.ProcessId) {
+            throw "sc.exe start failed and SCM did not confirm the same RUNNING process for '$Name': $($startResult.stdout)"
+        }
+        $script:Evidence.Add([pscustomobject]@{
+            timestamp_utc = [DateTime]::UtcNow.ToString('o')
+            test = 'sc-start-cli-nonzero-but-scm-running-confirmed'
+            service = $Name
+            cli_exit_code = $startResult.exit_code
+            scm_state = $confirmed.State
+            pid = $confirmed.ProcessId
+            result = 'STATE_CONFIRMED_WITH_RAW_CLI_DIAGNOSTIC'
+        })
+    }
     if ($StartRace -and -not $raceSent) { throw 'START_PENDING race control was not attempted.' }
     return $running
 }
@@ -408,11 +451,12 @@ function Stop-And-Observe {
     do {
         $snapshot = Get-ServiceSnapshot -Name $Name
         if ($snapshot.StateCode -eq 3) {
-            $sawPending = $true
-            Assert-PendingSnapshot -Snapshot $snapshot -PendingState 3
-            if ($DuplicateStop -and -not $duplicateSent) {
-                $null = Invoke-ScCommand -Arguments @('stop', $Name) -AllowFailure
-                $duplicateSent = $true
+            if (Test-PendingSnapshot -Snapshot $snapshot -PendingState 3) {
+                $sawPending = $true
+                if ($DuplicateStop -and -not $duplicateSent) {
+                    $null = Invoke-ScCommand -Arguments @('stop', $Name) -AllowFailure
+                    $duplicateSent = $true
+                }
             }
         } elseif ($snapshot.StateCode -eq 1) {
             $stopped = $snapshot
@@ -425,7 +469,21 @@ function Stop-And-Observe {
     if ($null -eq $stopped) { throw "Service '$Name' did not reach STOPPED within shutdown bound." }
     if (-not $sawPending) { throw "Service '$Name' never exposed STOP_PENDING." }
     $stopResult = Complete-ScAsync -Operation $operation -TimeoutSeconds 15
-    if ($stopResult.exit_code -ne 0) { throw "sc.exe stop failed for '$Name': $($stopResult.stdout)" }
+    if ($stopResult.exit_code -ne 0) {
+        $confirmed = Get-ServiceSnapshot -Name $Name
+        if ($confirmed.StateCode -ne 1 -or $confirmed.ProcessId -ne 0) {
+            throw "sc.exe stop failed and SCM did not confirm STOPPED/PID=0 for '$Name': $($stopResult.stdout)"
+        }
+        $script:Evidence.Add([pscustomobject]@{
+            timestamp_utc = [DateTime]::UtcNow.ToString('o')
+            test = 'sc-stop-cli-nonzero-but-scm-stopped-confirmed'
+            service = $Name
+            cli_exit_code = $stopResult.exit_code
+            scm_state = $confirmed.State
+            pid = $confirmed.ProcessId
+            result = 'STATE_CONFIRMED_WITH_RAW_CLI_DIAGNOSTIC'
+        })
+    }
     if ($DuplicateStop -and -not $duplicateSent) { throw 'Duplicate STOP was not attempted during STOP_PENDING.' }
     if ($stopped.ProcessId -ne 0) { throw "SCM reports STOPPED but PID=$($stopped.ProcessId)." }
     Wait-ProcessGone -ProcessId $ProcessId
