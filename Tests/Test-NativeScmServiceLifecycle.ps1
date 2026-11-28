@@ -240,21 +240,33 @@ function Start-ScAsync {
 }
 
 function Complete-ScAsync {
-    param([Parameter(Mandatory = $true)][object] $Operation, [int] $TimeoutSeconds = 20)
-    if (-not $Operation.Process.WaitForExit($TimeoutSeconds * 1000)) {
-        Stop-Process -Id $Operation.Process.Id -Force -ErrorAction SilentlyContinue
-        throw "sc.exe $($Operation.Verb) $($Operation.Name) exceeded its $TimeoutSeconds second bound."
+    param([Parameter(Mandatory = $true)][object] $Operation, [ValidateRange(1, 120)][int] $TimeoutSeconds = 20)
+    $timedOut = -not $Operation.Process.WaitForExit($TimeoutSeconds * 1000)
+    $terminationConfirmed = $false
+    if ($timedOut) {
+        try { $Operation.Process.Kill() } catch { }
+        $terminationConfirmed = $Operation.Process.WaitForExit(5000)
     }
     $stdoutText = if (Test-Path -LiteralPath $Operation.Stdout) { Get-Content -LiteralPath $Operation.Stdout -Raw } else { '' }
     $stderrText = if (Test-Path -LiteralPath $Operation.Stderr) { Get-Content -LiteralPath $Operation.Stderr -Raw } else { '' }
     $record = [pscustomobject]@{
         timestamp_utc = [DateTime]::UtcNow.ToString('o')
         command = "sc.exe $($Operation.Verb) $($Operation.Name)"
-        exit_code = $Operation.Process.ExitCode
+        process_id = $Operation.Process.Id
+        exit_code = if ($timedOut) { $null } else { $Operation.Process.ExitCode }
+        timed_out = [bool]$timedOut
+        timeout_seconds = $TimeoutSeconds
+        termination_confirmed = [bool]$terminationConfirmed
         stdout = $stdoutText
         stderr = $stderrText
     }
     $script:Evidence.Add($record)
+    if ($timedOut) {
+        if (-not $terminationConfirmed) {
+            throw "sc.exe $($Operation.Verb) $($Operation.Name) exceeded its $TimeoutSeconds second bound and termination could not be confirmed."
+        }
+        throw "sc.exe $($Operation.Verb) $($Operation.Name) exceeded its $TimeoutSeconds second bound; termination was confirmed."
+    }
     return $record
 }
 
