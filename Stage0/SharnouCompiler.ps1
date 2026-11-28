@@ -4892,10 +4892,14 @@ function Emit-Prologue {
             Emit-StoreEaxFrame -SlotPosition $slotPosition
         }
     }
-    Emit-Bytes -Bytes ([byte[]]@(0xB9, 0xF5, 0xFF, 0xFF, 0xFF, 0x48, 0x83, 0xEC, 0x20)); Emit-CallIat -TargetRva ([UInt32]0x3070); Emit-Bytes -Bytes ([byte[]]@(0x48, 0x83, 0xC4, 0x20))
-    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x85, 0xC0)); Emit-JumpConditional -ConditionCode 0x84 -Label '__runtime_fail'
-    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x83, 0xF8, 0xFF)); Emit-JumpConditional -ConditionCode 0x84 -Label '__runtime_fail'
-    Emit-StoreRaxFrame -SlotPosition 0x78
+    if ($script:NativeScmServiceMode) {
+        Emit-StoreZero64Frame -SlotPosition 0x78 # service processes do not depend on an inherited console handle
+    } else {
+        Emit-Bytes -Bytes ([byte[]]@(0xB9, 0xF5, 0xFF, 0xFF, 0xFF, 0x48, 0x83, 0xEC, 0x20)); Emit-CallIat -TargetRva ([UInt32]0x3070); Emit-Bytes -Bytes ([byte[]]@(0x48, 0x83, 0xC4, 0x20))
+        Emit-Bytes -Bytes ([byte[]]@(0x48, 0x85, 0xC0)); Emit-JumpConditional -ConditionCode 0x84 -Label '__runtime_fail'
+        Emit-Bytes -Bytes ([byte[]]@(0x48, 0x83, 0xF8, 0xFF)); Emit-JumpConditional -ConditionCode 0x84 -Label '__runtime_fail'
+        Emit-StoreRaxFrame -SlotPosition 0x78
+    }
 }
 function New-UnwindInfoBytes {
     param([object] $Context)
@@ -5057,9 +5061,10 @@ $script:UniqueLabel = 0
 Mark-CodeLabel -Label '__entry'
 Emit-Prologue -Context $script:MainContext
 foreach ($statement in $script:MainStatements) { Emit-Statement -Statement $statement }
-Emit-Bytes -Bytes ([byte[]]@(0x31, 0xC9, 0x48, 0x83, 0xEC, 0x20)); Emit-CallIat -TargetRva ([UInt32]0x3080); Emit-Bytes -Bytes ([byte[]]@(0xCC))
+$exitProcessIatRva = if ($script:NativeScmServiceMode) { [UInt32]0x3070 } else { [UInt32]0x3080 }
+Emit-Bytes -Bytes ([byte[]]@(0x31, 0xC9, 0x48, 0x83, 0xEC, 0x20)); Emit-CallIat -TargetRva $exitProcessIatRva; Emit-Bytes -Bytes ([byte[]]@(0xCC))
 Mark-CodeLabel -Label '__runtime_fail'
-Emit-Bytes -Bytes ([byte[]]@(0xB9, 0x01, 0x00, 0x00, 0x00, 0x48, 0x83, 0xEC, 0x20)); Emit-CallIat -TargetRva ([UInt32]0x3080); Emit-Bytes -Bytes ([byte[]]@(0xCC))
+Emit-Bytes -Bytes ([byte[]]@(0xB9, 0x01, 0x00, 0x00, 0x00, 0x48, 0x83, 0xEC, 0x20)); Emit-CallIat -TargetRva $exitProcessIatRva; Emit-Bytes -Bytes ([byte[]]@(0xCC))
 
 foreach ($functionObject in ($script:Functions.Values | Sort-Object Index)) {
     Mark-CodeLabel -Label $functionObject.Label
@@ -5100,10 +5105,12 @@ $workerOffset = [int]$script:Code.Count
 Mark-CodeLabel -Label '__sharnou_worker'
 Emit-Bytes -Bytes ([byte[]]@(0x31, 0xC0, 0xC3)) # return DWORD 0
 
+if ($script:NativeScmServiceMode) { Emit-NativeScmCallbacks }
+
 # Explicit Win64 callback ABI probes are leaf functions. The first probe uses
 # the exact SERVICE_MAIN_FUNCTIONW parameter widths; the second uses the exact
 # HANDLER_FUNCTION_EX four-register layout. They preserve all nonvolatile state.
-if ($script:DataPointerFixups.Count -gt 0) {
+if ($EnableWin64CallbackTests) {
     $callbackMarker = [byte[]]@(0xDE, 0xC0, 0xA7, 0x51)
 
     Mark-CodeLabel -Label '__r51_service_main_abi_probe'
@@ -5150,6 +5157,9 @@ for ($functionIndex = 0; $functionIndex -lt $orderedFunctions.Count; $functionIn
     $endOffset = if (($functionIndex + 1) -lt $orderedFunctions.Count) { [int]$script:CodeLabels[$orderedFunctions[$functionIndex + 1].Label] } else { $stackProbeOffset }
     if ($endOffset -le $startOffset) { throw "Invalid generated function range for '$($functionObject.Name)'." }
     $runtimeFunctionSpecs.Add([pscustomobject]@{ StartOffset = $startOffset; EndOffset = $endOffset; Context = $functionObject.Context; UnwindBytes = $null; UnwindOffset = 0 })
+}
+if ($script:NativeScmServiceMode) {
+    foreach ($serviceRuntimeFunction in $script:NativeScmRuntimeFunctionSpecs) { $runtimeFunctionSpecs.Add($serviceRuntimeFunction) }
 }
 foreach ($runtimeFunction in $runtimeFunctionSpecs) {
     $runtimeFunction.UnwindBytes = New-UnwindInfoBytes -Context $runtimeFunction.Context
