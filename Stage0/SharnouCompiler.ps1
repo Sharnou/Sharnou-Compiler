@@ -7,7 +7,13 @@ param(
     [switch] $EnableDevAgentTools,
     [switch] $EnableWin64CallbackTests,
     [switch] $EnableNativeScmServiceHost,
-    [string] $NativeScmServiceName = 'SharnouAuthorityHost'
+    [string] $NativeScmServiceName = 'SharnouAuthorityHost',
+    [switch] $EnableNativeScmServiceTestMode,
+    [ValidateSet('None', 'Dispatcher', 'HandlerRegistration', 'EventCreation', 'SetServiceStatusStartPending', 'SetServiceStatusRunning', 'SetServiceStatusStopPending', 'SetServiceStatusStopped')]
+    [string] $NativeScmServiceTestFault = 'None',
+    [ValidateSet('Service', 'ProbeControlCallbacks')]
+    [string] $NativeScmServiceTestAction = 'Service',
+    [int] $NativeScmTestHoldMilliseconds = 1200
 )
 
 Set-StrictMode -Version Latest
@@ -25,6 +31,23 @@ if ($script:NativeScmServiceMode) {
     }
 } elseif ($NativeScmServiceName -cne 'SharnouAuthorityHost') {
     throw 'NativeScmServiceName can only be changed when EnableNativeScmServiceHost is specified.'
+}
+$script:NativeScmServiceTestMode = [bool]$EnableNativeScmServiceTestMode
+$script:NativeScmServiceTestFault = [string]$NativeScmServiceTestFault
+$script:NativeScmServiceTestAction = [string]$NativeScmServiceTestAction
+$script:NativeScmTestHoldMilliseconds = [int]$NativeScmTestHoldMilliseconds
+if ($script:NativeScmServiceTestMode) {
+    if (-not $script:NativeScmServiceMode) { throw 'SCM lifecycle test controls require the isolated native SCM service compiler mode.' }
+    if ($script:NativeScmTestHoldMilliseconds -lt 250 -or $script:NativeScmTestHoldMilliseconds -gt 5000) {
+        throw 'Native SCM test hold must be between 250 and 5000 milliseconds.'
+    }
+    if ($script:NativeScmServiceTestAction -eq 'ProbeControlCallbacks' -and $script:NativeScmServiceTestFault -cne 'None') {
+        throw 'Direct callback probes cannot be combined with service fault injection.'
+    }
+} elseif ($script:NativeScmServiceTestFault -cne 'None' -or
+          $script:NativeScmServiceTestAction -cne 'Service' -or
+          $script:NativeScmTestHoldMilliseconds -ne 1200) {
+    throw 'Native SCM test fault/action/hold controls require EnableNativeScmServiceTestMode.'
 }
 $relocationModulePath = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\Tools\SharnouPERelocations.ps1'))
 if (-not (Test-Path -LiteralPath $relocationModulePath -PathType Leaf)) {
@@ -3920,14 +3943,8 @@ function Emit-DevRunTool {
 }
 function Emit-NativeScmStatusCall {
     param(
-        [int] $StatusHandleSlot,
-        [int] $StatusBase,
-        [int] $State,
-        [int] $ControlsAccepted,
-        [int] $ExitCodeSlot = -1,
-        [int] $ExitCodeValue = 0,
-        [int] $Checkpoint = 0,
-        [int] $WaitHint = 0
+        [int] $StatusHandleSlot, [int] $StatusBase, [int] $State, [int] $ControlsAccepted,
+        [int] $ExitCodeSlot = -1, [int] $ExitCodeValue = 0, [int] $Checkpoint = 0, [int] $WaitHint = 0
     )
     Emit-StoreBits32Frame -SlotPosition $StatusBase -Value 0x10
     Emit-StoreBits32Frame -SlotPosition ($StatusBase + 4) -Value $State
@@ -3942,27 +3959,115 @@ function Emit-NativeScmStatusCall {
     Emit-StoreBits32Frame -SlotPosition ($StatusBase + 20) -Value $Checkpoint
     Emit-StoreBits32Frame -SlotPosition ($StatusBase + 24) -Value $WaitHint
     Emit-LoadRaxFrame -SlotPosition $StatusHandleSlot
-    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1)) # RCX = SERVICE_STATUS_HANDLE
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1))
     Emit-LeaRaxFrame -SlotPosition $StatusBase
-    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC2)) # RDX = SERVICE_STATUS*
-    Emit-Win64CallIat -TargetRva ([UInt32]0x30C0) # SetServiceStatus
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC2))
+    $failurePoint = switch ($State) {
+        2 { 'SetServiceStatusStartPending' }
+        4 { 'SetServiceStatusRunning' }
+        3 { 'SetServiceStatusStopPending' }
+        1 { 'SetServiceStatusStopped' }
+        default { '' }
+    }
+    if ($script:NativeScmServiceTestMode -and $script:NativeScmServiceTestFault -ceq $failurePoint) {
+        Emit-Bytes -Bytes ([byte[]]@(0x33, 0xC0))
+    } else {
+        Emit-Win64CallIat -TargetRva ([UInt32]0x30C0)
+    }
+}
+function Emit-NativeScmTestDelay {
+    if (-not $script:NativeScmServiceTestMode) { return }
+    Emit-Bytes -Bytes ([byte[]]@(0xB9))
+    $script:Code.AddRange([BitConverter]::GetBytes([UInt32]$script:NativeScmTestHoldMilliseconds))
+    Emit-Win64CallIat -TargetRva ([UInt32]0x30A0) # Sleep in test images only.
 }
 function Emit-NativeScmCaptureLastError {
     param([int] $ErrorSlot, [switch] $OnlyIfEmpty)
+    if ($script:NativeScmServiceTestMode) {
+        if ($OnlyIfEmpty) {
+            $testSkip = New-UniqueLabel -Prefix 'r51_test_error_already_recorded'
+            Emit-LoadEaxFrame -SlotPosition $ErrorSlot
+            Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
+            Emit-JumpConditional -ConditionCode 0x85 -Label $testSkip
+            Emit-Bytes -Bytes ([byte[]]@(0xB8, 0x05, 0x00, 0x00, 0x00))
+            Emit-StoreEaxFrame -SlotPosition $ErrorSlot
+            Mark-CodeLabel -Label $testSkip
+        } else {
+            Emit-Bytes -Bytes ([byte[]]@(0xB8, 0x05, 0x00, 0x00, 0x00))
+            Emit-StoreEaxFrame -SlotPosition $ErrorSlot
+        }
+        return
+    }
     if ($OnlyIfEmpty) {
         $skip = New-UniqueLabel -Prefix 'r51_error_already_recorded'
         Emit-LoadEaxFrame -SlotPosition $ErrorSlot
         Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
         Emit-JumpConditional -ConditionCode 0x85 -Label $skip
-        Emit-Win64CallIat -TargetRva ([UInt32]0x3078) # GetLastError
+        Emit-Win64CallIat -TargetRva ([UInt32]0x3078)
         Emit-StoreEaxFrame -SlotPosition $ErrorSlot
         Mark-CodeLabel -Label $skip
     } else {
-        Emit-Win64CallIat -TargetRva ([UInt32]0x3078) # GetLastError
+        Emit-Win64CallIat -TargetRva ([UInt32]0x3078)
         Emit-StoreEaxFrame -SlotPosition $ErrorSlot
     }
 }
-function Emit-NativeScmCallbacks {
+function Emit-NativeScmTestControlProbe {
+    param([Parameter(Mandatory = $true)][object] $HandlerPointerItem)
+    # Callback-level only: ControlService cannot deliver SERVICE_CONTROL_SHUTDOWN.
+    $slot = [int]$script:ActiveContext.ScratchPosition
+    $failed = New-UniqueLabel -Prefix 'r51d_callback_probe_failed'
+    $noHandle = New-UniqueLabel -Prefix 'r51d_callback_probe_no_handle'
+    Emit-StoreZero64Frame -SlotPosition $slot
+    Emit-Bytes -Bytes ([byte[]]@(0x33, 0xC9, 0xBA, 0x01, 0x00, 0x00, 0x00, 0x45, 0x33, 0xC0, 0x45, 0x33, 0xC9))
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3080)
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x85, 0xC0))
+    Emit-JumpConditional -ConditionCode 0x84 -Label $failed
+    Emit-StoreRaxFrame -SlotPosition $slot
+    # INTERROGATE succeeds but must not signal the event.
+    Emit-Bytes -Bytes ([byte[]]@(0xB9, 0x04, 0x00, 0x00, 0x00, 0x31, 0xD2, 0x45, 0x31, 0xC0))
+    Emit-LeaR9Frame -SlotPosition $slot
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x83, 0xEC, 0x20))
+    Emit-CallDataPointer -DataItem $HandlerPointerItem
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x83, 0xC4, 0x20, 0x85, 0xC0))
+    Emit-JumpConditional -ConditionCode 0x85 -Label $failed
+    Emit-LoadRaxFrame -SlotPosition $slot
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1, 0x31, 0xD2))
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3090)
+    Emit-Bytes -Bytes ([byte[]]@(0x3D, 0x02, 0x01, 0x00, 0x00)) # WAIT_TIMEOUT
+    Emit-JumpConditional -ConditionCode 0x85 -Label $failed
+    foreach ($control in @([UInt32]1, [UInt32]5, [UInt32]1)) {
+        Emit-Bytes -Bytes ([byte[]]@(0xB9))
+        $script:Code.AddRange([BitConverter]::GetBytes([UInt32]$control))
+        Emit-Bytes -Bytes ([byte[]]@(0x31, 0xD2, 0x45, 0x31, 0xC0))
+        Emit-LeaR9Frame -SlotPosition $slot
+        Emit-Bytes -Bytes ([byte[]]@(0x48, 0x83, 0xEC, 0x20))
+        Emit-CallDataPointer -DataItem $HandlerPointerItem
+        Emit-Bytes -Bytes ([byte[]]@(0x48, 0x83, 0xC4, 0x20, 0x85, 0xC0))
+        Emit-JumpConditional -ConditionCode 0x85 -Label $failed
+    }
+    Emit-LoadRaxFrame -SlotPosition $slot
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1, 0x31, 0xD2))
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3090)
+    Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
+    Emit-JumpConditional -ConditionCode 0x85 -Label $failed
+    Emit-LoadRaxFrame -SlotPosition $slot
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1))
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3098)
+    Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
+    Emit-JumpConditional -ConditionCode 0x84 -Label $failed
+    Emit-Bytes -Bytes ([byte[]]@(0x31, 0xC9))
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3070)
+    Mark-CodeLabel -Label $failed
+    Emit-LoadRaxFrame -SlotPosition $slot
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x85, 0xC0))
+    Emit-JumpConditional -ConditionCode 0x84 -Label $noHandle
+    Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1))
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3098)
+    Mark-CodeLabel -Label $noHandle
+    Emit-Bytes -Bytes ([byte[]]@(0xB9, 0x01, 0x00, 0x00, 0x00))
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3070)
+}
+function Emit-NativeScmCallbacks {function Emit-NativeScmCallbacks {
     if (-not $script:NativeScmServiceMode) { return }
     if ($null -eq $script:NativeScmServiceNameDataItem -or $null -eq $script:NativeScmHandlerPointerItem) {
         throw 'Native SCM callback data was not registered by the Sharnou service-host intrinsic.'
@@ -3993,7 +4098,11 @@ function Emit-NativeScmCallbacks {
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC2)) # RDX = typed HandlerEx pointer
     Emit-LeaRaxFrame -SlotPosition $eventSlot
     Emit-Bytes -Bytes ([byte[]]@(0x49, 0x89, 0xC0)) # R8 = stable context pointer
-    Emit-Win64CallIat -TargetRva ([UInt32]0x30B8) # RegisterServiceCtrlHandlerExW
+    if ($script:NativeScmServiceTestMode -and $script:NativeScmServiceTestFault -ceq 'HandlerRegistration') {
+        Emit-Bytes -Bytes ([byte[]]@(0x33, 0xC0))
+    } else {
+        Emit-Win64CallIat -TargetRva ([UInt32]0x30B8)
+    }
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x85, 0xC0))
     $registrationFailed = New-UniqueLabel -Prefix 'r51_register_handler_failed'
     Emit-JumpConditional -ConditionCode 0x84 -Label $registrationFailed
@@ -4003,10 +4112,15 @@ function Emit-NativeScmCallbacks {
     Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
     $startStatusFailed = New-UniqueLabel -Prefix 'r51_start_status_failed'
     Emit-JumpConditional -ConditionCode 0x84 -Label $startStatusFailed
+    Emit-NativeScmTestDelay # START_PENDING is held only in explicit test images.
 
     # Create a manual-reset, initially nonsignaled stop event.
     Emit-Bytes -Bytes ([byte[]]@(0x33, 0xC9, 0xBA, 0x01, 0x00, 0x00, 0x00, 0x45, 0x33, 0xC0, 0x45, 0x33, 0xC9))
-    Emit-Win64CallIat -TargetRva ([UInt32]0x3080) # CreateEventW(NULL, TRUE, FALSE, NULL)
+    if ($script:NativeScmServiceTestMode -and $script:NativeScmServiceTestFault -ceq 'EventCreation') {
+        Emit-Bytes -Bytes ([byte[]]@(0x33, 0xC0))
+    } else {
+        Emit-Win64CallIat -TargetRva ([UInt32]0x3080)
+    }
     Emit-Bytes -Bytes ([byte[]]@(0x48, 0x85, 0xC0))
     $eventCreationFailed = New-UniqueLabel -Prefix 'r51_event_creation_failed'
     Emit-JumpConditional -ConditionCode 0x84 -Label $eventCreationFailed
@@ -4029,7 +4143,14 @@ function Emit-NativeScmCallbacks {
 
     Emit-NativeScmStatusCall -StatusHandleSlot $statusHandleSlot -StatusBase $statusBase -State 3 -ControlsAccepted 0 -ExitCodeSlot $errorSlot -Checkpoint 1 -WaitHint 5000
     Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
+    $stopStatusFailed = New-UniqueLabel -Prefix 'r51_stop_status_failed'
+    $stopStatusReady = New-UniqueLabel -Prefix 'r51_stop_status_ready'
+    Emit-JumpConditional -ConditionCode 0x85 -Label $stopStatusFailed
+    Emit-NativeScmTestDelay # STOP_PENDING is held only in explicit test images.
+    Emit-Jump -Label $stopStatusReady
+    Mark-CodeLabel -Label $stopStatusFailed
     Emit-NativeScmCaptureLastError -ErrorSlot $errorSlot -OnlyIfEmpty
+    Mark-CodeLabel -Label $stopStatusReady
 
     Mark-CodeLabel -Label '__r51_service_cleanup'
     Emit-LoadRaxFrame -SlotPosition $eventSlot
@@ -4074,9 +4195,13 @@ function Emit-NativeScmCallbacks {
     Emit-NativeScmCaptureLastError -ErrorSlot $errorSlot
     Emit-Jump -Label '__r51_service_cleanup'
     Mark-CodeLabel -Label $registrationFailed
-    Emit-Win64CallIat -TargetRva ([UInt32]0x3078) # No service-status handle exists yet.
-    Emit-Bytes -Bytes ([byte[]]@(0x89, 0xC1)) # ECX = registration Win32 error.
-    Emit-Win64CallIat -TargetRva ([UInt32]0x3070) # ExitProcess: a single-service host cannot remain alive without a handler.
+    if ($script:NativeScmServiceTestMode) {
+        Emit-Bytes -Bytes ([byte[]]@(0xB9, 0x05, 0x00, 0x00, 0x00))
+    } else {
+        Emit-Win64CallIat -TargetRva ([UInt32]0x3078)
+        Emit-Bytes -Bytes ([byte[]]@(0x89, 0xC1))
+    }
+    Emit-Win64CallIat -TargetRva ([UInt32]0x3070)
     Emit-Epilogue # Unreachable safety terminator if ExitProcess unexpectedly returns.
     $serviceMainEnd = [int]$script:Code.Count
     $script:NativeScmRuntimeFunctionSpecs.Add([pscustomobject]@{
@@ -4165,16 +4290,32 @@ function Emit-BuiltinCall {
             $script:NativeScmServiceTableItem = Register-ByteDataConstant -Key 'SCM:SERVICE_TABLE' -Bytes $tableBytes
             Register-DataPointerFixup -Key 'SCM:SERVICE_TABLE_NAME' -DataItem $script:NativeScmServiceTableItem -SlotOffset 0 -TargetKind Data -TargetItem $script:NativeScmServiceNameDataItem
             Register-DataPointerFixup -Key 'SCM:SERVICE_TABLE_MAIN' -DataItem $script:NativeScmServiceTableItem -SlotOffset 8 -TargetKind Code -Label '__r51_service_main' -Signature 'SERVICE_MAIN_FUNCTIONW'
+            if ($script:NativeScmServiceTestMode) {
+                $script:NativeScmTestMarkerItem = Register-ByteDataConstant -Key 'SCM:R5D:TEST_ONLY_MARKER' -Bytes ([Text.Encoding]::ASCII.GetBytes('SHARNOU_R5_1_D_TEST_ONLY_V1' + [char]0))
+            }
+            if ($script:NativeScmServiceTestMode -and $script:NativeScmServiceTestAction -ceq 'ProbeControlCallbacks') {
+                Emit-NativeScmTestControlProbe -HandlerPointerItem $script:NativeScmHandlerPointerItem
+                $script:TempDepth = $baseDepth
+                return
+            }
 
             Emit-DataAddress -DataItem $script:NativeScmServiceTableItem
             Emit-Bytes -Bytes ([byte[]]@(0x48, 0x89, 0xC1)) # RCX = SERVICE_TABLE_ENTRYW*
-            Emit-Win64CallIat -TargetRva ([UInt32]0x30B0) # StartServiceCtrlDispatcherW
+            if ($script:NativeScmServiceTestMode -and $script:NativeScmServiceTestFault -ceq 'Dispatcher') {
+                Emit-Bytes -Bytes ([byte[]]@(0x33, 0xC0))
+            } else {
+                Emit-Win64CallIat -TargetRva ([UInt32]0x30B0)
+            }
             Emit-Bytes -Bytes ([byte[]]@(0x85, 0xC0))
             $dispatchSucceeded = New-UniqueLabel -Prefix 'r51_dispatch_succeeded'
             Emit-JumpConditional -ConditionCode 0x85 -Label $dispatchSucceeded
-            Emit-Win64CallIat -TargetRva ([UInt32]0x3078) # GetLastError
-            Emit-Bytes -Bytes ([byte[]]@(0x89, 0xC1)) # ECX = dispatcher failure
-            Emit-Win64CallIat -TargetRva ([UInt32]0x3070) # ExitProcess(error)
+            if ($script:NativeScmServiceTestMode) {
+                Emit-Bytes -Bytes ([byte[]]@(0xB9, 0x05, 0x00, 0x00, 0x00))
+            } else {
+                Emit-Win64CallIat -TargetRva ([UInt32]0x3078)
+                Emit-Bytes -Bytes ([byte[]]@(0x89, 0xC1))
+            }
+            Emit-Win64CallIat -TargetRva ([UInt32]0x3070)
             Emit-Bytes -Bytes ([byte[]]@(0xB8, 0x01, 0x00, 0x00, 0x00)) # unreachable fail-closed return
             Mark-CodeLabel -Label $dispatchSucceeded
             $script:TempDepth = $baseDepth
@@ -5077,6 +5218,7 @@ $script:DataPointerFixups = [System.Collections.Generic.List[object]]::new()
 $script:NativeScmServiceTableItem = $null
 $script:NativeScmServiceNameDataItem = $null
 $script:NativeScmHandlerPointerItem = $null
+$script:NativeScmTestMarkerItem = $null
 $script:NativeScmRuntimeFunctionSpecs = $null
 $script:DataLength = 8 # reserved absolute entry-point anchor, patched by the base-relocation directory
 $script:UniqueLabel = 0
@@ -5297,11 +5439,12 @@ $idata = [byte[]]::new(0x1000)
 # Import descriptors have a dedicated .idata range, disjoint from lookups, IAT and names.
 $descriptorBase = 0xA00
 if ($script:NativeScmServiceMode) {
-    # Minimal, service-specific import profile. No process launch, crypto, userenv,
-    # GUI, D3D, or developer-agent APIs are linked into this image.
-    $importDirectorySize = 0x3C # two descriptors and one all-zero terminator
+    # Explicit test images alone import Sleep so pending-state windows are observable.
+    $importDirectorySize = 0x3C
+    $nativeScmKernel32Names = @('ExitProcess', 'GetLastError', 'CreateEventW', 'SetEvent', 'WaitForSingleObject', 'CloseHandle')
+    if ($script:NativeScmServiceTestMode) { $nativeScmKernel32Names += 'Sleep' }
     $importSets = @(
-        [pscustomobject]@{ Descriptor = 0x00; Lookup = 0xC00; Iat = 0x70; Dll = 'KERNEL32.dll'; Names = @('ExitProcess', 'GetLastError', 'CreateEventW', 'SetEvent', 'WaitForSingleObject', 'CloseHandle') },
+        [pscustomobject]@{ Descriptor = 0x00; Lookup = 0xC00; Iat = 0x70; Dll = 'KERNEL32.dll'; Names = $nativeScmKernel32Names },
         [pscustomobject]@{ Descriptor = 0x14; Lookup = 0xC40; Iat = 0xB0; Dll = 'ADVAPI32.dll'; Names = @('StartServiceCtrlDispatcherW', 'RegisterServiceCtrlHandlerExW', 'SetServiceStatus') }
     )
 } else {
@@ -5466,8 +5609,15 @@ $verifierPath = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\Tools
 try {
     [System.IO.File]::WriteAllBytes($outputFullPath, $image)
     if (-not (Test-Path -LiteralPath $verifierPath -PathType Leaf)) { throw "PE verifier is missing: $verifierPath" }
-    if ($script:NativeScmServiceMode) { & $verifierPath -Path $outputFullPath -NativeScmServiceHost }
-    else { & $verifierPath -Path $outputFullPath }
+    if ($script:NativeScmServiceMode) {
+        if ($script:NativeScmServiceTestMode) {
+            & $verifierPath -Path $outputFullPath -NativeScmServiceHost -NativeScmServiceTestImage
+        } else {
+            & $verifierPath -Path $outputFullPath -NativeScmServiceHost
+        }
+    } else {
+        & $verifierPath -Path $outputFullPath
+    }
 } catch {
     if (Test-Path -LiteralPath $outputFullPath) { Remove-Item -LiteralPath $outputFullPath -Force -ErrorAction SilentlyContinue }
     throw ("Linked image failed post-write validation: {0}" -f $_.Exception.Message)
@@ -5476,7 +5626,11 @@ $sha256 = (Get-FileHash -LiteralPath $outputFullPath -Algorithm SHA256).Hash
 Write-Host "Created native x64 PE32+ executable: $outputFullPath"
 Write-Host ("Link result: modules={0}, functions={1}, codeBytes={2}, dataBytes={3}" -f $script:Modules.Count, $script:Functions.Count, $codeBytes.Length, $dataBytes.Length)
 if ($script:NativeScmServiceMode) {
-    Write-Host 'Native SCM service image: exact KERNEL32.dll / ADVAPI32.dll imports; SCM callbacks and relocated service table verified.'
+    if ($script:NativeScmServiceTestMode) {
+        Write-Host ('Native SCM TEST-ONLY image: fault={0}; action={1}; holdMs={2}; marker embedded.' -f $script:NativeScmServiceTestFault, $script:NativeScmServiceTestAction, $script:NativeScmTestHoldMilliseconds)
+    } else {
+        Write-Host 'Native SCM service image: exact KERNEL32.dll / ADVAPI32.dll imports; SCM callbacks and relocated service table verified.'
+    }
 } else {
     Write-Host 'Sections: .text, .rdata, .idata, .reloc, .pdata, .xdata; imports: KERNEL32.dll, USER32.dll, D3D11.dll, and DXGI.dll'
 }
