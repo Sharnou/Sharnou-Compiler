@@ -70,7 +70,11 @@ Invoke-ExpectedFailure -Name 'reject malformed phi predecessor list' -Json ($fix
 Invoke-ExpectedFailure -Name 'reject malformed IEEE-754 bit pattern' -Json ($fixture.Replace('"literal": "3F800000"','"literal": "3F8000GG"')) -ExpectedCode 'V002'
 Invoke-ExpectedFailure -Name 'reject non-Boolean constant representation' -Json ($fixture.Replace('"literal": true','"literal": 1')) -ExpectedCode 'V001'
 Invoke-ExpectedFailure -Name 'reject unknown instruction opcode' -Json ($fixture.Replace('"op": "load_input"','"op": "load_gpu_magic"')) -ExpectedCode 'V007'
-Invoke-ExpectedFailure -Name 'reject mismatched load-input interface type' -Json ($fixture.Replace('"type": "vec4f", "interface": "in_position"','"type": "f32", "interface": "in_position"')) -ExpectedCode 'V018'
+$badInputType = ConvertFrom-SgirJsonText -Json $fixture
+$vertexFunctionForType = @($badInputType.functions | Where-Object { $_.id -ceq 'fn_vs' })[0]
+$vertexFunctionForType.blocks[0].instructions[0].type = 'f32'
+$badInputTypeJson = ConvertTo-Json -InputObject $badInputType -Depth 100 -Compress
+Invoke-ExpectedFailure -Name 'reject mismatched load-input interface type' -Json $badInputTypeJson -ExpectedCode 'V018'
 
 $duplicateResource = ConvertFrom-SgirJsonText -Json $fixture
 $duplicateResource.resources = @($duplicateResource.resources) + @($duplicateResource.resources)
@@ -108,8 +112,10 @@ $chooseFunction.returnType = 'f32'
 $wrongReturnJson = ConvertTo-Json -InputObject $wrongReturn -Depth 100 -Compress
 Invoke-ExpectedFailure -Name 'reject return type mismatch' -Json $wrongReturnJson -ExpectedCode 'V036'
 
-$nullArray = $fixture.Replace('"resources": [','"resources": null, "unusedResources": [')
-Invoke-ExpectedFailure -Name 'reject null where an array is required' -Json $nullArray -ExpectedCode 'S004'
+$nullArrayDocument = ConvertFrom-SgirJsonText -Json $fixture
+$nullArrayDocument.resources = $null
+$nullArrayJson = ConvertTo-Json -InputObject $nullArrayDocument -Depth 100 -Compress
+Invoke-ExpectedFailure -Name 'reject null where an array is required' -Json $nullArrayJson -ExpectedCode 'S005'
 
 $tempDirectory = Join-Path ([System.IO.Path]::GetTempPath()) ('Sharnou-SGIR-' + [Guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $tempDirectory -Force | Out-Null
