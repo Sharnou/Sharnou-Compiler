@@ -41,6 +41,11 @@ try{
  Assert-GfxJournal ($again.recoveredCount -eq 0 -and $again.status.recordCount -eq $recordCount) 'repeated recovery adds no duplicate event'
  $resume=Resume-GfxTask -StateDirectory $script:JournalRootPath -TaskId $taskId -SessionId 'worker-session-02'
  Assert-GfxJournal ($resume.status -eq 'APPENDED' -and $resume.checkpointSha256 -eq $cp.checkpointSha256) 'resumes from latest verified checkpoint'
+ $checkpointPayload2=[pscustomobject][ordered]@{phase='resumed';completedUnits=9;resumeCount=1}
+ $cp2=Save-GfxTaskCheckpoint -StateDirectory $script:JournalRootPath -TaskId $taskId -CheckpointState $checkpointPayload2
+ Assert-GfxJournal ($cp2.status -eq 'APPENDED' -and $cp2.checkpointSequence -eq 2) 'extends the checkpoint predecessor chain with sequence two'
+ $loaded2=Get-GfxTaskCheckpoint -StateDirectory $script:JournalRootPath -TaskId $taskId
+ Assert-GfxJournal ($loaded2.state.phase -eq 'resumed' -and $loaded2.previousCheckpointSha256 -eq $cp.checkpointSha256) 'verifies checkpoint predecessor and restores latest checkpoint'
  $complete=Complete-GfxTask -StateDirectory $script:JournalRootPath -TaskId $taskId -OutputSha256 ('4'*64)
  Assert-GfxJournal ($complete.status -eq 'APPENDED') 'completes task with output digest'
  $status=Get-GfxTaskJournalStatus -StateDirectory $script:JournalRootPath
@@ -65,6 +70,22 @@ try{
  $outer.body=$outer.body+' '
  [IO.File]::WriteAllText($cpPath,(ConvertTo-Json -InputObject $outer -Compress),(New-Object System.Text.UTF8Encoding($false)))
  Assert-GfxThrows {Get-GfxTaskJournalStatus -StateDirectory $script:JournalRootPath} 'tampered checkpoint fails closed'
+
+ $gapRoot=Join-Path $script:TestRoot 'gap-state'
+ $null=Initialize-GfxTaskJournal -StateDirectory $gapRoot
+ $gapTask=New-GfxPlannedTask -StateDirectory $gapRoot -MilestoneId 'GFX-0.4' -TaskKind 'design' -InputSha256 ('b'*64) -ScopeSha256 ('c'*64) -IdempotencyKey 'test/dga03/gap-task'
+ $null=Start-GfxTask -StateDirectory $gapRoot -TaskId $gapTask.taskId -SessionId 'gap-session'
+ $gapRecords=@(Get-ChildItem -LiteralPath (Join-Path $gapRoot 'journal') -Filter '*.json' -File | Sort-Object Name)
+ Remove-Item -LiteralPath $gapRecords[1].FullName -Force
+ Assert-GfxThrows {Get-GfxTaskJournalStatus -StateDirectory $gapRoot} 'missing interior record causes sequence-gap rejection'
+
+ $tamperRoot=Join-Path $script:TestRoot 'tamper-state'
+ $null=Initialize-GfxTaskJournal -StateDirectory $tamperRoot
+ $tamperRecords=@(Get-ChildItem -LiteralPath (Join-Path $tamperRoot 'journal') -Filter '*.json' -File)
+ $recordOuter=Copy-GfxJournal (ConvertFrom-Json -InputObject ([IO.File]::ReadAllText($tamperRecords[0].FullName)))
+ $recordOuter.body=$recordOuter.body+' '
+ [IO.File]::WriteAllText($tamperRecords[0].FullName,(ConvertTo-Json -InputObject $recordOuter -Compress),(New-Object System.Text.UTF8Encoding($false)))
+ Assert-GfxThrows {Get-GfxTaskJournalStatus -StateDirectory $tamperRoot} 'modified journal body fails hash-chain verification'
 }finally{if(Test-Path -LiteralPath $script:TestRoot){Remove-Item -LiteralPath $script:TestRoot -Recurse -Force}}
 $module=[IO.File]::ReadAllText((Join-Path $root 'Tools\DevAgent\GfxTaskJournal.psm1'))
 Assert-GfxJournal (-not($module -match '(?i)Start-Process|Invoke-Expression|Invoke-WebRequest|Invoke-RestMethod|cmd\.exe|powershell\.exe|ProcessStartInfo')) 'module has no process/shell/network execution path'
