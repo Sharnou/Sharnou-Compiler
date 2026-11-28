@@ -563,7 +563,11 @@ function New-ServiceName {
         $random.Dispose()
     }
     $suffix = ([BitConverter]::ToString($bytes)).Replace('-', '').ToLowerInvariant()
-    if ($suffix.Length -ne 32 -or $suffix -notmatch '^[0-9a-f]+
+    if ($suffix.Length -ne 32 -or $suffix -match '[^0-9a-f]' -or $suffix -eq ('0' * 32)) {
+        throw 'CSPRNG did not produce a valid nonzero 128-bit service-name nonce.'
+    }
+    return 'SharnouR51D_' + $suffix
+}
 
 function Start-And-Observe {
     param(
