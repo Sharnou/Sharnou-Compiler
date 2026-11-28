@@ -174,7 +174,7 @@
             "completed",
             "requested",
             "waiting",
-            "pending_request"
+            "pending"
           ]
         },
         "conclusion": {
