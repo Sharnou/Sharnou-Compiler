@@ -1,7 +1,8 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true, Position = 0)]
-    [string] $Path
+    [string] $Path,
+    [switch] $NativeScmServiceHost
 )
 
 Set-StrictMode -Version Latest
@@ -317,10 +318,26 @@ while ($true) {
     if (-not $thunkTerminated) { Fail-PE "Import lookup table for '$dllName' has no null thunk." }
     $descriptorIndex++
 }
-if ($foundDlls.Count -lt 5) { Fail-PE 'Expected five Windows system DLL import descriptors.' }
-foreach ($dll in @('KERNEL32.dll', 'USER32.dll', 'D3D11.dll', 'DXGI.dll', 'BCRYPT.dll', 'USERENV.dll', 'ADVAPI32.dll')) { if (-not $foundDlls.Contains($dll)) { Fail-PE "Missing required DLL '$dll'." } }
-foreach ($api in @('GetStdHandle', 'WriteFile', 'ExitProcess', 'wsprintfA', 'CreateFileA', 'GetFileSizeEx', 'ReadFile', 'CloseHandle', 'GetModuleHandleA', 'CreateThread', 'WaitForSingleObject', 'CreateMutexA', 'ReleaseMutex', 'CreateWindowExA', 'ShowWindow', 'UpdateWindow', 'PeekMessageA', 'TranslateMessage', 'DispatchMessageA', 'DestroyWindow', 'D3D11CreateDeviceAndSwapChain', 'CreateDXGIFactory', 'QueryPerformanceCounter', 'QueryPerformanceFrequency', 'IsWindow', 'GetSystemDirectoryA', 'GetCurrentDirectoryA', 'CreateProcessA', 'CreateJobObjectA', 'SetInformationJobObject', 'AssignProcessToJobObject', 'ResumeThread', 'TerminateJobObject', 'GetExitCodeProcess', 'TerminateProcess', 'GetFileAttributesA', 'VirtualAlloc', 'VirtualFree', 'BCryptOpenAlgorithmProvider', 'BCryptHash', 'BCryptCloseAlgorithmProvider', 'GetFileInformationByHandle', 'GetModuleFileNameA', 'SetCurrentDirectoryA', 'CreatePipe', 'SetHandleInformation', 'PeekNamedPipe', 'InitializeProcThreadAttributeList', 'UpdateProcThreadAttribute', 'DeleteProcThreadAttributeList', 'GetLastError', 'CreateAppContainerProfile', 'DeriveAppContainerSidFromAppContainerName', 'GetNamedSecurityInfoA', 'SetEntriesInAclA', 'SetNamedSecurityInfoA', 'FreeSid', 'OpenProcessToken', 'CreateRestrictedToken', 'CreateProcessAsUserA', 'GetSecurityInfo', 'SetSecurityInfo', 'GetTokenInformation', 'GetFullPathNameA', 'DeleteFileA', 'BCryptGenRandom', 'DeleteAppContainerProfile', 'EqualSid')) {
-    if (-not $foundImports.Contains($api)) { Fail-PE "Missing required imported API '$api'." }
+if ($NativeScmServiceHost) {
+    $expectedServiceDlls = @('KERNEL32.dll', 'ADVAPI32.dll')
+    $expectedServiceApis = @(
+        'ExitProcess', 'GetLastError', 'CreateEventW', 'SetEvent',
+        'WaitForSingleObject', 'CloseHandle', 'StartServiceCtrlDispatcherW',
+        'RegisterServiceCtrlHandlerExW', 'SetServiceStatus'
+    )
+    if ($foundDlls.Count -ne $expectedServiceDlls.Count) { Fail-PE 'Native SCM service image must import exactly KERNEL32.dll and ADVAPI32.dll.' }
+    foreach ($dll in $expectedServiceDlls) { if (-not $foundDlls.Contains($dll)) { Fail-PE "Native SCM service image is missing required DLL '$dll'." } }
+    if ($foundImports.Count -ne $expectedServiceApis.Count) { Fail-PE 'Native SCM service image import table contains an unexpected or missing API.' }
+    foreach ($api in $expectedServiceApis) { if (-not $foundImports.Contains($api)) { Fail-PE "Native SCM service image is missing required API '$api'." } }
+    if ($importSize -ne 0x3C -or $iatRva -ne ([UInt64]$idata.Rva + 0x70) -or $iatSize -ne 0x48) {
+        Fail-PE 'Native SCM service import/IAT directory bounds do not match the minimal service import profile.'
+    }
+} else {
+    if ($foundDlls.Count -lt 5) { Fail-PE 'Expected five Windows system DLL import descriptors.' }
+    foreach ($dll in @('KERNEL32.dll', 'USER32.dll', 'D3D11.dll', 'DXGI.dll', 'BCRYPT.dll', 'USERENV.dll', 'ADVAPI32.dll')) { if (-not $foundDlls.Contains($dll)) { Fail-PE "Missing required DLL '$dll'." } }
+    foreach ($api in @('GetStdHandle', 'WriteFile', 'ExitProcess', 'wsprintfA', 'CreateFileA', 'GetFileSizeEx', 'ReadFile', 'CloseHandle', 'GetModuleHandleA', 'CreateThread', 'WaitForSingleObject', 'CreateMutexA', 'ReleaseMutex', 'CreateWindowExA', 'ShowWindow', 'UpdateWindow', 'PeekMessageA', 'TranslateMessage', 'DispatchMessageA', 'DestroyWindow', 'D3D11CreateDeviceAndSwapChain', 'CreateDXGIFactory', 'QueryPerformanceCounter', 'QueryPerformanceFrequency', 'IsWindow', 'GetSystemDirectoryA', 'GetCurrentDirectoryA', 'CreateProcessA', 'CreateJobObjectA', 'SetInformationJobObject', 'AssignProcessToJobObject', 'ResumeThread', 'TerminateJobObject', 'GetExitCodeProcess', 'TerminateProcess', 'GetFileAttributesA', 'VirtualAlloc', 'VirtualFree', 'BCryptOpenAlgorithmProvider', 'BCryptHash', 'BCryptCloseAlgorithmProvider', 'GetFileInformationByHandle', 'GetModuleFileNameA', 'SetCurrentDirectoryA', 'CreatePipe', 'SetHandleInformation', 'PeekNamedPipe', 'InitializeProcThreadAttributeList', 'UpdateProcThreadAttribute', 'DeleteProcThreadAttributeList', 'GetLastError', 'CreateAppContainerProfile', 'DeriveAppContainerSidFromAppContainerName', 'GetNamedSecurityInfoA', 'SetEntriesInAclA', 'SetNamedSecurityInfoA', 'FreeSid', 'OpenProcessToken', 'CreateRestrictedToken', 'CreateProcessAsUserA', 'GetSecurityInfo', 'SetSecurityInfo', 'GetTokenInformation', 'GetFullPathNameA', 'DeleteFileA', 'BCryptGenRandom', 'DeleteAppContainerProfile', 'EqualSid')) {
+        if (-not $foundImports.Contains($api)) { Fail-PE "Missing required imported API '$api'." }
+    }
 }
 $relocOffset = Convert-RvaToOffset -Rva $relocRva -Size $relocSize -Sections $sections.ToArray() -FileSize $bytes.Length
 $relocBytes = [byte[]]::new([int]$relocSize)
@@ -330,5 +347,55 @@ if (-not ($relocationResult.TargetRvas -contains [UInt32]$rdata.Rva)) { Fail-PE 
 $anchorOffset = Convert-RvaToOffset -Rva $rdata.Rva -Size 8 -Sections $sections.ToArray() -FileSize $bytes.Length
 $anchor = Read-U64 -Bytes $bytes -Offset $anchorOffset
 if ($anchor -ne ($imageBase + $entryRva)) { Fail-PE 'Relocation anchor does not equal ImageBase + entry-point RVA.' }
+
+if ($NativeScmServiceHost) {
+    # The linker reserves rdata[0..7] for the entry-point anchor and writes the
+    # UTF-16 service name immediately afterward. The HandlerEx pointer follows
+    # at the next aligned qword; SERVICE_TABLE_ENTRYW follows that slot.
+    $nameOffset = [UInt64]$rdata.RawPointer + 8
+    $nameLimit = [UInt64]$rdata.RawPointer + [UInt64]$rdata.RawSize
+    $nameBytes = 0
+    $nameTerminated = $false
+    while (($nameOffset + [UInt64]$nameBytes + 2) -le $nameLimit) {
+        $charOffset = [int]($nameOffset + [UInt64]$nameBytes)
+        if ($bytes[$charOffset] -eq 0 -and $bytes[$charOffset + 1] -eq 0) { $nameTerminated = $true; break }
+        $nameBytes += 2
+    }
+    if (-not $nameTerminated -or $nameBytes -lt 2) { Fail-PE 'Native SCM service name is missing or not UTF-16 terminated.' }
+    $serviceName = [Text.Encoding]::Unicode.GetString($bytes, [int]$nameOffset, $nameBytes)
+    if ($serviceName -notmatch '^[A-Za-z0-9_.-]{1,256}$') { Fail-PE 'Native SCM service name contains unsupported characters or length.' }
+
+    $handlerSlotOffset = [UInt64](Align-Up-PE -Value ([UInt64](8 + $nameBytes)) -Alignment 8)
+    $tableOffset = $handlerSlotOffset + 8
+    if (($tableOffset + 32) -gt [UInt64]$rdata.VirtualSize) { Fail-PE 'Native SCM SERVICE_TABLE_ENTRYW and terminator exceed .rdata.' }
+    $handlerSlotRva = [UInt64]$rdata.Rva + $handlerSlotOffset
+    $tableRva = [UInt64]$rdata.Rva + $tableOffset
+    $handlerRaw = Convert-RvaToOffset -Rva $handlerSlotRva -Size 8 -Sections $sections.ToArray() -FileSize $bytes.Length
+    $tableRaw = Convert-RvaToOffset -Rva $tableRva -Size 32 -Sections $sections.ToArray() -FileSize $bytes.Length
+    $handlerVa = Read-U64 -Bytes $bytes -Offset $handlerRaw
+    $tableNameVa = Read-U64 -Bytes $bytes -Offset $tableRaw
+    $serviceMainVa = Read-U64 -Bytes $bytes -Offset ($tableRaw + 8)
+    $terminatorName = Read-U64 -Bytes $bytes -Offset ($tableRaw + 16)
+    $terminatorProc = Read-U64 -Bytes $bytes -Offset ($tableRaw + 24)
+    $textStart = [UInt64]$imageBase + [UInt64]$text.Rva
+    $textEnd = $textStart + [UInt64]$text.VirtualSize
+    if ($tableNameVa -ne ([UInt64]$imageBase + [UInt64]$rdata.Rva + 8)) { Fail-PE 'SERVICE_TABLE_ENTRYW name pointer does not resolve to the embedded service name.' }
+    if ($handlerVa -lt $textStart -or $handlerVa -ge $textEnd) { Fail-PE 'HandlerEx pointer does not resolve into generated .text.' }
+    if ($serviceMainVa -lt $textStart -or $serviceMainVa -ge $textEnd -or $serviceMainVa -eq $handlerVa) { Fail-PE 'ServiceMain pointer is invalid or aliases HandlerEx.' }
+    if ($terminatorName -ne 0 -or $terminatorProc -ne 0) { Fail-PE 'SERVICE_TABLE_ENTRYW array is missing its all-zero terminator.' }
+
+    $expectedServiceRelocs = [UInt32[]]@(
+        [UInt32]$rdata.Rva,
+        [UInt32]$handlerSlotRva,
+        [UInt32]$tableRva,
+        [UInt32]($tableRva + 8)
+    ) | Sort-Object
+    $actualRelocs = [UInt32[]]@($relocationResult.TargetRvas | Sort-Object)
+    if ($actualRelocs.Count -ne $expectedServiceRelocs.Count) { Fail-PE 'Native SCM service relocation set contains an unexpected or missing absolute pointer.' }
+    for ($i = 0; $i -lt $expectedServiceRelocs.Count; $i++) {
+        if ($actualRelocs[$i] -ne $expectedServiceRelocs[$i]) { Fail-PE 'Native SCM service relocation targets do not match the SERVICE_TABLE_ENTRYW and HandlerEx pointer slots.' }
+    }
+    Write-Host ("Native SCM PE profile: PASS - service={0}; exact imports={1}; relocated service table, ServiceMain and HandlerEx pointers verified." -f $serviceName, $foundImports.Count) -ForegroundColor Green
+}
 
 Write-Host ("PE verifier: PASS - AMD64 PE32+, 6 sections, {0} DLLs, {1} APIs, x64 unwind and stack probing verified." -f $foundDlls.Count, $foundImports.Count) -ForegroundColor Green
