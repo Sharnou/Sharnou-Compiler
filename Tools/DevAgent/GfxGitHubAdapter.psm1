@@ -33,7 +33,7 @@ function Test-GfxPrivateAcl {
   $item=Get-Item -LiteralPath $Path -Force -ErrorAction Stop
   if(($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0){return $false}
   $acl=Get-Acl -LiteralPath $Path -ErrorAction Stop;$sid=Get-GfxCurrentSid
-  if($acl.Owner -ne $sid.Value){return $false}
+  if($acl.GetOwner([Security.Principal.SecurityIdentifier]).Value -ne $sid.Value){return $false}
   foreach($rule in $acl.GetAccessRules($true,$false,[Security.Principal.SecurityIdentifier))){
    if($rule.IdentityReference.Value -ne $sid.Value -or $rule.AccessControlType -ne [Security.AccessControl.AccessControlType]::Allow -or (($rule.FileSystemRights -band [Security.AccessControl.FileSystemRights]::FullControl) -ne [Security.AccessControl.FileSystemRights]::FullControl)){return $false}
   }
@@ -55,25 +55,15 @@ function Set-GfxGitHubCredential {
  if(-not(Test-Path -LiteralPath $root -PathType Container)){[void][IO.Directory]::CreateDirectory($root)}
  Set-GfxPrivateAcl -Path $root -Directory
  if(-not(Test-GfxPrivateAcl -Path $root -Directory)){throw 'Could not establish an owner-only credential directory ACL.'}
- $plainBstr=[IntPtr]::Zero;$plain=$null
- try{
-  $plainBstr=[Runtime.InteropServices.Marshal]::SecureStringToBSTR($Token)
-  $plain=[Runtime.InteropServices.Marshal]::PtrToStringBSTR($plainBstr)
-  if($plain -notmatch '^[\x21-\x7e]{20,512}$'){throw 'Token must contain printable non-space ASCII characters only.'}
-  $secure=ConvertTo-SecureString -String $plain -AsPlainText -Force
-  $encrypted=ConvertFrom-SecureString -SecureString $secure
-  $bytes=(New-Object Text.UTF8Encoding($false)).GetBytes($encrypted)
-  $path=Get-GfxCredentialPath;$temp=$path+'.'+[Guid]::NewGuid().ToString('N')+'.tmp'
-  $stream=New-Object IO.FileStream($temp,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None)
-  try{$stream.Write($bytes,0,$bytes.Length);$stream.Flush($true)}finally{$stream.Dispose()}
-  Set-GfxPrivateAcl -Path $temp
-  if(Test-Path -LiteralPath $path -PathType Leaf){[IO.File]::Replace($temp,$path,$null,$true)}else{[IO.File]::Move($temp,$path)}
-  if(-not(Test-GfxPrivateAcl -Path $path)){throw 'Credential file ACL verification failed.'}
-  return [pscustomobject][ordered]@{status='CONFIGURED';storage='DPAPI_CURRENT_USER';aclVerified=$true;secretReturned=$false}
- }finally{
-  if($plainBstr -ne [IntPtr]::Zero){[Runtime.InteropServices.Marshal]::ZeroFreeBSTR($plainBstr)}
-  $plain=$null
- }
+ $encrypted=ConvertFrom-SecureString -SecureString $Token
+ $bytes=(New-Object Text.UTF8Encoding($false)).GetBytes($encrypted)
+ $path=Get-GfxCredentialPath;$temp=$path+'.'+[Guid]::NewGuid().ToString('N')+'.tmp'
+ $stream=New-Object IO.FileStream($temp,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None)
+ try{$stream.Write($bytes,0,$bytes.Length);$stream.Flush($true)}finally{$stream.Dispose()}
+ Set-GfxPrivateAcl -Path $temp
+ if(Test-Path -LiteralPath $path -PathType Leaf){[IO.File]::Replace($temp,$path,$null,$true)}else{[IO.File]::Move($temp,$path)}
+ if(-not(Test-GfxPrivateAcl -Path $path)){throw 'Credential file ACL verification failed.'}
+ return [pscustomobject][ordered]@{status='CONFIGURED';storage='DPAPI_CURRENT_USER';aclVerified=$true;secretReturned=$false}
 }
 function Remove-GfxGitHubCredential {
  $path=Get-GfxCredentialPath;$root=Get-GfxCredentialRoot
@@ -118,7 +108,7 @@ function Invoke-GfxHttpGet {
  if($null -ne $script:GfxTransportOverride){
   $mock=& $script:GfxTransportOverride $Uri.AbsoluteUri $SendAuth $MaxBytes
   if($null -eq $mock -or $null -eq $mock.StatusCode -or $null -eq $mock.BodyBytes){throw 'Test transport returned an invalid response.'}
-  if([byte[]]$mock.BodyBytes.Length -gt $MaxBytes){throw 'Mock response exceeded configured byte limit.'}
+  if($mock.BodyBytes.Length -gt $MaxBytes){throw 'Mock response exceeded configured byte limit.'}
   return $mock
  }
  $request=[Net.HttpWebRequest]::Create($Uri);$request.Method='GET';$request.AllowAutoRedirect=$false
@@ -247,7 +237,7 @@ function Get-GfxGitHubWorkflowRuns {
   if($null -eq $r.workflow_runs -or $r.workflow_runs -isnot [Array]){throw 'Workflow run response is malformed.'}
   $total=[int]$r.total_count
   foreach($run in $r.workflow_runs){
-   if([string]$run.head_sha -cne $CommitSha){continue}
+   if([string]$run.head_sha -cne $CommitSha){throw 'Actions API returned a run for a different commit SHA.'}
    if([long]$run.id -lt 1 -or $run.status -notin @('queued','in_progress','completed','requested','waiting','pending_request')){throw 'Workflow run metadata failed validation.'}
    $null=$items.Add([pscustomobject][ordered]@{runId=[long]$run.id;workflowId=[long]$run.workflow_id;runNumber=[int]$run.run_number;attempt=[int]$run.run_attempt;name=[string]$run.name;event=[string]$run.event;status=[string]$run.status;conclusion=[string]$run.conclusion;headSha=[string]$run.head_sha;headBranch=[string]$run.head_branch;createdAtUtc=[string]$run.created_at;updatedAtUtc=[string]$run.updated_at;htmlUrl=[string]$run.html_url})
   }
@@ -296,7 +286,7 @@ function Get-GfxGitHubPullRequestEvidence {
  [CmdletBinding()]param([Parameter(Mandatory=$true)][ValidateRange(1,2147483647)][int]$PullRequestNumber)
  $pr=Get-GfxGitHubPullRequest -PullRequestNumber $PullRequestNumber
  $evidence=Get-GfxGitHubCommitEvidence -CommitSha $pr.headSha
- $evidence.pullRequest=[pscustomobject][ordered]@{number=$pr.number;state=$pr.state;draft=$pr.draft;merged=$pr.merged;baseBranch=$pr.baseBranch;headBranch=$pr.headBranch;baseSha=$pr.baseSha;headSha=$pr.headSha;htmlUrl=$pr.htmlUrl}
+ Add-Member -InputObject $evidence -NotePropertyName pullRequest -NotePropertyValue ([pscustomobject][ordered]@{number=$pr.number;state=$pr.state;draft=$pr.draft;merged=$pr.merged;baseBranch=$pr.baseBranch;headBranch=$pr.headBranch;baseSha=$pr.baseSha;headSha=$pr.headSha;htmlUrl=$pr.htmlUrl})
  $validation=Test-GfxGitHubEvidenceObject -Evidence $evidence
  if(-not $validation.valid){throw ('Pull request evidence failed self-validation: '+($validation.errors -join '; '))}
  return $evidence
@@ -317,7 +307,7 @@ function Test-GfxGitHubEvidenceObject {
  }
  if($Evidence.truncated -isnot [bool]){$null=$errors.Add('Evidence truncated flag must be Boolean.')}
  $time=[DateTimeOffset]::MinValue;if(-not[DateTimeOffset]::TryParse([string]$Evidence.capturedAtUtc,[ref]$time)){$null=$errors.Add('Evidence timestamp is invalid.')}
- if($null -ne $Evidence.pullRequest){
+ if($null -ne $Evidence.PSObject.Properties['pullRequest'] -and $null -ne $Evidence.pullRequest){
   if([int]$Evidence.pullRequest.number -lt 1 -or $Evidence.pullRequest.headSha -cne $Evidence.commit.sha -or [string]::IsNullOrWhiteSpace([string]$Evidence.pullRequest.headBranch)){$null=$errors.Add('Pull request does not bind to the evidence commit.')}
  }
  return [pscustomobject][ordered]@{valid=($errors.Count -eq 0);errors=@($errors.ToArray());workflowRunCount=$(if($Evidence.workflowRuns -is [Array]){$Evidence.workflowRuns.Count}else{0});artifactCount=$(if($Evidence.artifacts -is [Array]){$Evidence.artifacts.Count}else{0})}
