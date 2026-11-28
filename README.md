@@ -103,3 +103,8 @@ This is a campaign contract, not an active code generator. SharnouDevAgent still
 ## SharnouDevAgent graphics campaign
 
 The automatic GFX campaign, deterministic dependency planner and post-GFX-0.8 improvement policy are documented in Docs/DEVAGENT-GFX-MILESTONE-AUTOMATION.md. DGA-0.2 validates and plans readiness; it is not yet the autonomous source generator. Follow-on graphics compiler improvements remain expected after GFX-0.8 and must be versioned, benchmarked, reviewed and owner accepted.
+
+
+## DevAgent durable graphics task journal
+
+DGA-GFX-0.3 adds an append-only task journal, hash-bound checkpoint store and restart recovery foundation. See the graphics milestone automation design at Docs/DEVAGENT-GFX-MILESTONE-AUTOMATION.md. The component persists and reconciles task state; it does not run autonomous workers or a background research agent.

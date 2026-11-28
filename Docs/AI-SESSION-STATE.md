@@ -1131,3 +1131,17 @@ After the prior session record, one more isolated diagnostic commit was added to
 - DGA-0.2 tests: 47 passed, 0 failed, 47 total. ASCII/BOM policy passed. Planner CLI completed successfully and reported the expected BLOCKED states.
 - PR #43 remains a draft stacked on PR #42. No default-branch merge occurred.
 - Qualification applies only to campaign validation/readiness planning. It does not turn on model inference, research, automatic code generation, child-process execution, or GFX rendering.
+
+
+### DGA-GFX-0.3 implementation candidate - 2026-11-28
+
+- New isolated branch: devagent-gfx-task-journal-20261128, based on qualified DGA-GFX-0.2 PR #43 head 9db82798bd3e4f97f16cbfa74baee85687932ce1.
+- Added Tools/DevAgent/GfxTaskJournal.psm1: immutable one-record-per-file event journal, SHA-256 hash chain, per-directory writer mutex, temporary-file flush/rename, deterministic task identities, idempotency conflict detection, state-transition replay, immutable checkpoint files and checkpoint hash chains.
+- Added bounded task lifecycle operations: plan, start, checkpoint, restart interruption/recovery, resume, complete, fail and cancel.
+- Added Tools/DevAgent/Invoke-GfxTaskJournal.ps1 for Initialize/Inspect/Recover; it has no process or network capability.
+- Added journal/checkpoint envelope schemas, Windows PowerShell 5.1 test suite and dedicated GitHub Actions workflow.
+- Recovery policy: in-flight RUNNING tasks are marked INTERRUPTED exactly once; resumption must bind to the latest hash-verified checkpoint. Duplicate requests with identical keys/content are no-ops; conflicting reuse is rejected.
+- Checkpoint state is bounded to 256 KiB, credential-shaped property names are rejected, and only fixed-schema event metadata enters the journal. Do not store tokens, secrets, prompts, proprietary source or raw research.
+- No DGA-0.3 Windows test pass is claimed yet. Exact-head CI is required.
+- No background research, local model inference, source generation, process execution, GitHub mutation, automatic PR/merge/release or GFX runtime work is enabled. Campaign activation remains blocked.
+- Known boundary: SHA-256 chaining detects corruption but does not authenticate against an attacker able to rewrite the complete journal. Service-owned ACL protection and the separate Phase 2B.8/R5 security gates remain mandatory before model-controlled execution.

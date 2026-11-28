@@ -340,3 +340,10 @@ Draft PR #42 is open at exact head 3434994d90f603adf82d8460f0977af8b59eb15a, bas
 DGA-GFX-0.2 adds a deterministic Windows PowerShell 5.1 contract validator and planner for the GFX campaign. It validates the eleven milestone IDs and graph, strict object fields and policy invariants, PR branch topology (including stacked PR #41), exact-head Windows and physical-GPU evidence contracts, and explicit owner acceptance. The offline CLI produces readiness and blocker reasons but does not generate code or write to GitHub.
 
 The campaign now explicitly continues after GFX-0.8 through primary-source research, provenance capture, reproducible measured baselines, versioned improvement proposals, independent review and human acceptance. It is a declared policy, not a claim that a research daemon is already running.
+
+
+## DGA-GFX-0.3 - durable task journal and restart recovery
+
+The next DevAgent persistence increment introduces immutable append-only event records, SHA-256 record chaining, deterministic task IDs, idempotent operations, a typed task-state machine, immutable hash-bound checkpoints, and crash/restart recovery. Windows PowerShell 5.1 tests exercise lifecycle replay, repeated recovery, checkpoint restore, idempotency conflicts and corruption detection.
+
+This is a local data-persistence primitive only. It does not enable autonomous model execution, process launch, network research, GitHub writes or a background research service. Hash chaining detects tampering but is not an authentication boundary; service-owned ACLs and the separate Phase 2B.8/R5 controls remain required.
