@@ -5054,6 +5054,10 @@ $script:CodeLabels = [System.Collections.Generic.Dictionary[string, int]]::new([
 $script:DataItems = [System.Collections.Generic.List[object]]::new()
 $script:DataMap = [System.Collections.Generic.Dictionary[string, object]]::new([System.StringComparer]::Ordinal)
 $script:DataPointerFixups = [System.Collections.Generic.List[object]]::new()
+$script:NativeScmServiceTableItem = $null
+$script:NativeScmServiceNameDataItem = $null
+$script:NativeScmHandlerPointerItem = $null
+$script:NativeScmRuntimeFunctionSpecs = $null
 $script:DataLength = 8 # reserved absolute entry-point anchor, patched by the base-relocation directory
 $script:UniqueLabel = 0
 
