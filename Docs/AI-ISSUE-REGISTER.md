@@ -521,7 +521,7 @@ PR #24 candidate head advanced to bd411c2fc777006f9b1160ab8d3d5992c2a15afa. Stag
 ### B4 — GFX-0.2 SGIR/1 verifier candidate lacks exact-head Windows qualification
 
 - Tracking issue: [#40 — GFX-0: Build the Sharnou Graphics Compiler and Analysis System](https://github.com/Sharnou/Sharnou-Compiler/issues/40).
-- Implementation: draft PR [#41](https://github.com/Sharnou/Sharnou-Compiler/pull/41), branch \`graphics-compiler-gfx02-sgir-20261128\`, stacked on draft architecture PR #39.
+- Implementation: draft PR [#41](https://github.com/Sharnou/Sharnou-Compiler/pull/41), branch `graphics-compiler-gfx02-sgir-20261128`, stacked on draft architecture PR #39.
 - Repository paths include the SGIR/1 JSON schema, Sharnou-owned PowerShell verifier/canonical serializer, a vertex-stage + SSA fixture, positive/negative/determinism tests, a design/usage note and a Windows qualification workflow.
 - Candidate checks include JSON intake and canonical identity; bounded typed declarations; D3D11 FL 11_0 / SM 5_0 profile; resource binding uniqueness; stage interfaces; CFG reachability; phi and SSA dominance; unsupported-opcode rejection; and no-BOM canonical output.
 - **Status: REPOSITORY PRESENT / STATIC REVIEWED; WINDOWS EXECUTION NOT VERIFIED.** No exact-head Windows pass, test totals, PowerShell parse report or evidence artifact has been confirmed. The local session container has no PowerShell runtime. Do not mark GFX-0.2 accepted, and do not begin GFX-0.3 until the verifier passes its exact-head Windows gate.
