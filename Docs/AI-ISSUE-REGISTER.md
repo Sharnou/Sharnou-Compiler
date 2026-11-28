@@ -548,3 +548,50 @@ Static checks confirmed both JSON documents parse, all eleven milestone IDs exis
 - Tests cover immutable record hash-chain replay, deterministic task identity, idempotency conflicts/no-ops, checkpoint chain sequence 1 and 2, restart interruption, repeated recovery, resume gating, completion/failure/cancellation, tampered checkpoint and journal data, missing interior sequence, relative/UNC root rejection, and absence of process/network execution.
 - Local named mutex coordination is scoped to one Windows logon session. SHA-256 provides integrity detection, not authentication. Protected ACLs and the separate Phase 2B.8/R5 security boundary remain prerequisites.
 - No model inference, research daemon, code generation or model-facing process execution is enabled.
+
+
+## DGA-GFX-0.4 implementation record
+
+- Isolated branch: devagent-gfx-readonly-github-adapter-20261128.
+- Exact starting point: DGA-GFX-0.3 PR #44 head dba4e402f49162c3bd4b71ad0f1b0e90cf144c0e.
+- Added a typed GET-only GitHub REST module and CLI for fixed-repository metadata, branch tips, commit records, exact-commit source-file reads, PR state, workflow runs and artifact metadata.
+- Source file retrieval resolves the requested ref to a full commit SHA before fetching content. The Git blob SHA-1 is recalculated from returned bytes and compared; an independent SHA-256 and byte count are captured.
+- Actions queries require a full 40-character commit SHA, reject mismatched returned head SHAs, and bind each artifact to a workflow run ID and GitHub-provided SHA-256 digest.
+- Credentials are configured interactively as SecureString and stored with current-user DPAPI encryption under an owner-only ACL. Tokens are not passed on the command line or written to journal output.
+- HTTP access is restricted to HTTPS api.github.com, explicit GET, fixed repository routes, disabled automatic redirects, 20-second timeouts, 8 MiB JSON response cap, 1 MiB source-file cap and bounded pagination.
+- Artifacts are not downloaded or rehashed in DGA-GFX-0.4; the API-reported digest is captured but not independently verified. Job logs are not retrieved.
+- The credential store is current-user DPAPI, not service-owned authentication; R5 identity and ACL qualification remains mandatory before service/model access.
+- Windows PowerShell 5.1 exact-head qualification is pending. No claim of a test pass or accepted milestone is made before Actions evidence is inspected.
+- No process launch, shell, Git writes, PR/issue mutation, workflow dispatch/rerun, inference, code generation, background worker or autonomous campaign activation is enabled.
+
+
+## DGA-GFX-0.4 qualification record
+
+- Implementation branch: devagent-gfx-readonly-github-adapter-20261128; PR #45 is draft and stacked on PR #44.
+- Qualified code/test head: bacde01986c701ca8735e0e27591bdba3f3b2235.
+- Windows PowerShell 5.1 push run #46164326875: PASS; pull-request run #46164332876: PASS.
+- Adapter test suite: 44 passed, 0 failed. Existing DGA-GFX-0.3 journal regression suite: 30 passed, 0 failed. Strict schema parsing, ASCII/no-BOM gate and no-credential CLI status check passed.
+- Added bounded, metadata-only evidence checkpoint persistence via the DGA task journal. It creates a distinct sharnou.devagent.graphics-automation journal identity and DGA-GFX-0.4 qualification task; identical evidence replay is idempotent.
+- Source-file evidence is pinned to exact commit SHA and Git blob SHA-1 verified, with independent SHA-256 and byte count. Actions records are bound to exact commit SHA and artifacts to their run IDs.
+- GitHub-provided artifact SHA-256 is metadata only; archives are not downloaded/rehashed. Job logs are not collected by this adapter.
+- DPAPI is CurrentUser, not service SID; owner ACL is verified. Phase 2B.8/R5 service-owned identity and protected key lifecycle remain outstanding.
+- No process execution, shell, GitHub write, PR/issue mutation, workflow dispatch/rerun, inference, source generation, background worker or automatic campaign activation.
+- The current docs-only follow-up commit is subjected to the same exact-head workflow; the final PR head and its final run IDs are recorded in the PR/CI result, not retroactively attributed to the pre-doc code/test SHA.
+
+
+### DGA-GFX-0.4 exact final PR-head confirmation
+
+The final docs-synchronized PR tip is qualified only by its own Windows PowerShell 5.1 push and pull-request runs. The final exact SHA and run IDs are recorded in PR #45's description and checks. The verified suite totals are 44/44 adapter tests and 30/30 DGA-GFX-0.3 journal regression tests. This requirement prevents treating a passing implementation-only commit as evidence for later documentation changes.
+
+
+## DGA-GFX-0.4 final exact-head requalification - 2026-11-28
+
+- Draft PR #45 remains open, unmerged and stacked on PR #44.
+- Review identified a root-JSON-array enumeration edge case in the PowerShell API client. A parsed empty or singleton array could be flattened by the function output pipeline and rejected by the pull-request collection reader.
+- The API JSON return now preserves the root array as a single object. Regression coverage exercises empty, singleton, multi-page ordering and termination on a short page.
+- Final exact source/test head: 27257e828cee3cea5a7ae76414d02f9b9ce975a5.
+- Windows PowerShell 5.1 push run #46165497856 and PR run #46165500947: PASS.
+- Adapter tests: 49 passed, 0 failed. DGA-GFX-0.3 journal regression: 30 passed, 0 failed. Evidence schema, ASCII/no-BOM and no-credential CLI checks: PASS.
+- The adapter remains read-only. Transport qualification is mocked; no live GitHub token round-trip or archive download/re-hash occurred. API-reported artifact digest is metadata only. Current-user DPAPI is not service SID protection; SHA-256 journal chaining is not authentication.
+- No process launch, shell, GitHub writes, inference, autonomous source generation, background worker, merge or release is enabled. R5/Phase 2B.8 remains an independent blocker.
+- Next milestone: DGA-GFX-0.5 genuine in-process local inference, with resource-bounded inference and zero implicit process authority.

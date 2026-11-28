@@ -103,7 +103,7 @@ function Assert-GfxTransition {
  if($EventType -eq 'JournalCreated'){
   if($Store.records.Count -ne 0 -or $null -ne $TaskId){throw 'JournalCreated is valid only as the first event.'}
   Assert-GfxObject $Payload @('campaignId','purpose') 'JournalCreated payload'
-  if($Payload.campaignId -cne 'sharnou.graphics-compiler' -or $Payload.purpose -cne 'durable_gfx_campaign_execution'){throw 'Journal genesis identity/purpose is invalid.'}
+  if(-not((($Payload.campaignId -ceq 'sharnou.graphics-compiler') -and ($Payload.purpose -ceq 'durable_gfx_campaign_execution')) -or (($Payload.campaignId -ceq 'sharnou.devagent.graphics-automation') -and ($Payload.purpose -ceq 'durable_dga_gfx_milestone_execution')))){throw 'Journal genesis identity/purpose is invalid.'}
   return
  }
  if(-not $Store.initialized){throw 'Journal is not initialized.'}
@@ -111,7 +111,7 @@ function Assert-GfxTransition {
   if($null -eq $TaskId -or $Store.tasks.ContainsKey([string]$TaskId)){throw 'Task ID is null or already exists.'}
   if($TaskId -cnotmatch '^t[0-9a-f]{32}$'){throw 'Task ID is malformed.'}
   Assert-GfxObject $Payload @('milestoneId','taskKind','inputSha256','scopeSha256','attempt') 'TaskPlanned payload'
-  if([string]$Payload.milestoneId -cnotmatch '^GFX-(0\.[1-8]|A\.[1-3]|EVOL-[A-Za-z0-9.-]{1,32})$'){throw 'Milestone ID is invalid.'}
+  if([string]$Payload.milestoneId -cnotmatch '^(GFX-(0\.[1-8]|A\.[1-3]|EVOL-[A-Za-z0-9.-]{1,32})|DGA-GFX-0\.[1-8])$'){throw 'Milestone ID is invalid.'}
   if(@('research','design','implementation','validation','qualification','review','documentation') -cnotcontains [string]$Payload.taskKind){throw 'Task kind is invalid.'}
   if(-not(Test-GfxSha256 ([string]$Payload.inputSha256)) -or -not(Test-GfxSha256 ([string]$Payload.scopeSha256))){throw 'Task input/scope digest is invalid.'}
   if($Payload.attempt -isnot [int] -or $Payload.attempt -lt 1 -or $Payload.attempt -gt 3){throw 'Task attempt must be 1-3.'}
@@ -142,7 +142,7 @@ function Assert-GfxTransition {
 function Apply-GfxEvent {
  param($Store,$Body,$Payload)
  $type=[string]$Body.eventType;$taskId=$Body.taskId
- if($type -eq 'JournalCreated'){Assert-GfxTransition $Store $type $null $Payload;$Store.initialized=$true;$Store.journalId=[string]$Body.journalId;return}
+ if($type -eq 'JournalCreated'){Assert-GfxTransition $Store $type $null $Payload;$Store.initialized=$true;$Store.journalId=[string]$Body.journalId;$Store.campaignId=[string]$Payload.campaignId;$Store.purpose=[string]$Payload.purpose;return}
  Assert-GfxTransition $Store $type $taskId $Payload
  if($type -eq 'TaskPlanned'){
   $Store.tasks[[string]$taskId]=@{taskId=[string]$taskId;milestoneId=[string]$Payload.milestoneId;taskKind=[string]$Payload.taskKind;inputSha256=[string]$Payload.inputSha256;scopeSha256=[string]$Payload.scopeSha256;attempt=[int]$Payload.attempt;state='PLANNED';checkpointSequence=0;checkpointSha256=$script:GfxZeroSha256;previousCheckpointSha256=$script:GfxZeroSha256;checkpointFileName=$null;lastEventSequence=[long]$Body.sequence;lastEventType=$type}
@@ -166,7 +166,7 @@ function Read-GfxJournalUnlocked {
  Ensure-GfxDirectories $Paths
  $files=@(Get-ChildItem -LiteralPath $Paths.journal -Filter '*.json' -File|Sort-Object Name)
  if($files.Count -gt $script:GfxMaxJournalRecords){throw 'Journal exceeds maximum record count.'}
- $store=@{paths=$Paths;initialized=$false;journalId=$null;records=(New-Object System.Collections.ArrayList);tasks=@{};idempotency=@{};referencedCheckpoints=@{};lastRecordSha256=$script:GfxZeroSha256}
+ $store=@{paths=$Paths;initialized=$false;journalId=$null;campaignId=$null;purpose=$null;records=(New-Object System.Collections.ArrayList);tasks=@{};idempotency=@{};referencedCheckpoints=@{};lastRecordSha256=$script:GfxZeroSha256}
  $expected=[long]1;$previous=$script:GfxZeroSha256;$journalId=$null
  foreach($file in $files){
   if($file.Name -cnotmatch '^([0-9]{12})_(e[0-9a-f]{32})\.json$'){throw "Unexpected journal record filename: $($file.Name)"}
@@ -233,12 +233,13 @@ function Get-GfxStoreStatus {
  foreach($id in @($Store.tasks.Keys|Sort-Object)){$t=$Store.tasks[$id];$tasks += [pscustomobject][ordered]@{taskId=$t.taskId;milestoneId=$t.milestoneId;taskKind=$t.taskKind;attempt=$t.attempt;state=$t.state;checkpointSequence=$t.checkpointSequence;checkpointSha256=$t.checkpointSha256;lastEventSequence=$t.lastEventSequence;lastEventType=$t.lastEventType}}
  $orphans=@();foreach($f in @(Get-ChildItem -LiteralPath $Store.paths.checkpoints -Filter '*.checkpoint.json' -File)){if(-not $Store.referencedCheckpoints.ContainsKey($f.Name)){$orphans+=$f.Name}}
  $temps=@(Get-ChildItem -LiteralPath $Store.paths.journal -Filter '.pending-*.tmp' -File).Count+@(Get-ChildItem -LiteralPath $Store.paths.checkpoints -Filter '.pending-*.tmp' -File).Count
- return [pscustomobject][ordered]@{schemaVersion=$script:GfxJournalSchema;initialized=$Store.initialized;journalId=$Store.journalId;recordCount=$Store.records.Count;lastSequence=$Store.records.Count;lastRecordSha256=$Store.lastRecordSha256;pendingRecoveryCount=@($tasks|Where-Object{$_.state -eq 'RUNNING'}).Count;taskCount=$tasks.Count;tasks=$tasks;orphanCheckpointFiles=$orphans;abandonedTemporaryFiles=$temps;integrity='PASS'}
+ return [pscustomobject][ordered]@{schemaVersion=$script:GfxJournalSchema;initialized=$Store.initialized;journalId=$Store.journalId;campaignId=$Store.campaignId;purpose=$Store.purpose;recordCount=$Store.records.Count;lastSequence=$Store.records.Count;lastRecordSha256=$Store.lastRecordSha256;pendingRecoveryCount=@($tasks|Where-Object{$_.state -eq 'RUNNING'}).Count;taskCount=$tasks.Count;tasks=$tasks;orphanCheckpointFiles=$orphans;abandonedTemporaryFiles=$temps;integrity='PASS'}
 }
 function Initialize-GfxTaskJournal {
- [CmdletBinding()]param([Parameter(Mandatory=$true)][string]$StateDirectory)
+ [CmdletBinding()]param([Parameter(Mandatory=$true)][string]$StateDirectory,[string]$CampaignId='sharnou.graphics-compiler',[string]$Purpose='durable_gfx_campaign_execution')
+ if(-not((($CampaignId -ceq 'sharnou.graphics-compiler') -and ($Purpose -ceq 'durable_gfx_campaign_execution')) -or (($CampaignId -ceq 'sharnou.devagent.graphics-automation') -and ($Purpose -ceq 'durable_dga_gfx_milestone_execution')))){throw 'Unsupported journal campaign identity/purpose pair.'}
  $paths=Get-GfxStatePaths -StateDirectory $StateDirectory;$mutex=Enter-GfxLock $paths.root
- try{Ensure-GfxDirectories $paths;$store=Read-GfxJournalUnlocked $paths;if(-not $store.initialized){$store.journalId=[Guid]::NewGuid().ToString('N');$p=[pscustomobject][ordered]@{campaignId='sharnou.graphics-compiler';purpose='durable_gfx_campaign_execution'};$null=Add-GfxJournalRecordUnlocked $store 'JournalCreated' $null $p 'journal-created/v1';$store=Read-GfxJournalUnlocked $paths};return (Get-GfxStoreStatus $store)}finally{Exit-GfxLock $mutex}
+ try{Ensure-GfxDirectories $paths;$store=Read-GfxJournalUnlocked $paths;if(-not $store.initialized){$store.journalId=[Guid]::NewGuid().ToString('N');$p=[pscustomobject][ordered]@{campaignId=$CampaignId;purpose=$Purpose};$null=Add-GfxJournalRecordUnlocked $store 'JournalCreated' $null $p 'journal-created/v1';$store=Read-GfxJournalUnlocked $paths};if($store.campaignId -cne $CampaignId -or $store.purpose -cne $Purpose){throw 'Existing journal belongs to a different campaign identity/purpose.'};return (Get-GfxStoreStatus $store)}finally{Exit-GfxLock $mutex}
 }
 function Get-GfxTaskJournalStatus {
  [CmdletBinding()]param([Parameter(Mandatory=$true)][string]$StateDirectory)
@@ -248,7 +249,7 @@ function Get-GfxTaskJournalStatus {
 function New-GfxPlannedTask {
  [CmdletBinding()]param([Parameter(Mandatory=$true)][string]$StateDirectory,[Parameter(Mandatory=$true)][string]$MilestoneId,[Parameter(Mandatory=$true)][ValidateSet('research','design','implementation','validation','qualification','review','documentation')][string]$TaskKind,[Parameter(Mandatory=$true)][string]$InputSha256,[Parameter(Mandatory=$true)][string]$ScopeSha256,[Parameter(Mandatory=$true)][string]$IdempotencyKey,[int]$Attempt=1)
  if(-not(Test-GfxSha256 $InputSha256) -or -not(Test-GfxSha256 $ScopeSha256)){throw 'Input/scope must be lowercase SHA-256.'}
- if($MilestoneId -cnotmatch '^GFX-(0\.[1-8]|A\.[1-3]|EVOL-[A-Za-z0-9.-]{1,32})$'){throw 'Milestone ID invalid.'}
+  if($MilestoneId -cnotmatch '^(GFX-(0\.[1-8]|A\.[1-3]|EVOL-[A-Za-z0-9.-]{1,32})|DGA-GFX-0\.[1-8])$'){throw 'Milestone ID invalid.'}
  if($Attempt -lt 1 -or $Attempt -gt 3){throw 'Attempt must be 1-3.'}
  Assert-GfxIdempotencyKey $IdempotencyKey;$taskId=Get-GfxStableId 't' $IdempotencyKey
  $payload=[pscustomobject][ordered]@{milestoneId=$MilestoneId;taskKind=$TaskKind;inputSha256=$InputSha256;scopeSha256=$ScopeSha256;attempt=$Attempt}

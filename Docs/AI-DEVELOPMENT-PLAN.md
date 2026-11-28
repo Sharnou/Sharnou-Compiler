@@ -354,3 +354,28 @@ This is a local data-persistence primitive only. It does not enable autonomous m
 DGA-GFX-0.3 now has a Windows PowerShell 5.1-qualified append-only task journal, record hash chain, deterministic idempotency keys, immutable checkpoint chain and restart recovery. The final code/test head is 847e9e7c3c5b07d02ce2cb21aa56caac1293e4fa. Both push and PR Windows runs passed; 30 tests passed, 0 failed, with source encoding/BOM and CLI Initialize/Inspect checks passing.
 
 Resume requires a committed durable checkpoint. Replay rejects record sequence gaps, altered event bodies and altered checkpoint bodies. Repeated recovery is idempotent. This layer provides bounded task progress state, not model-conversation storage, an authenticated trust store, or an active background worker. Its Local named mutex coordinates within one Windows logon session only. Service-owned ACLs and Phase 2B.8/R5 gates remain separate prerequisites.
+
+
+## DGA-GFX-0.4 implementation candidate
+
+A read-only GitHub REST adapter is being implemented on the isolated branch devagent-gfx-readonly-github-adapter-20261128, based on the exact DGA-GFX-0.3 PR #44 head dba4e402f49162c3bd4b71ad0f1b0e90cf144c0e. The adapter is scoped to Sharnou/Sharnou-Compiler and typed GET operations for repository, branch, commit, source file, pull request, Actions runs and artifact metadata. Source bytes are pinned to a resolved commit and verified against Git blob SHA-1 plus SHA-256. Actions runs are bound to the requested full commit SHA.
+
+Credentials use an interactive SecureString prompt, current-user DPAPI encryption and an owner-only local ACL. The adapter exposes no arbitrary URL/method, shell, process or write operation. Artifact payloads and job logs are not downloaded in this increment; GitHub's artifact digest is retained as provenance metadata only. Exact-head Windows qualification and independent PR review are pending. Autonomous execution, inference and background research remain disabled.
+
+
+## DGA-GFX-0.4 - Windows-qualified read-only GitHub adapter
+
+The DGA-GFX-0.4 adapter implementation and journal integration pass Windows PowerShell 5.1 qualification on code/test head bacde01986c701ca8735e0e27591bdba3f3b2235. PR run #46164332876 and push run #46164326875 passed. The adapter suite passed 44/44; the inherited DGA-GFX-0.3 task-journal regression suite passed 30/30. The exact docs-sync PR head is requalified by the same workflow.
+
+The milestone supplies read-only repository, branch, commit, file, pull-request, Actions-run and artifact-metadata reads; source reads are commit-pinned and Git-blob-hash verified. Bounded metadata-only snapshots persist as deterministic DGA-GFX-0.4 qualification tasks using the DGA-GFX-0.3 journal. Credential storage is interactive, current-user DPAPI and owner-ACL protected.
+
+Artifact archive bytes are not retrieved or independently hashed; the GitHub API artifact digest is metadata only. Current-user DPAPI is not a service SID broker. The adapter cannot write GitHub data, launch processes or run a worker. Model inference and autonomous source generation remain disabled.
+
+
+## DGA-GFX-0.4 final exact-head qualification - 2026-11-28
+
+The read-only GitHub adapter and DGA journal evidence path are qualified on final source/test head 27257e828cee3cea5a7ae76414d02f9b9ce975a. Windows PowerShell 5.1 push run #46165497856 and pull-request run #46165500947 both passed. The adapter suite passed 49/49; the inherited DGA-GFX-0.3 journal suite passed 30/30. Strict evidence-schema parsing, ASCII/no-BOM enforcement and credential-status CLI checks passed.
+
+The final qualification includes a regression fix for root JSON array preservation in PowerShell. Empty, singleton and multi-page pull-request collection cases are now covered. DGA-GFX-0.4 remains a read-only adapter, not an autonomous executor. Live GitHub credential/API acceptance, artifact archive download and independent digest verification, service-owned credential brokering and authenticated journal storage remain outstanding.
+
+**Next implementation:** DGA-GFX-0.5 - genuine Sharnou-owned in-process local inference. It must load an explicitly versioned/licensed model as data, perform real inference inside the native DevAgent process, enforce bounded context/token/resource limits, expose no unrestricted tool authority, and fail closed without a process-launch fallback. This is not authorization to activate model-facing process execution; Phase 2B.8/R5 remains a separate security gate.

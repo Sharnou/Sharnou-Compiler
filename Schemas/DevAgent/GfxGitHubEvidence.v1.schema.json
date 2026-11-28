@@ -1,0 +1,311 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sharnou.dev/schemas/devagent/gfx-github-evidence/v1.json",
+  "title": "SharnouDevAgent read-only GitHub commit evidence v1",
+  "description": "Read-only provenance snapshot binding repository metadata, exact commit, Actions runs and artifact digests.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "provider",
+    "apiVersion",
+    "repository",
+    "capturedAtUtc",
+    "commit",
+    "workflowRuns",
+    "artifacts",
+    "truncated"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "sharnou.devagent.github-evidence/1"
+    },
+    "provider": {
+      "const": "github-rest"
+    },
+    "apiVersion": {
+      "const": "2022-11-28"
+    },
+    "repository": {
+      "$ref": "#/$defs/repository"
+    },
+    "capturedAtUtc": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "commit": {
+      "$ref": "#/$defs/commit"
+    },
+    "workflowRuns": {
+      "type": "array",
+      "maxItems": 500,
+      "items": {
+        "$ref": "#/$defs/workflowRun"
+      }
+    },
+    "artifacts": {
+      "type": "array",
+      "maxItems": 2500,
+      "items": {
+        "$ref": "#/$defs/artifact"
+      }
+    },
+    "truncated": {
+      "type": "boolean"
+    },
+    "pullRequest": {
+      "$ref": "#/$defs/pullRequest"
+    }
+  },
+  "$defs": {
+    "sha1": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "repository": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "fullName",
+        "repositoryId",
+        "defaultBranch",
+        "visibility"
+      ],
+      "properties": {
+        "fullName": {
+          "const": "Sharnou/Sharnou-Compiler"
+        },
+        "repositoryId": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "defaultBranch": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "visibility": {
+          "type": "string",
+          "maxLength": 32
+        }
+      }
+    },
+    "commit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sha",
+        "treeSha",
+        "messageSha256",
+        "authorDateUtc",
+        "committerDateUtc"
+      ],
+      "properties": {
+        "sha": {
+          "$ref": "#/$defs/sha1"
+        },
+        "treeSha": {
+          "$ref": "#/$defs/sha1"
+        },
+        "messageSha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "authorDateUtc": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "committerDateUtc": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "workflowRun": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "runId",
+        "workflowId",
+        "runNumber",
+        "attempt",
+        "name",
+        "event",
+        "status",
+        "conclusion",
+        "headSha",
+        "headBranch",
+        "createdAtUtc",
+        "updatedAtUtc",
+        "htmlUrl"
+      ],
+      "properties": {
+        "runId": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "workflowId": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "runNumber": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "attempt": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "name": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "event": {
+          "type": "string",
+          "maxLength": 80
+        },
+        "status": {
+          "enum": [
+            "queued",
+            "in_progress",
+            "completed",
+            "requested",
+            "waiting",
+            "pending"
+          ]
+        },
+        "conclusion": {
+          "type": "string",
+          "maxLength": 80
+        },
+        "headSha": {
+          "$ref": "#/$defs/sha1"
+        },
+        "headBranch": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "createdAtUtc": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAtUtc": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "htmlUrl": {
+          "type": "string",
+          "format": "uri"
+        }
+      }
+    },
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "artifactId",
+        "runId",
+        "name",
+        "sizeBytes",
+        "expired",
+        "digest",
+        "createdAtUtc",
+        "expiresAtUtc",
+        "archiveUrl"
+      ],
+      "properties": {
+        "artifactId": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "runId": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "name": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "sizeBytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "expired": {
+          "type": "boolean"
+        },
+        "digest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "createdAtUtc": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "expiresAtUtc": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "archiveUrl": {
+          "type": "string",
+          "format": "uri"
+        }
+      }
+    },
+    "pullRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "number",
+        "state",
+        "draft",
+        "merged",
+        "baseBranch",
+        "headBranch",
+        "baseSha",
+        "headSha",
+        "htmlUrl"
+      ],
+      "properties": {
+        "number": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "state": {
+          "enum": [
+            "open",
+            "closed"
+          ]
+        },
+        "draft": {
+          "type": "boolean"
+        },
+        "merged": {
+          "type": "boolean"
+        },
+        "baseBranch": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "headBranch": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "baseSha": {
+          "$ref": "#/$defs/sha1"
+        },
+        "headSha": {
+          "$ref": "#/$defs/sha1"
+        },
+        "htmlUrl": {
+          "type": "string",
+          "format": "uri"
+        }
+      }
+    }
+  }
+}

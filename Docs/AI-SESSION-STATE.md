@@ -1158,3 +1158,42 @@ After the prior session record, one more isolated diagnostic commit was added to
 - No default branch merge. No local inference, process execution, background research, autonomous source generation, or GitHub mutation has been activated by this persistence increment.
 - Known limitation: the named mutex is in the Local namespace and coordinates within one Windows logon session only. Cross-session same-root writer coordination is not supported.
 - Integrity is not authentication: SHA-256 chaining cannot prevent a principal with write access from rebuilding the entire journal with fresh hashes. Service-owned ACLs and the separate Phase 2B.8/R5 trust boundary are still required.
+
+
+### DGA-GFX-0.4 implementation candidate - 2026-11-28
+
+- Branch: devagent-gfx-readonly-github-adapter-20261128; starting commit: dba4e402f49162c3bd4b71ad0f1b0e90cf144c0e.
+- Implemented Tools/DevAgent/GfxGitHubAdapter.psm1, Tools/DevAgent/Invoke-GfxGitHubAdapter.ps1, Schemas/DevAgent/GfxGitHubEvidence.v1.schema.json, Tests/Test-GfxGitHubAdapter.ps1 and .github/workflows/devagent-gfx-github-adapter.yml.
+- Adapter scope is read-only and fixed to Sharnou/Sharnou-Compiler. It uses typed repository/branch/commit/file/PR/Actions/artifact endpoints and GET-only HTTPS transport.
+- Source reads resolve refs to commit SHA, validate Git blob SHA-1 and record SHA-256 and byte count. Actions runs must match the requested exact commit; artifact records bind to run IDs and GitHub-reported artifact digests.
+- Token setup is interactive SecureString and stores a current-user DPAPI-protected value with an owner-only ACL. No token argument or secret echo is exposed.
+- Exact-head Windows PowerShell 5.1 qualification is pending. The API-reported artifact digest is metadata only until a separate download-and-rehash implementation exists.
+- No PR merge, base-branch write, process execution, model inference, code generation or background automation is enabled.
+
+
+### DGA-GFX-0.4 qualification - 2026-11-28
+
+- Feature code/test head: bacde01986c701ca8735e0e27591bdba3f3b2235.
+- Draft PR #45: https://github.com/Sharnou/Sharnou-Compiler/pull/45, based on draft PR #44 branch devagent-gfx-task-journal-20261128.
+- Windows PowerShell 5.1 push run #46164326875: PASS.
+- Windows PowerShell 5.1 pull-request run #46164332876: PASS.
+- DGA-GFX-0.4 suite: 44/44 passed; DGA-GFX-0.3 journal suite: 30/30 passed. Schema, ASCII/no-BOM and credential-status checks also passed.
+- Evidence checkpoints are bounded metadata-only snapshots in a distinct DGA-GFX journal. No raw source file content, token or model conversation is persisted.
+- The GitHub artifact digest is not an independently verified archive digest because this milestone does not download artifact ZIP bytes.
+- Current-user DPAPI and local owner ACL are not equivalent to service-owned R5 credentials. No worker, inference, process execution, autonomous source generation, GitHub mutation or background scheduler has been enabled.
+- The workflow reruns on every tracked docs/source change. Treat the complete PR tip as qualified only when both push and PR Windows PowerShell 5.1 jobs pass; PR #45 description/checks contain the authoritative final SHA and run IDs. Verified totals: 44 adapter tests and 30 journal regression tests passed.
+
+
+### DGA-GFX-0.4 final exact-head qualification after collection edge-case repair - 2026-11-28
+
+- Draft PR #45 remains open and stacked on DGA-GFX-0.3 PR #44. No merge or default-branch update occurred.
+- A post-implementation review found a Windows PowerShell pipeline edge case: a root JSON array returned by the shared API JSON function could be enumerated into zero or one pipeline outputs. That made the PR collection reader reject an empty response or a one-item response even though multi-item responses worked.
+- Fixed the JSON return boundary to preserve the parsed root value as one pipeline object. Added regression tests for empty PR collections, exactly one PR, two-page collection ordering and short-page termination.
+- Final source/test head after this repair: 27257e828cee3cea5a7ae76414d02f9b9ce975a5.
+- Windows PowerShell 5.1 push run #46165497856: PASS. Pull-request run #46165500947: PASS.
+- Exact-head DGA-GFX-0.4 tests: 49 passed, 0 failed. Inherited DGA-GFX-0.3 task-journal tests: 30 passed, 0 failed. Strict evidence-schema, ASCII/no-BOM and credential-status CLI checks passed.
+- Scope remains read-only: fixed-repository metadata/branch/commit/source/PR/Actions/artifact-metadata GETs; exact commit pinning; Git blob SHA-1 verification plus SHA-256; bounded metadata-only journal checkpoints.
+- Qualification is not full live-service acceptance: mocked HTTP transport was used by adapter tests; no live credential/API round-trip or artifact archive download/hash was performed. GitHub artifact digest remains API-reported metadata, not independently verified payload evidence.
+- Credential protection remains CurrentUser DPAPI with a local owner-only ACL, not a service-SID broker. DGA task-journal hash chaining is not authentication. Phase 2B.8/R5 service identity, key and ACL gates remain separate prerequisites.
+- No process execution, inference, source generation, research daemon, worker, GitHub mutation, workflow dispatch/rerun, merge or release was enabled.
+- Next DevAgent increment: DGA-GFX-0.5, genuine Sharnou-owned in-process local inference runtime design/implementation, with no child-process fallback and no authority to write the repository or launch arbitrary commands.- The final documentation sync tip is subject to the same branch-push and pull-request Windows workflow; only those results at the resulting exact SHA are the final PR-head qualification anchor.
