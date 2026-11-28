@@ -1228,3 +1228,14 @@ After the prior session record, one more isolated diagnostic commit was added to
 - Exact a0f4 head Windows PowerShell 5.1 results: DGA-GFX-0.5A contract 30/30; inherited DGA-GFX-0.3 journal 30/30; inherited DGA-GFX-0.4 adapter 49/49. Total 109 passed, 0 failed across these three suites. ASCII/no-BOM, strict profile checks, CLI, and explicit readiness=BLOCKED checks passed.
 - This qualifies the contract/readiness slice only. It does not qualify model parsing, tokenizer, numeric kernels, transformer inference, offline generation, or a native DevAgent executable.
 - The final state/README synchronization in this commit will trigger another exact-tip Windows run; results must be inspected before the new PR tip is treated as qualified.
+
+
+## DGA-GFX-0.5B - bounded Safetensors inspection - 2026-11-28
+
+- Parent is DGA-GFX-0.5A draft PR #46 exact head `82bf0409ad2d32c4079b28f221838da24b0795b2`. New isolated branch: `devagent-gfx-safetensors-reader-20261128`; this is stacked on #46 and does not modify the default branch.
+- Added a PowerShell 5.1 bounded Safetensors v1 header inspector, strict duplicate-key JSON scanner, BF16 tensor metadata/shape/offset validator, exact local artifact SHA-256 verifier, candidate artifact-lock schema/manifest, inspection CLIs, adversarial fixtures, Windows workflow and this milestone record.
+- Upstream Hugging Face Xet pointer for pinned model revision `02e84e7cc564d9c3ca090f978a4da4698ccaac29` reports `model.safetensors` size 269060552 bytes and SHA-256 `5af571cbf074e6d21a03528d2330792e532ca608f24ac70a143f6b369968ab8c`. This is upstream pointer evidence only; local independent hashing and actual header inspection have NOT been run.
+- `tokenizer.json` and `tokenizer_config.json` are revision-pinned but byte counts/SHA-256 remain pending. The model card declares Apache-2.0, but an independently pinned license text file is not established. Lock explicitly keeps these qualification states false.
+- Important boundary: the implemented parser is a PowerShell qualification oracle, not the native Sharnou model reader. It reads only the 8-byte prefix and bounded JSON header; never reads tensor payload, maps data, or executes serialized content. No weights were downloaded.
+- Windows tests and CI are NOT RUN until the exact PR head. No actual model file was inspected. DGA-GFX-0.5B remains a partial candidate; artifact qualification and native reader remain blocked. Native port depends on verified Sharnou checked integer, byte-buffer, file I/O and memory-ownership semantics. DGA-GFX-0.5C tokenizer and all inference remain gated.
+- Security remains unchanged: no network/process/shell/dynamic-library/repository-write/model tool authority. Phase 2B.8/R5 is independent.
