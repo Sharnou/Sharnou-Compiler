@@ -181,6 +181,34 @@ $requests=Set-MockQueue @(
 $pe=Get-GfxGitHubPullRequestEvidence -PullRequestNumber 44
 Assert-GfxAdapter ($pe.pullRequest.number -eq 44 -and $pe.pullRequest.headSha -eq $pe.commit.sha) 'pull request evidence binds PR head to commit evidence'
 
+$badEvidence=Copy-Object $e
+Add-Member -InputObject $badEvidence -NotePropertyName untrustedExtra -NotePropertyValue 'unexpected'
+Assert-GfxAdapter (-not(Test-GfxGitHubEvidenceObject -Evidence $badEvidence).valid) 'evidence validator rejects unsupported root properties'
+$badEvidence=Copy-Object $e;$badEvidence.commit.authorDateUtc='not-a-date'
+Assert-GfxAdapter (-not(Test-GfxGitHubEvidenceObject -Evidence $badEvidence).valid) 'evidence validator rejects malformed commit timestamps'
+$badEvidence=Copy-Object $e;$badEvidence.workflowRuns=@($badEvidence.workflowRuns)+@($badEvidence.workflowRuns)
+Assert-GfxAdapter (-not(Test-GfxGitHubEvidenceObject -Evidence $badEvidence).valid) 'evidence validator rejects duplicate workflow run identities'
+
+$journalRoot=Join-Path $env:TEMP ('Sharnou-DGA-GFX04-JournalTest-'+[Guid]::NewGuid().ToString('N'))
+try{
+ Import-Module (Join-Path $root 'Tools\DevAgent\GfxTaskJournal.psm1') -Force
+ $persisted=Save-GfxGitHubEvidenceCheckpoint -Evidence $pe -StateDirectory $journalRoot
+ $journalStatus=Get-GfxTaskJournalStatus -StateDirectory $journalRoot
+ $journalTask=@($journalStatus.tasks|Where-Object{$_.taskId -eq $persisted.taskId})
+ $journalCheckpoint=Get-GfxTaskCheckpoint -StateDirectory $journalRoot -TaskId $persisted.taskId
+ Assert-GfxAdapter ($persisted.persisted -and $persisted.state -eq 'COMPLETED' -and $journalStatus.integrity -eq 'PASS') 'GitHub evidence is checkpointed and completed through the DGA-0.3 journal'
+ Assert-GfxAdapter ($journalStatus.campaignId -eq 'sharnou.devagent.graphics-automation' -and $journalStatus.purpose -eq 'durable_dga_gfx_milestone_execution') 'DevAgent evidence uses an isolated journal identity and purpose'
+ Assert-GfxAdapter ($journalTask.Count -eq 1 -and $journalTask[0].milestoneId -eq 'DGA-GFX-0.4' -and $journalTask[0].state -eq 'COMPLETED') 'journal records a typed DGA-GFX-0.4 qualification task'
+ Assert-GfxAdapter ($journalCheckpoint.state.snapshot.payloadKind -eq 'metadata-only' -and $journalCheckpoint.state.snapshot.PSObject.Properties.Name -notcontains 'content') 'checkpoint stores bounded metadata and excludes source content'
+ $journalCountBefore=$journalStatus.recordCount
+ $persistedAgain=Save-GfxGitHubEvidenceCheckpoint -Evidence $pe -StateDirectory $journalRoot
+ $journalStatusAfter=Get-GfxTaskJournalStatus -StateDirectory $journalRoot
+ Assert-GfxAdapter ($persistedAgain.status -eq 'DUPLICATE_NOOP' -and $journalStatusAfter.recordCount -eq $journalCountBefore) 'identical evidence replay is idempotent and appends no records'
+}catch{
+ Assert-GfxAdapter $false ('DGA journal evidence persistence: '+$_.Exception.Message)
+}finally{
+ if(Test-Path -LiteralPath $journalRoot){Remove-Item -LiteralPath $journalRoot -Recurse -Force}
+}
 $requests=Set-MockQueue @((New-MockResponse -Status 403 -Object ([pscustomobject]@{message='rate limit'})))
 $httpBlocked=$false
 try{$null=Get-GfxGitHubRepository}catch{$httpBlocked=$_.Exception.Message -match 'HTTP 403'}
