@@ -387,7 +387,8 @@ if ($NativeScmServiceHost) {
     $serviceName = [Text.Encoding]::Unicode.GetString($bytes, [int]$nameOffset, $nameBytes)
     if ($serviceName -notmatch '^[A-Za-z0-9_.-]{1,256}$') { Fail-PE 'Native SCM service name contains unsupported characters or length.' }
 
-    $handlerSlotOffset = [UInt64](Align-Up-PE -Value ([UInt64](8 + $nameBytes)) -Alignment 8)
+    # Include the UTF-16 NUL terminator (two bytes) before aligning the next pointer slot.
+    $handlerSlotOffset = [UInt64](Align-Up-PE -Value ([UInt64](8 + $nameBytes + 2)) -Alignment 8)
     $tableOffset = $handlerSlotOffset + 8
     if (($tableOffset + 32) -gt [UInt64]$rdata.VirtualSize) { Fail-PE 'Native SCM SERVICE_TABLE_ENTRYW and terminator exceed .rdata.' }
     $handlerSlotRva = [UInt64]$rdata.Rva + $handlerSlotOffset
