@@ -333,3 +333,10 @@ This approval of the desired campaign outcome does not waive Phase 2B.8, enable 
 ### DGA-GFX-0.1 campaign PR status - 2026-11-28
 
 Draft PR #42 is open at exact head 3434994d90f603adf82d8460f0977af8b59eb15a, based on default HEAD 36b07383cb0ee1996298724202454eb8aec57d98. Static JSON and dependency-DAG reconciliation found 11 milestone IDs, no missing dependency references and no cycle. This remains a declarative campaign contract only; its executor is not implemented or activated. DGA-0.2 is next.
+
+
+## DGA-GFX-0.2 - deterministic campaign validation and post-GFX-0.8 evolution
+
+DGA-GFX-0.2 adds a deterministic Windows PowerShell 5.1 contract validator and planner for the GFX campaign. It validates the eleven milestone IDs and graph, strict object fields and policy invariants, PR branch topology (including stacked PR #41), exact-head Windows and physical-GPU evidence contracts, and explicit owner acceptance. The offline CLI produces readiness and blocker reasons but does not generate code or write to GitHub.
+
+The campaign now explicitly continues after GFX-0.8 through primary-source research, provenance capture, reproducible measured baselines, versioned improvement proposals, independent review and human acceptance. It is a declared policy, not a claim that a research daemon is already running.
