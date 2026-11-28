@@ -127,10 +127,10 @@ Asset stream:
 
 GFX-0.1 Architecture  
   -> GFX-A.1 glTF/GLB geometry  
-  -> GFX-A.2 KTX2/PBR material  
-  -> GFX-A.3 Skeleton/animation
+       +-> GFX-A.2 KTX2/PBR material  
+       +-> GFX-A.3 Skeleton/animation
 
-GFX-0.7 depends on GFX-0.3, GFX-0.4, GFX-0.5 and all three asset analyzers. GFX-0.8 depends on GFX-0.6 and GFX-0.7. The machine-readable manifest is authoritative if this visual outline is edited later.
+GFX-0.7 depends on GFX-0.3, GFX-0.4, GFX-0.5, GFX-0.6 and all three asset analyzers. GFX-0.8 depends on GFX-0.6 and GFX-0.7. The machine-readable manifest is authoritative if this visual outline is edited later.
 
 ### Parallelism
 
