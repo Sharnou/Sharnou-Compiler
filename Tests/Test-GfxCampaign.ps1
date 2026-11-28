@@ -7,7 +7,7 @@ function Assert-Gfx{param([bool]$Condition,[string]$Name);if($Condition){$script
 function Copy-Gfx{param($Value);return (ConvertFrom-Json -InputObject (ConvertTo-Json -InputObject $Value -Depth 40))}
 function Validate-Gfx{param($Value);return(Test-GfxCampaignObject -Campaign $Value -Schema $script:Schema)}
 function New-Snapshot{param($Campaign,[bool]$OwnerAccepted=$false,[bool]$WindowsPass=$false)
- $records=@();foreach($m in $Campaign.milestones|Where-Object{$null -ne $_.existingPullRequest}){
+ $records=@();foreach($m in $Campaign.milestones|Where-Object{$null -ne $_.PSObject.Properties['existingPullRequest'] -and $null -ne $_.existingPullRequest}){
   $w=[pscustomobject][ordered]@{status='NOT_REQUIRED';testedHeadSha=$null;passedTests=0;failedTests=0;skippedTests=0;artifactSha256=$null}
   if($m.requiresRealWindowsRuntimeEvidence -and $WindowsPass){$w=[pscustomobject][ordered]@{status='PASS';testedHeadSha=$m.sourceHeadSha;passedTests=23;failedTests=0;skippedTests=0;artifactSha256=('a'*64)}}elseif($m.requiresRealWindowsRuntimeEvidence){$w.status='NOT_RUN'}
   $records+=[pscustomobject][ordered]@{number=$m.existingPullRequest;state='open';draft=$true;merged=$false;baseBranch=$m.sourceBaseBranch;headBranch=$m.sourceBranch;headSha=$m.sourceHeadSha;ownerAccepted=$OwnerAccepted;windowsEvidence=$w;physicalGpuEvidence=[pscustomobject][ordered]@{status='NOT_REQUIRED';testedHeadSha=$null;adapterName=$null;driverVersion=$null;captureSha256=$null}}
