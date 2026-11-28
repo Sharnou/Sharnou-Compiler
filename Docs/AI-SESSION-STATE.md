@@ -1169,3 +1169,16 @@ After the prior session record, one more isolated diagnostic commit was added to
 - Token setup is interactive SecureString and stores a current-user DPAPI-protected value with an owner-only ACL. No token argument or secret echo is exposed.
 - Exact-head Windows PowerShell 5.1 qualification is pending. The API-reported artifact digest is metadata only until a separate download-and-rehash implementation exists.
 - No PR merge, base-branch write, process execution, model inference, code generation or background automation is enabled.
+
+
+### DGA-GFX-0.4 qualification - 2026-11-28
+
+- Feature code/test head: 57054ca03e2119b345621cff22bd7bf31b8a495e.
+- Draft PR #45: https://github.com/Sharnou/Sharnou-Compiler/pull/45, based on draft PR #44 branch devagent-gfx-task-journal-20261128.
+- Windows PowerShell 5.1 push run #46163913745: PASS.
+- Windows PowerShell 5.1 pull-request run #46163917653: PASS.
+- DGA-GFX-0.4 suite: 43/43 passed; DGA-GFX-0.3 journal suite: 30/30 passed. Schema, ASCII/no-BOM and credential-status checks also passed.
+- Evidence checkpoints are bounded metadata-only snapshots in a distinct DGA-GFX journal. No raw source file content, token or model conversation is persisted.
+- The GitHub artifact digest is not an independently verified archive digest because this milestone does not download artifact ZIP bytes.
+- Current-user DPAPI and local owner ACL are not equivalent to service-owned R5 credentials. No worker, inference, process execution, autonomous source generation, GitHub mutation or background scheduler has been enabled.
+- The subsequent docs-only PR head must pass the same exact-head Windows workflow before the overall PR tip is treated as qualified.
