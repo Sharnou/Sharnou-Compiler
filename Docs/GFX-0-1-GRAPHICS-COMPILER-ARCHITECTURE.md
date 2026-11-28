@@ -253,6 +253,14 @@ The IDE should progressively provide:
 
 The IDE must use the same compiler/analyzer libraries as command-line/project builds. A separate UI-only shader parser would create inconsistent results and is not acceptable.
 
+### 10.1 D3D11 profiling and PIX compatibility
+
+For the initial D3D11 backend, Sharnou should use its own non-blocking query ring: issue `D3D11_QUERY_TIMESTAMP` markers around passes, place the pair inside a `D3D11_QUERY_TIMESTAMP_DISJOINT` interval, and retrieve results later through `ID3D11DeviceContext::GetData`. Convert ticks using the returned frequency only when `Disjoint` is false. `GetData` is asynchronous; the profiler must poll/reuse completed query slots and must not force a GPU/CPU stall by waiting synchronously every frame. The documented timestamp query contract specifically requires the disjoint interval and the disjoint result determines whether a timestamp delta is reliable.
+
+PIX is valuable for Direct3D profiling, but its current Windows documentation is primarily D3D12-oriented and states that PIX does not directly analyze D3D11 applications; D3D11 capture is possible through D3D11On12. Therefore PIX must not be a dependency or acceptance requirement for the first native D3D11 renderer. Use D3D11 timestamp/disjoint queries plus Sharnou's own CPU markers and repeatable scene benchmarks first. Add PIX integration only when the renderer has a deliberate D3D11On12 or D3D12 path and that path is validated.
+
+References: [D3D11_QUERY](https://learn.microsoft.com/windows/win32/api/d3d11/ne-d3d11-d3d11_query), [D3D11_QUERY_DATA_TIMESTAMP_DISJOINT](https://learn.microsoft.com/windows/win32/api/d3d11/ns-d3d11-d3d11_query_data_timestamp_disjoint), [ID3D11DeviceContext::GetData](https://learn.microsoft.com/windows/win32/api/d3d11/nf-d3d11-id3d11devicecontext-getdata), and [PIX requirements](https://devblogs.microsoft.com/pix/requirements/).
+
 ## 11. Security, determinism and reliability
 
 Shader source, includes, imported model files, compressed textures and project metadata are untrusted input. The graphics compiler must use bounded parsing and allocation, explicit maximum source/include sizes, include-depth limits, recursion limits, texture-dimension limits, arithmetic-overflow checks and deterministic failure diagnostics.
@@ -279,7 +287,7 @@ Graphics compiler milestones (`GFX-*`) are a separate track from renderer featur
 | GFX-A.2 | KTX2 and material-semantic analyzer | Header/DFD/mip/bounds negative corpus; material channel/color-space tests; no false claim of successful GPU upload |
 | GFX-A.3 | Scene/material/animation cross-validation | Cross-asset reference tests; skeleton/skin/animation bounds; renderer compatibility diagnostics |
 | GFX-0.7 | IDE shader, asset and render-graph workbench | Same diagnostics as CLI; navigation/reflection/inspection tests; preview linked to actual runtime output |
-| GFX-0.8 | GPU capture and profiling integration | Per-pass GPU timing from timestamp queries, CPU/GPU separation, named device/scene benchmark artifacts |
+| GFX-0.8 | GPU capture and profiling integration | Non-blocking D3D11 timestamp/disjoint query ring, CPU/GPU separation, delayed query readback, named device/scene benchmark artifacts; PIX optional only for a validated D3D11On12/D3D12 path |
 
 Every milestone must preserve the existing native ABI, PE verifier, stack/unwind, SCM security and regression contracts. Graphics work does not authorize changing the Phase 2B.8 process-execution security boundary.
 
@@ -316,6 +324,8 @@ The first runtime milestone is intentionally small: compile, reflect, bind and r
 - Microsoft: [DXIL Specification](https://github.com/microsoft/DirectXShaderCompiler/blob/main/docs/DXIL.rst).
 - Slang: [Language and compilation documentation](https://shader-slang.org/slang/user-guide/). Slang is reference material here, not an approved Sharnou dependency.
 - Khronos: [SPIRV-Tools](https://github.com/KhronosGroup/SPIRV-Tools). Use its validator and optimizer as study references only; third-party validation cannot replace Sharnou's own SGIR verifier.
+- Microsoft: [D3D11_QUERY](https://learn.microsoft.com/windows/win32/api/d3d11/ne-d3d11-d3d11_query), [D3D11_QUERY_DATA_TIMESTAMP_DISJOINT](https://learn.microsoft.com/windows/win32/api/d3d11/ns-d3d11-d3d11_query_data_timestamp_disjoint), and [ID3D11DeviceContext::GetData](https://learn.microsoft.com/windows/win32/api/d3d11/nf-d3d11-id3d11devicecontext-getdata).
+- Microsoft PIX: [Requirements and D3D11 capture limitations](https://devblogs.microsoft.com/pix/requirements/). PIX is not the primary profiler for the initial D3D11 renderer.
 
 ## 15. Current implementation status
 
