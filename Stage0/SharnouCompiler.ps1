@@ -4067,7 +4067,7 @@ function Emit-NativeScmTestControlProbe {
     Emit-Bytes -Bytes ([byte[]]@(0xB9, 0x01, 0x00, 0x00, 0x00))
     Emit-Win64CallIat -TargetRva ([UInt32]0x3070)
 }
-function Emit-NativeScmCallbacks {function Emit-NativeScmCallbacks {
+function Emit-NativeScmCallbacks {
     if (-not $script:NativeScmServiceMode) { return }
     if ($null -eq $script:NativeScmServiceNameDataItem -or $null -eq $script:NativeScmHandlerPointerItem) {
         throw 'Native SCM callback data was not registered by the Sharnou service-host intrinsic.'
