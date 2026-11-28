@@ -129,7 +129,7 @@ Instruction arrays retain program order. Phi incoming arrays are required to be 
 
 Every rejection throws a stable SGIR-<code> diagnostic and stops before a package can be produced. No shader package, bytecode, cache entry or runtime artifact is emitted by this milestone.
 
-The intake rejects documents larger than 4 Mi UTF-16 code units, malformed JSON and duplicate property names. The verifier uses bounded declaration counts through field ranges and identifier lengths. Future frontends must add explicit limits for instruction count, function count, nesting, source size and include graph before parsing arbitrary project input.
+The intake rejects documents larger than 4 Mi UTF-16 code units, malformed JSON and duplicate property names. Declaration and CFG limits are enforced before expensive analysis: at most 8 capabilities, 64 custom types, 128 resources, 16 entry points, 64 functions, 32 parameters per function, 256 basic blocks per function, 4096 instructions per block and 32768 instructions per function, 32 stage interfaces per direction, and 256 fields per struct. Type-graph recursion is consequently bounded by the 64-type ceiling. The schema mirrors the structural limits where JSON Schema can express them.
 
 ## 9. CLI
 
