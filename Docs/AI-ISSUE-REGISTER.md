@@ -548,3 +548,18 @@ Static checks confirmed both JSON documents parse, all eleven milestone IDs exis
 - Tests cover immutable record hash-chain replay, deterministic task identity, idempotency conflicts/no-ops, checkpoint chain sequence 1 and 2, restart interruption, repeated recovery, resume gating, completion/failure/cancellation, tampered checkpoint and journal data, missing interior sequence, relative/UNC root rejection, and absence of process/network execution.
 - Local named mutex coordination is scoped to one Windows logon session. SHA-256 provides integrity detection, not authentication. Protected ACLs and the separate Phase 2B.8/R5 security boundary remain prerequisites.
 - No model inference, research daemon, code generation or model-facing process execution is enabled.
+
+
+## DGA-GFX-0.4 implementation record
+
+- Isolated branch: devagent-gfx-readonly-github-adapter-20261128.
+- Exact starting point: DGA-GFX-0.3 PR #44 head dba4e402f49162c3bd4b71ad0f1b0e90cf144c0e.
+- Added a typed GET-only GitHub REST module and CLI for fixed-repository metadata, branch tips, commit records, exact-commit source-file reads, PR state, workflow runs and artifact metadata.
+- Source file retrieval resolves the requested ref to a full commit SHA before fetching content. The Git blob SHA-1 is recalculated from returned bytes and compared; an independent SHA-256 and byte count are captured.
+- Actions queries require a full 40-character commit SHA, reject mismatched returned head SHAs, and bind each artifact to a workflow run ID and GitHub-provided SHA-256 digest.
+- Credentials are configured interactively as SecureString and stored with current-user DPAPI encryption under an owner-only ACL. Tokens are not passed on the command line or written to journal output.
+- HTTP access is restricted to HTTPS api.github.com, explicit GET, fixed repository routes, disabled automatic redirects, 20-second timeouts, 8 MiB JSON response cap, 1 MiB source-file cap and bounded pagination.
+- Artifacts are not downloaded or rehashed in DGA-GFX-0.4; the API-reported digest is captured but not independently verified. Job logs are not retrieved.
+- The credential store is current-user DPAPI, not service-owned authentication; R5 identity and ACL qualification remains mandatory before service/model access.
+- Windows PowerShell 5.1 exact-head qualification is pending. No claim of a test pass or accepted milestone is made before Actions evidence is inspected.
+- No process launch, shell, Git writes, PR/issue mutation, workflow dispatch/rerun, inference, code generation, background worker or autonomous campaign activation is enabled.
