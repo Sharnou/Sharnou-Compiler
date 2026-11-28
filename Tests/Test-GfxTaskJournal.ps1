@@ -50,8 +50,8 @@ try{
  $null=Start-GfxTask -StateDirectory $script:JournalRootPath -TaskId $second.taskId -SessionId 'worker-session-04'
  $null=Fail-GfxTask -StateDirectory $script:JournalRootPath -TaskId $second.taskId -FailureCode 'VALIDATION_FAILED' -Retryable $true
  $failedStatus=Get-GfxTaskJournalStatus -StateDirectory $script:JournalRootPath
- $failed=@($failedStatus.tasks|Where-Object{$_.taskId -eq $second.taskId})[0]
- Assert-GfxJournal ($failed.state -eq 'FAILED') 'records bounded task failure'
+ $failedTask=@($failedStatus.tasks|Where-Object{$_.taskId -eq $second.taskId})[0]
+ Assert-GfxJournal ($failedTask.state -eq 'FAILED') 'records bounded task failure'
  $third=New-GfxPlannedTask -StateDirectory $script:JournalRootPath -MilestoneId 'GFX-A.2' -TaskKind 'research' -InputSha256 ('7'*64) -ScopeSha256 ('8'*64) -IdempotencyKey 'test/dga03/third-task'
  $null=Cancel-GfxTask -StateDirectory $script:JournalRootPath -TaskId $third.taskId -ReasonCode 'OWNER_REQUEST'
  $cancelStatus=Get-GfxTaskJournalStatus -StateDirectory $script:JournalRootPath
