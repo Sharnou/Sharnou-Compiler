@@ -238,7 +238,7 @@ function Get-GfxGitHubWorkflowRuns {
   $total=[int]$r.total_count
   foreach($run in $r.workflow_runs){
    if([string]$run.head_sha -cne $CommitSha){throw 'Actions API returned a run for a different commit SHA.'}
-   if([long]$run.id -lt 1 -or $run.status -notin @('queued','in_progress','completed','requested','waiting','pending_request')){throw 'Workflow run metadata failed validation.'}
+   if([long]$run.id -lt 1 -or $run.status -notin @('queued','in_progress','completed','requested','waiting','pending')){throw 'Workflow run metadata failed validation.'}
    $null=$items.Add([pscustomobject][ordered]@{runId=[long]$run.id;workflowId=[long]$run.workflow_id;runNumber=[int]$run.run_number;attempt=[int]$run.run_attempt;name=[string]$run.name;event=[string]$run.event;status=[string]$run.status;conclusion=[string]$run.conclusion;headSha=[string]$run.head_sha;headBranch=[string]$run.head_branch;createdAtUtc=[string]$run.created_at;updatedAtUtc=[string]$run.updated_at;htmlUrl=[string]$run.html_url})
   }
   if($r.workflow_runs.Count -lt $PerPage -or $items.Count -ge $total){break}
