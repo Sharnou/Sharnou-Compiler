@@ -660,3 +660,16 @@ The inherited Low-IL AppContainer DPAPI protection call remains INCONCLUSIVE bec
 Next authorized issue: R5.1.d full SCM adversarial lifecycle qualification, including SHUTDOWN, observable state/status assertions, deterministic test-only failure injection, repeated and racing lifecycle operations, bounded timeout, forced termination, crash/orphan cleanup and recovery. R5.2 is blocked until R5.1.d is accepted; R5.3 is blocked until R5.2; R5.4 is blocked until R5.3.
 
 Model-facing/autonomous execution remains DISABLED; production rollout and process-execution enablement remain unauthorized.
+
+
+## R5.1.d — native SCM lifecycle and fault qualification (2026-11-28)
+
+**Status: IMPLEMENTATION IN PROGRESS / EXACT-HEAD WINDOWS QUALIFICATION PENDING.**
+
+Implementation is isolated on `phase-2b8-r5-1d-scm-lifecycle-20261128`, based on the qualified R5.1.c source tip. The branch adds a test-only compiler mode and marked test image; deterministic fault points at dispatcher startup, HandlerEx registration, event creation and all four SetServiceStatus boundaries; pending-state observability; a direct HandlerEx control probe; and real SCM tests for repeated lifecycle, racing controls, duplicate STOP, crash termination, restart and deferred service deletion.
+
+Acceptance requirements: Windows Server 2025 run on the exact PR head; successful focused lifecycle/fault tests; successful complete inherited regression; artifact and generated image hashes recomputed after download; proof that the production verifier rejects test images and production service imports remain minimal; no lingering service process or registration after tests.
+
+**Explicit unresolved item:** the callback probe exercises `SERVICE_CONTROL_SHUTDOWN` by directly calling the generated HandlerEx function. It is not an OS shutdown broadcast. Actual OS delivery must be qualified on an isolated disposable Windows VM/host; ordinary `ControlService` does not deliver this control. Full R5.1.d acceptance and R5.2 remain blocked until that evidence is obtained.
+
+The pre-existing Low-IL AppContainer DPAPI `System.Security` diagnostic remains INCONCLUSIVE. Model-facing/autonomous execution stays DISABLED; Phase 2B.8 remains NOT SECURITY ACCEPTED; no production rollout or key provisioning is authorized.
