@@ -17,6 +17,7 @@ function New-Snapshot{param($Campaign,[bool]$OwnerAccepted=$false,[bool]$Windows
 $p=Join-Path $root 'Projects\DevAgent\GfxCampaign.v1.json';$s=Join-Path $root 'Schemas\DevAgent\GfxCampaign.v1.schema.json';$module=Join-Path $root 'Tools\DevAgent\GfxCampaign.psm1'
 $script:Campaign=ConvertFrom-Json -InputObject ([IO.File]::ReadAllText($p,[Text.Encoding]::UTF8));$script:Schema=ConvertFrom-Json -InputObject ([IO.File]::ReadAllText($s,[Text.Encoding]::UTF8))
 $v=Validate-Gfx $script:Campaign
+if (-not $v.valid) { foreach ($errorText in $v.errors) { Write-Host ('CAMPAIGN VALIDATION ERROR: ' + $errorText) } }
 Assert-Gfx $v.valid 'canonical campaign valid';Assert-Gfx ($v.milestoneCount -eq 11) 'exact eleven milestone IDs';Assert-Gfx ($v.topologicalOrder.Count -eq 11) 'topological output covers all milestones'
 Assert-Gfx (($v.topologicalOrder -join ',') -eq 'GFX-0.1,GFX-0.2,GFX-A.1,GFX-0.3,GFX-A.2,GFX-A.3,GFX-0.4,GFX-0.5,GFX-0.6,GFX-0.7,GFX-0.8') 'stable topological order preserves asset stream dependencies'
 Assert-Gfx ($script:Campaign.continuousImprovement.enabled -eq $true) 'ongoing research declared after GFX-0.8'
