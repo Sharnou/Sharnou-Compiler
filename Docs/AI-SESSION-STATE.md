@@ -2332,3 +2332,24 @@ No service SID, production CNG key, named-pipe transport, production signed jour
 - Current acceptance state: **PENDING exact-head Windows qualification**. Source changes and file creation are not Windows execution evidence. Do not mark R5.1.c accepted until the workflow succeeds and the exact-head evidence bundle is inspected.
 - Next sequence is unchanged: R5.1.d full SCM lifecycle/failure qualification -> R5.2 service identity/protected CNG key -> R5.3 authenticated named-pipe IPC -> R5.4 service-owned authenticated durable journal. Do not start a later milestone before the preceding one is accepted.
 - Model-facing and autonomous execution remain DISABLED. Phase 2B.8 remains NOT SECURITY ACCEPTED. No service rollout, production key provisioning or process-execution enablement is authorized.
+
+
+## Authoritative milestone state - 2026-11-28
+
+### R5.1.c — ACCEPTED for declared scope
+- Exact tested head: `85efea1cd17ea03e5040dc6708d0dac1928dcfd5`.
+- Windows Server 2025 exact-head run [46122764612](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/46122764612): SUCCESS; all workflow steps passed.
+- Inspected evidence artifact `r5-1c-native-scm-evidence`, id `15253524806`, SHA-256 `7c4fda351a1fa7f117e6fa1615f5d521b3176d786d0cd2de502be5f20ec85556`.
+- Exact-head manifest reports PASS for the same commit. Generated service executable is 8,704 bytes, SHA-256 `8623ed7fd37153a41b841cad632e30ac6965b5bfee0153a59e0880fb43e43f73`; independently recomputed from downloaded artifact and matched.
+- Actual disposable Windows SCM service create/start/interrogate/stop/delete passed; STOPPED/PID zero verified. Independent PE service profile and complete combined regression passed.
+- Caveat: inherited Low-IL AppContainer DPAPI protection subtest remains INCONCLUSIVE due to missing System.Security assembly in the Windows PowerShell test process. Do not describe this as passed; retain as an open Phase 2B.8 evidence gap.
+
+### Next authorized target
+R5.1.d is now the next authorized implementation target. It must qualify full SCM lifecycle and fault handling: complete status transitions and fields, SHUTDOWN, deterministic test-only dispatcher/registration/event/status failure injection, repeated cycles, duplicate controls and races, timeouts, forced termination/crash, orphan process/handle/SCM-registration detection, cleanup and recovery. Fault injection must not be exposed in the normal production service build.
+
+R5.2 remains blocked until R5.1.d exact-head Windows qualification and evidence inspection pass. R5.3 remains blocked until R5.2; R5.4 remains blocked until R5.3.
+
+Model-facing execution: DISABLED.
+Autonomous execution: DISABLED.
+Phase 2B.8 security acceptance: NOT ACCEPTED.
+Production rollout: NOT AUTHORIZED.
