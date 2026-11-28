@@ -500,3 +500,10 @@ PR #24 candidate head advanced to bd411c2fc777006f9b1160ab8d3d5992c2a15afa. Stag
 - GFX-0.1/0.2 remain draft PRs #39/#41; GFX-0.2 has no confirmed exact-head Windows pass/artifact. No downstream GFX milestone is READY or accepted.
 - Next implementation order: DGA-0.2 deterministic manifest/DAG/evidence validator; DGA-0.3 durable task journal; DGA-0.4 read-only native repository/Actions adapter; DGA-0.5 actual local inference; DGA-0.6 typed patch transactions; DGA-0.7 broker/security qualification; DGA-0.8 specialist/review/repair/evidence loop; DGA-0.9 campaign scheduler and draft-PR writer.
 - Campaign policy forbids direct default-branch writes, arbitrary model commands, auto merge/release, unapproved dependencies and any bypass of Phase 2B.8. Model-facing and autonomous execution remain DISABLED.
+
+
+#### B5 follow-up — DGA-GFX-0.1 draft PR and manifest reconciliation
+
+Draft PR #42 is open at head 3434994d90f603adf82d8460f0977af8b59eb15a, based on default HEAD 36b07383cb0ee1996298724202454eb8aec57d98. It contains seven documentation/schema/manifest files.
+
+Static checks confirmed both JSON documents parse, all eleven milestone IDs exist, all dependency references resolve, the DAG is acyclic and the declared top-level/milestone property names match the schema. This is not full JSON Schema validation and not Windows/PowerShell execution. The campaign activation remains BLOCKED; DGA-0.2 is the next implementation task.
