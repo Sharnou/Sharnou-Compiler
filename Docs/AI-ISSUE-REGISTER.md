@@ -491,7 +491,7 @@ PR #24 candidate head advanced to bd411c2fc777006f9b1160ab8d3d5992c2a15afa. Stag
 - **Next bounded task:** R5.1.c inert Sharnou-generated service image, actual PE import/relocation/exception verification, and disposable Windows SCM lifecycle smoke tests. Keep model-facing/autonomous execution disabled; Phase 2B.8 remains NOT SECURITY ACCEPTED.
 
 
-### B5 — DevAgent cannot yet execute the automatic GFX campaign
+### B5 - DevAgent cannot yet execute the automatic GFX campaign
 
 - Tracking: issue #14 (autonomous SharnouDevAgent); GFX program issue #40.
 - DGA-GFX-0.1 adds Projects/DevAgent/GfxCampaign.v1.json, Schemas/DevAgent/GfxCampaign.v1.schema.json, and Docs/DEVAGENT-GFX-MILESTONE-AUTOMATION.md on isolated branch devagent-gfx-campaign-automation-20261128.
@@ -502,7 +502,7 @@ PR #24 candidate head advanced to bd411c2fc777006f9b1160ab8d3d5992c2a15afa. Stag
 - Campaign policy forbids direct default-branch writes, arbitrary model commands, auto merge/release, unapproved dependencies and any bypass of Phase 2B.8. Model-facing and autonomous execution remain DISABLED.
 
 
-#### B5 follow-up — DGA-GFX-0.1 draft PR and manifest reconciliation
+#### B5 follow-up - DGA-GFX-0.1 draft PR and manifest reconciliation
 
 Draft PR #42 is open at head 3434994d90f603adf82d8460f0977af8b59eb15a, based on default HEAD 36b07383cb0ee1996298724202454eb8aec57d98. It contains seven documentation/schema/manifest files.
 
