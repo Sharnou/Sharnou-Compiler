@@ -248,28 +248,28 @@ function Get-SgirCanonicalHash {
 }
 
 function Get-SgirTypeKind {
-    param([string] $TypeId, [System.Collections.IDictionary] $TypeMap)
+    param([string] $TypeId, [object] $TypeMap)
     if ($TypeId -cin @('bool', 'i32', 'u32', 'f32')) { return 'scalar' }
-    if (-not $TypeMap.Contains($TypeId)) { Throw-Sgir 'T001' ("Unknown type '{0}'." -f $TypeId) }
+    if (-not $TypeMap.ContainsKey($TypeId)) { Throw-Sgir 'T001' ("Unknown type '{0}'." -f $TypeId) }
     return [string](Get-SgirValue $TypeMap[$TypeId] 'kind')
 }
 
 function Assert-SgirTypeReference {
-    param([string] $TypeId, [System.Collections.IDictionary] $TypeMap, [string] $Where)
+    param([string] $TypeId, [object] $TypeMap, [string] $Where)
     Assert-SgirString -Value $TypeId -Where $Where
-    if ($TypeId -cnotin @('void', 'bool', 'i32', 'u32', 'f32') -and -not $TypeMap.Contains($TypeId)) {
+    if ($TypeId -cnotin @('void', 'bool', 'i32', 'u32', 'f32') -and -not $TypeMap.ContainsKey($TypeId)) {
         Throw-Sgir 'T001' ("{0} references unknown type '{1}'." -f $Where, $TypeId)
     }
 }
 
 
 function Visit-SgirTypeGraph {
-    param([string] $TypeId, [System.Collections.IDictionary] $TypeMap, [System.Collections.IDictionary] $State)
-    if (-not $TypeMap.Contains($TypeId)) { return }
-    if ($State.Contains($TypeId) -and $State[$TypeId] -ceq 1) {
+    param([string] $TypeId, [object] $TypeMap, [object] $State)
+    if (-not $TypeMap.ContainsKey($TypeId)) { return }
+    if ($State.ContainsKey($TypeId) -and $State[$TypeId] -ceq 1) {
         Throw-Sgir 'T010' ("Recursive aggregate type cycle reaches '{0}'." -f $TypeId)
     }
-    if ($State.Contains($TypeId) -and $State[$TypeId] -ceq 2) { return }
+    if ($State.ContainsKey($TypeId) -and $State[$TypeId] -ceq 2) { return }
     $State[$TypeId] = 1
     $declaration = $TypeMap[$TypeId]
     $kind = [string](Get-SgirValue $declaration 'kind')
@@ -284,7 +284,7 @@ function Visit-SgirTypeGraph {
 }
 
 function Assert-SgirAcyclicTypeGraph {
-    param([System.Collections.IDictionary] $TypeMap)
+    param([object] $TypeMap)
     $state = New-Object 'System.Collections.Generic.Dictionary[string,int]' ([System.StringComparer]::Ordinal)
     foreach ($typeId in $TypeMap.Keys) {
         Visit-SgirTypeGraph -TypeId ([string]$typeId) -TypeMap $TypeMap -State $state
@@ -800,7 +800,7 @@ function Assert-SgirModule {
 function Read-SgirModuleFile {
     param([Parameter(Mandatory = $true)][string] $Path)
     if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { Throw-Sgir 'J006' ("Input file not found: {0}" -f $Path) }
-    $encoding = New-Object System.Text.UTF8Encoding($false, $true)
+    $encoding = [System.Text.UTF8Encoding]::new($false, $true)
     $json = [System.IO.File]::ReadAllText((Resolve-Path -LiteralPath $Path).Path, $encoding)
     return (ConvertFrom-SgirJsonText -Json $json)
 }
@@ -812,7 +812,7 @@ if ($Action -cne 'None') {
     if ($Action -ceq 'Canonicalize') {
         if ([string]::IsNullOrWhiteSpace($OutputPath)) { Throw-Sgir 'J008' '-OutputPath is required for Canonicalize.' }
         $canonical = ConvertTo-SgirCanonicalJson -Document $document
-        $encoding = New-Object System.Text.UTF8Encoding($false, $true)
+        $encoding = [System.Text.UTF8Encoding]::new($false, $true)
         [System.IO.File]::WriteAllText([System.IO.Path]::GetFullPath($OutputPath), $canonical + [Environment]::NewLine, $encoding)
     }
     Write-Output ("SGIR/1 VALID: {0}" -f $result.ModuleId)
