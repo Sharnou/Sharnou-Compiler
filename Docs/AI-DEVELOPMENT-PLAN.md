@@ -361,3 +361,12 @@ Resume requires a committed durable checkpoint. Replay rejects record sequence g
 A read-only GitHub REST adapter is being implemented on the isolated branch devagent-gfx-readonly-github-adapter-20261128, based on the exact DGA-GFX-0.3 PR #44 head dba4e402f49162c3bd4b71ad0f1b0e90cf144c0e. The adapter is scoped to Sharnou/Sharnou-Compiler and typed GET operations for repository, branch, commit, source file, pull request, Actions runs and artifact metadata. Source bytes are pinned to a resolved commit and verified against Git blob SHA-1 plus SHA-256. Actions runs are bound to the requested full commit SHA.
 
 Credentials use an interactive SecureString prompt, current-user DPAPI encryption and an owner-only local ACL. The adapter exposes no arbitrary URL/method, shell, process or write operation. Artifact payloads and job logs are not downloaded in this increment; GitHub's artifact digest is retained as provenance metadata only. Exact-head Windows qualification and independent PR review are pending. Autonomous execution, inference and background research remain disabled.
+
+
+## DGA-GFX-0.4 - Windows-qualified read-only GitHub adapter
+
+The DGA-GFX-0.4 adapter implementation and journal integration pass Windows PowerShell 5.1 qualification on code/test head 57054ca03e2119b345621cff22bd7bf31b8a495e. PR run #46163917653 and push run #46163913745 passed. The adapter suite passed 43/43; the inherited DGA-GFX-0.3 task-journal regression suite passed 30/30. The exact docs-sync PR head is requalified by the same workflow.
+
+The milestone supplies read-only repository, branch, commit, file, pull-request, Actions-run and artifact-metadata reads; source reads are commit-pinned and Git-blob-hash verified. Bounded metadata-only snapshots persist as deterministic DGA-GFX-0.4 qualification tasks using the DGA-GFX-0.3 journal. Credential storage is interactive, current-user DPAPI and owner-ACL protected.
+
+Artifact archive bytes are not retrieved or independently hashed; the GitHub API artifact digest is metadata only. Current-user DPAPI is not a service SID broker. The adapter cannot write GitHub data, launch processes or run a worker. Model inference and autonomous source generation remain disabled.
