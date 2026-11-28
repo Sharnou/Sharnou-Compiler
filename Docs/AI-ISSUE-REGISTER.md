@@ -635,3 +635,16 @@ The candidate adds a bounded PowerShell 5.1 Safetensors v1 header inspector (not
 The pinned upstream model weight pointer records 269060552 bytes and SHA-256 `5af571cbf074e6d21a03528d2330792e532ca608f24ac70a143f6b369968ab8c`. It has not yet been independently recomputed locally; the actual 269 MB file was not downloaded or parsed. Tokenizer and tokenizer-config hashes remain pending. Apache-2.0 is only model-card declaration evidence; no independent license text file is qualified.
 
 The parser inspects only bounded header bytes and does not load tensor payload. Tests/CI are NOT RUN until exact-head Windows qualification. Native Sharnou reader, tokenizer, tensor kernels and inference remain NOT IMPLEMENTED; readiness remains BLOCKED.
+
+
+### DGA-GFX-0.5B Windows candidate evidence - 2026-11-28
+
+Candidate code/test head `673839fe71fb7aff7afda9a96957431261c732df` passed exact-head Windows push [46172747892](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/46172747892) and PR [46172753275](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/46172753275).
+
+- Safetensors adversarial tests: 26/26.
+- DGA-GFX-0.5A contract: 30/30.
+- DGA-GFX-0.3 journal: 30/30.
+- DGA-GFX-0.4 adapter: 49/49.
+- Total: 135 passed, 0 failed.
+
+This is PowerShell qualification-reader evidence only. No actual model artifact was downloaded, locally hashed or parsed. Tokenizer hashes and independent license text remain unverified. Native Sharnou reader and inference remain NOT IMPLEMENTED; readiness remains BLOCKED. The next docs-only head requires its own exact-head run.

@@ -1239,3 +1239,13 @@ After the prior session record, one more isolated diagnostic commit was added to
 - Important boundary: the implemented parser is a PowerShell qualification oracle, not the native Sharnou model reader. It reads only the 8-byte prefix and bounded JSON header; never reads tensor payload, maps data, or executes serialized content. No weights were downloaded.
 - Windows tests and CI are NOT RUN until the exact PR head. No actual model file was inspected. DGA-GFX-0.5B remains a partial candidate; artifact qualification and native reader remain blocked. Native port depends on verified Sharnou checked integer, byte-buffer, file I/O and memory-ownership semantics. DGA-GFX-0.5C tokenizer and all inference remain gated.
 - Security remains unchanged: no network/process/shell/dynamic-library/repository-write/model tool authority. Phase 2B.8/R5 is independent.
+
+
+### DGA-GFX-0.5B candidate Windows qualification - 2026-11-28
+
+- Code/test head `673839fe71fb7aff7afda9a96957431261c732df` passed both push workflow [46172747892](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/46172747892) and PR workflow [46172753275](https://github.com/Sharnou/Sharnou-Compiler/actions/runs/46172753275) on exact head.
+- Windows PowerShell 5.1 results: Safetensors adversarial suite 26/26; DGA-GFX-0.5A contract 30/30; DGA-GFX-0.3 journal 30/30; DGA-GFX-0.4 adapter 49/49. Total 135 passed, 0 failed.
+- The 26 fixtures cover valid BF16 metadata, string-only metadata, duplicate JSON keys, unsupported dtype, shape/byte mismatch, negative/zero dimensions, rank cap, element-count overflow, element alignment, out-of-range offsets, trailing bytes, gaps, overlap, non-string metadata, unknown tensor fields, malformed/non-object headers, truncation, file/header caps, local SHA-256 match/mismatch and byte-count mismatch.
+- This evidence qualifies only the PowerShell header-inspection and artifact-lock preflight slice. The actual 269060552-byte model file was not downloaded, locally hashed or parsed. Its published Xet pointer digest remains upstream evidence only.
+- Tokenizer/tokenizer-config SHA-256 values remain pending; license remains model-card declaration only; native Sharnou reader and native inference are not implemented. Readiness remains BLOCKED.
+- A documentation synchronization commit follows; it creates a new exact PR head and requires another Windows run before the updated PR tip is considered qualified.

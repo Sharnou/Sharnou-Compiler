@@ -135,3 +135,6 @@ DGA-GFX-0.5A contract qualification passed on its exact source/test head: 30 con
 ### DGA-GFX-0.5B - bounded Safetensors inspection
 
 DGA-GFX-0.5B adds a bounded PowerShell qualification reader for Safetensors v1 headers, BF16 tensor metadata and offsets, plus an artifact lock and local SHA-256 verifier. This is not yet the native Sharnou model reader. The pinned upstream weight pointer records SHA-256 `5af571cbf074e6d21a03528d2330792e532ca608f24ac70a143f6b369968ab8c` and 269060552 bytes; local verification and real-file inspection remain pending. Tokenizer hashes and independent license-file verification remain blocked. See [DGA-GFX-0.5B Safetensors engineering record](Docs/DGA-GFX-0.5B-SAFETENSORS.md).
+
+
+DGA-GFX-0.5B candidate code/test head passed Windows PowerShell 5.1 qualification: 26 Safetensors tests, 30 DGA-GFX-0.5A tests, 30 DGA-GFX-0.3 journal tests and 49 DGA-GFX-0.4 adapter tests (135 total, 0 failed). This qualifies only the PowerShell header-inspection/preflight tool; the actual model file was not downloaded or parsed, tokenizer hashes and license text remain unverified, and the native Sharnou reader/inference remain unimplemented.
