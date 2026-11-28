@@ -1158,3 +1158,14 @@ After the prior session record, one more isolated diagnostic commit was added to
 - No default branch merge. No local inference, process execution, background research, autonomous source generation, or GitHub mutation has been activated by this persistence increment.
 - Known limitation: the named mutex is in the Local namespace and coordinates within one Windows logon session only. Cross-session same-root writer coordination is not supported.
 - Integrity is not authentication: SHA-256 chaining cannot prevent a principal with write access from rebuilding the entire journal with fresh hashes. Service-owned ACLs and the separate Phase 2B.8/R5 trust boundary are still required.
+
+
+### DGA-GFX-0.4 implementation candidate - 2026-11-28
+
+- Branch: devagent-gfx-readonly-github-adapter-20261128; starting commit: dba4e402f49162c3bd4b71ad0f1b0e90cf144c0e.
+- Implemented Tools/DevAgent/GfxGitHubAdapter.psm1, Tools/DevAgent/Invoke-GfxGitHubAdapter.ps1, Schemas/DevAgent/GfxGitHubEvidence.v1.schema.json, Tests/Test-GfxGitHubAdapter.ps1 and .github/workflows/devagent-gfx-github-adapter.yml.
+- Adapter scope is read-only and fixed to Sharnou/Sharnou-Compiler. It uses typed repository/branch/commit/file/PR/Actions/artifact endpoints and GET-only HTTPS transport.
+- Source reads resolve refs to commit SHA, validate Git blob SHA-1 and record SHA-256 and byte count. Actions runs must match the requested exact commit; artifact records bind to run IDs and GitHub-reported artifact digests.
+- Token setup is interactive SecureString and stores a current-user DPAPI-protected value with an owner-only ACL. No token argument or secret echo is exposed.
+- Exact-head Windows PowerShell 5.1 qualification is pending. The API-reported artifact digest is metadata only until a separate download-and-rehash implementation exists.
+- No PR merge, base-branch write, process execution, model inference, code generation or background automation is enabled.
