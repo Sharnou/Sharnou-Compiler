@@ -181,7 +181,7 @@ function Read-GfxJournalUnlocked {
   if([long]$body.sequence -ne $expected){throw "Journal sequence gap at $($file.Name)."}
   if($file.Name -cne ('{0:D12}_{1}.json' -f [long]$body.sequence,[string]$body.eventId)){throw 'Journal filename/body mismatch.'}
   if($body.previousRecordSha256 -cne $previous){throw "Journal hash-chain mismatch at record $expected."}
-  if ([string]$body.journalId -cnotmatch '^[0-9a-f]{32}
+  if ([string]$body.journalId -cnotmatch '^[0-9a-f]{32}$') { throw 'Journal ID format is invalid.' }
   if([string]$body.eventId -cnotmatch '^e[0-9a-f]{32}$'){throw 'Event ID malformed.'}
   Assert-GfxIdempotencyKey ([string]$body.idempotencyKey)
   if($body.eventId -cne (Get-GfxStableId 'e' ('event:'+[string]$body.idempotencyKey))){throw 'Event ID is inconsistent with idempotency key.'}
@@ -805,3 +805,4 @@ function Recover-GfxTaskJournal {
  }finally{Exit-GfxLock $mutex}
 }
 Export-ModuleMember -Function Initialize-GfxTaskJournal,Get-GfxTaskJournalStatus,New-GfxPlannedTask,Start-GfxTask,Save-GfxTaskCheckpoint,Get-GfxTaskCheckpoint,Resume-GfxTask,Complete-GfxTask,Fail-GfxTask,Cancel-GfxTask,Recover-GfxTaskJournal
+
