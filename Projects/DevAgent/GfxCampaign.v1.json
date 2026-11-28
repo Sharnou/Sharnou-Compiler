@@ -482,6 +482,7 @@
     "Every generation runs in an isolated worktree with a baseline hash, allowlisted paths, bounded patch sizes, bounded repair attempts and automatic rollback on any failed mandatory gate.",
     "The frozen M1-M6 83-case provenance issue remains separate; do not claim its coverage on a branch that does not contain and execute the exact baseline sources.",
     "No graphics milestone may introduce MSVC, Clang, Visual Studio, MSBuild, external shader compiler executables, arbitrary command execution or unapproved compiler/runtime dependencies.",
-    "Runtime rendering and profiling milestones require genuine Windows execution and physical-GPU evidence where specified; static validators and WARP-only tests are not substitutes."
+    "Runtime rendering and profiling milestones require genuine Windows execution and physical-GPU evidence where specified; static validators and WARP-only tests are not substitutes.",
+    "Design-only milestones may use deterministic document/schema checks, but must not be described as Windows runtime acceptance; code-bearing milestones require exact-head Windows evidence where the manifest says so."
   ]
 }
